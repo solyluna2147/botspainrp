@@ -1,0 +1,2275 @@
+{
+  "totalSamples": 2,
+  "approvedSamples": 0,
+  "deniedSamples": 2,
+  "learnedClichés": {
+    "significa valorar la": {
+      "count": 2,
+      "weight": 10
+    },
+    "valorar la vida": {
+      "count": 2,
+      "weight": 10
+    },
+    "personaje por encima": {
+      "count": 2,
+      "weight": 10
+    },
+    "un arma estoy": {
+      "count": 2,
+      "weight": 10
+    },
+    "arma estoy en": {
+      "count": 2,
+      "weight": 10
+    },
+    "estoy en desventaja": {
+      "count": 2,
+      "weight": 10
+    },
+    "en desventaja levanto": {
+      "count": 2,
+      "weight": 10
+    },
+    "desventaja levanto las": {
+      "count": 2,
+      "weight": 10
+    },
+    "levanto las manos": {
+      "count": 2,
+      "weight": 10
+    },
+    "las manos colaboro": {
+      "count": 2,
+      "weight": 10
+    },
+    "manos colaboro en": {
+      "count": 2,
+      "weight": 10
+    },
+    "no hago locuras": {
+      "count": 2,
+      "weight": 10
+    },
+    "hago locuras vida": {
+      "count": 2,
+      "weight": 10
+    },
+    "locuras vida única": {
+      "count": 2,
+      "weight": 10
+    },
+    "vida única muerte": {
+      "count": 4,
+      "weight": 14
+    },
+    "única muerte permanente": {
+      "count": 4,
+      "weight": 14
+    },
+    "muerte permanente pkt": {
+      "count": 4,
+      "weight": 14
+    },
+    "permanente pkt sí": {
+      "count": 2,
+      "weight": 10
+    },
+    "pkt sí entiendo": {
+      "count": 2,
+      "weight": 10
+    },
+    "sí entiendo que": {
+      "count": 2,
+      "weight": 10
+    },
+    "pkt se pierde": {
+      "count": 2,
+      "weight": 10
+    },
+    "pierde la memoria": {
+      "count": 2,
+      "weight": 10
+    },
+    "hechos la historia": {
+      "count": 2,
+      "weight": 10
+    },
+    "historia del personaje": {
+      "count": 2,
+      "weight": 10
+    },
+    "del personaje según": {
+      "count": 3,
+      "weight": 12
+    },
+    "personaje según ap": {
+      "count": 3,
+      "weight": 12
+    },
+    "según ap historia": {
+      "count": 3,
+      "weight": 12
+    },
+    "ap historia de": {
+      "count": 3,
+      "weight": 12
+    },
+    "historia de tu": {
+      "count": 5,
+      "weight": 14
+    },
+    "de tu personaje": {
+      "count": 5,
+      "weight": 14
+    },
+    "tu personaje obligatorio": {
+      "count": 5,
+      "weight": 14
+    },
+    "personaje obligatorio alejandro": {
+      "count": 3,
+      "weight": 12
+    },
+    "obligatorio alejandro nació": {
+      "count": 3,
+      "weight": 12
+    },
+    "alejandro nació en": {
+      "count": 3,
+      "weight": 12
+    },
+    "nació en sevilla": {
+      "count": 3,
+      "weight": 12
+    },
+    "sevilla se crio": {
+      "count": 3,
+      "weight": 12
+    },
+    "se crio junto": {
+      "count": 3,
+      "weight": 12
+    },
+    "crio junto sus": {
+      "count": 3,
+      "weight": 12
+    },
+    "junto sus abuelos": {
+      "count": 3,
+      "weight": 12
+    },
+    "sus padres trabajaban": {
+      "count": 3,
+      "weight": 12
+    },
+    "padres trabajaban todo": {
+      "count": 3,
+      "weight": 12
+    },
+    "los 18 años": {
+      "count": 3,
+      "weight": 12
+    },
+    "18 años estuvo": {
+      "count": 3,
+      "weight": 12
+    },
+    "años estuvo echando": {
+      "count": 3,
+      "weight": 12
+    },
+    "estuvo echando horas": {
+      "count": 3,
+      "weight": 12
+    },
+    "echando horas repartiendo": {
+      "count": 3,
+      "weight": 12
+    },
+    "horas repartiendo paquetes": {
+      "count": 3,
+      "weight": 12
+    },
+    "repartiendo paquetes en": {
+      "count": 3,
+      "weight": 12
+    },
+    "una furgoneta haciendo": {
+      "count": 3,
+      "weight": 12
+    },
+    "furgoneta haciendo portes": {
+      "count": 3,
+      "weight": 12
+    },
+    "haciendo portes para": {
+      "count": 3,
+      "weight": 12
+    },
+    "empresa de mudanzas": {
+      "count": 3,
+      "weight": 12
+    },
+    "falta de curro": {
+      "count": 3,
+      "weight": 12
+    },
+    "su pueblo decidió": {
+      "count": 3,
+      "weight": 12
+    },
+    "pueblo decidió coger": {
+      "count": 3,
+      "weight": 12
+    },
+    "decidió coger los": {
+      "count": 3,
+      "weight": 12
+    },
+    "coger los pocos": {
+      "count": 3,
+      "weight": 12
+    },
+    "los pocos ahorros": {
+      "count": 3,
+      "weight": 12
+    },
+    "pocos ahorros que": {
+      "count": 3,
+      "weight": 12
+    },
+    "la cuenta viajar": {
+      "count": 3,
+      "weight": 12
+    },
+    "cuenta viajar los": {
+      "count": 3,
+      "weight": 12
+    },
+    "viajar los santos": {
+      "count": 3,
+      "weight": 12
+    },
+    "santos para buscarse": {
+      "count": 3,
+      "weight": 12
+    },
+    "buscarse la vida": {
+      "count": 3,
+      "weight": 12
+    },
+    "vida de transportista": {
+      "count": 3,
+      "weight": 12
+    },
+    "de transportista taxista": {
+      "count": 3,
+      "weight": 12
+    },
+    "transportista taxista empezar": {
+      "count": 3,
+      "weight": 12
+    },
+    "taxista empezar de": {
+      "count": 3,
+      "weight": 12
+    },
+    "empezar de cero": {
+      "count": 3,
+      "weight": 12
+    },
+    "de cero tranquilamente": {
+      "count": 3,
+      "weight": 12
+    },
+    "cero tranquilamente datos": {
+      "count": 3,
+      "weight": 12
+    },
+    "tranquilamente datos ooc": {
+      "count": 3,
+      "weight": 12
+    },
+    "datos ooc del": {
+      "count": 6,
+      "weight": 14
+    },
+    "ooc del jugador": {
+      "count": 6,
+      "weight": 14
+    },
+    "del jugador obligatorio": {
+      "count": 6,
+      "weight": 14
+    },
+    "jugador obligatorio dani": {
+      "count": 3,
+      "weight": 12
+    },
+    "obligatorio dani 22": {
+      "count": 3,
+      "weight": 12
+    },
+    "dani 22 años": {
+      "count": 3,
+      "weight": 12
+    },
+    "22 años españa": {
+      "count": 3,
+      "weight": 12
+    },
+    "significa valorar la vida": {
+      "count": 2,
+      "weight": 10
+    },
+    "valorar la vida de": {
+      "count": 2,
+      "weight": 10
+    },
+    "vida de mi personaje": {
+      "count": 2,
+      "weight": 10
+    },
+    "mi personaje por encima": {
+      "count": 2,
+      "weight": 10
+    },
+    "personaje por encima de": {
+      "count": 2,
+      "weight": 10
+    },
+    "apuntan con un arma": {
+      "count": 2,
+      "weight": 10
+    },
+    "con un arma estoy": {
+      "count": 2,
+      "weight": 10
+    },
+    "un arma estoy en": {
+      "count": 2,
+      "weight": 10
+    },
+    "arma estoy en desventaja": {
+      "count": 2,
+      "weight": 10
+    },
+    "estoy en desventaja levanto": {
+      "count": 2,
+      "weight": 10
+    },
+    "en desventaja levanto las": {
+      "count": 2,
+      "weight": 10
+    },
+    "desventaja levanto las manos": {
+      "count": 2,
+      "weight": 10
+    },
+    "levanto las manos colaboro": {
+      "count": 2,
+      "weight": 10
+    },
+    "las manos colaboro en": {
+      "count": 2,
+      "weight": 10
+    },
+    "manos colaboro en todo": {
+      "count": 2,
+      "weight": 10
+    },
+    "todo no hago locuras": {
+      "count": 2,
+      "weight": 10
+    },
+    "no hago locuras vida": {
+      "count": 2,
+      "weight": 10
+    },
+    "hago locuras vida única": {
+      "count": 2,
+      "weight": 10
+    },
+    "locuras vida única muerte": {
+      "count": 2,
+      "weight": 10
+    },
+    "vida única muerte permanente": {
+      "count": 4,
+      "weight": 14
+    },
+    "única muerte permanente pkt": {
+      "count": 4,
+      "weight": 14
+    },
+    "muerte permanente pkt sí": {
+      "count": 2,
+      "weight": 10
+    },
+    "permanente pkt sí entiendo": {
+      "count": 2,
+      "weight": 10
+    },
+    "pkt sí entiendo que": {
+      "count": 2,
+      "weight": 10
+    },
+    "sí entiendo que ante": {
+      "count": 2,
+      "weight": 10
+    },
+    "un pkt se pierde": {
+      "count": 2,
+      "weight": 10
+    },
+    "pkt se pierde la": {
+      "count": 2,
+      "weight": 10
+    },
+    "se pierde la memoria": {
+      "count": 2,
+      "weight": 10
+    },
+    "pierde la memoria de": {
+      "count": 2,
+      "weight": 10
+    },
+    "memoria de los hechos": {
+      "count": 2,
+      "weight": 10
+    },
+    "los hechos la historia": {
+      "count": 2,
+      "weight": 10
+    },
+    "hechos la historia del": {
+      "count": 2,
+      "weight": 10
+    },
+    "la historia del personaje": {
+      "count": 2,
+      "weight": 10
+    },
+    "historia del personaje según": {
+      "count": 2,
+      "weight": 10
+    },
+    "del personaje según ap": {
+      "count": 3,
+      "weight": 12
+    },
+    "personaje según ap historia": {
+      "count": 3,
+      "weight": 12
+    },
+    "según ap historia de": {
+      "count": 3,
+      "weight": 12
+    },
+    "ap historia de tu": {
+      "count": 3,
+      "weight": 12
+    },
+    "historia de tu personaje": {
+      "count": 5,
+      "weight": 14
+    },
+    "de tu personaje obligatorio": {
+      "count": 5,
+      "weight": 14
+    },
+    "tu personaje obligatorio alejandro": {
+      "count": 3,
+      "weight": 12
+    },
+    "personaje obligatorio alejandro nació": {
+      "count": 3,
+      "weight": 12
+    },
+    "obligatorio alejandro nació en": {
+      "count": 3,
+      "weight": 12
+    },
+    "alejandro nació en sevilla": {
+      "count": 3,
+      "weight": 12
+    },
+    "nació en sevilla se": {
+      "count": 3,
+      "weight": 12
+    },
+    "en sevilla se crio": {
+      "count": 3,
+      "weight": 12
+    },
+    "sevilla se crio junto": {
+      "count": 3,
+      "weight": 12
+    },
+    "se crio junto sus": {
+      "count": 3,
+      "weight": 12
+    },
+    "crio junto sus abuelos": {
+      "count": 3,
+      "weight": 12
+    },
+    "junto sus abuelos porque": {
+      "count": 3,
+      "weight": 12
+    },
+    "abuelos porque sus padres": {
+      "count": 3,
+      "weight": 12
+    },
+    "porque sus padres trabajaban": {
+      "count": 3,
+      "weight": 12
+    },
+    "sus padres trabajaban todo": {
+      "count": 3,
+      "weight": 12
+    },
+    "padres trabajaban todo el": {
+      "count": 3,
+      "weight": 12
+    },
+    "trabajaban todo el día": {
+      "count": 3,
+      "weight": 12
+    },
+    "día en el campo": {
+      "count": 3,
+      "weight": 12
+    },
+    "campo desde los 18": {
+      "count": 3,
+      "weight": 12
+    },
+    "desde los 18 años": {
+      "count": 3,
+      "weight": 12
+    },
+    "los 18 años estuvo": {
+      "count": 3,
+      "weight": 12
+    },
+    "18 años estuvo echando": {
+      "count": 3,
+      "weight": 12
+    },
+    "años estuvo echando horas": {
+      "count": 3,
+      "weight": 12
+    },
+    "estuvo echando horas repartiendo": {
+      "count": 3,
+      "weight": 12
+    },
+    "echando horas repartiendo paquetes": {
+      "count": 3,
+      "weight": 12
+    },
+    "horas repartiendo paquetes en": {
+      "count": 3,
+      "weight": 12
+    },
+    "repartiendo paquetes en una": {
+      "count": 3,
+      "weight": 12
+    },
+    "paquetes en una furgoneta": {
+      "count": 3,
+      "weight": 12
+    },
+    "en una furgoneta haciendo": {
+      "count": 3,
+      "weight": 12
+    },
+    "una furgoneta haciendo portes": {
+      "count": 3,
+      "weight": 12
+    },
+    "furgoneta haciendo portes para": {
+      "count": 3,
+      "weight": 12
+    },
+    "haciendo portes para una": {
+      "count": 3,
+      "weight": 12
+    },
+    "portes para una empresa": {
+      "count": 3,
+      "weight": 12
+    },
+    "una empresa de mudanzas": {
+      "count": 3,
+      "weight": 12
+    },
+    "empresa de mudanzas con": {
+      "count": 3,
+      "weight": 12
+    },
+    "mudanzas con la falta": {
+      "count": 3,
+      "weight": 12
+    },
+    "la falta de curro": {
+      "count": 3,
+      "weight": 12
+    },
+    "falta de curro en": {
+      "count": 3,
+      "weight": 12
+    },
+    "curro en su pueblo": {
+      "count": 3,
+      "weight": 12
+    },
+    "en su pueblo decidió": {
+      "count": 3,
+      "weight": 12
+    },
+    "su pueblo decidió coger": {
+      "count": 3,
+      "weight": 12
+    },
+    "pueblo decidió coger los": {
+      "count": 3,
+      "weight": 12
+    },
+    "decidió coger los pocos": {
+      "count": 3,
+      "weight": 12
+    },
+    "coger los pocos ahorros": {
+      "count": 3,
+      "weight": 12
+    },
+    "los pocos ahorros que": {
+      "count": 3,
+      "weight": 12
+    },
+    "pocos ahorros que le": {
+      "count": 3,
+      "weight": 12
+    },
+    "ahorros que le quedaban": {
+      "count": 3,
+      "weight": 12
+    },
+    "quedaban en la cuenta": {
+      "count": 3,
+      "weight": 12
+    },
+    "en la cuenta viajar": {
+      "count": 3,
+      "weight": 12
+    },
+    "la cuenta viajar los": {
+      "count": 3,
+      "weight": 12
+    },
+    "cuenta viajar los santos": {
+      "count": 3,
+      "weight": 12
+    },
+    "viajar los santos para": {
+      "count": 3,
+      "weight": 12
+    },
+    "los santos para buscarse": {
+      "count": 3,
+      "weight": 12
+    },
+    "santos para buscarse la": {
+      "count": 3,
+      "weight": 12
+    },
+    "para buscarse la vida": {
+      "count": 3,
+      "weight": 12
+    },
+    "buscarse la vida de": {
+      "count": 3,
+      "weight": 12
+    },
+    "la vida de transportista": {
+      "count": 3,
+      "weight": 12
+    },
+    "vida de transportista taxista": {
+      "count": 3,
+      "weight": 12
+    },
+    "de transportista taxista empezar": {
+      "count": 3,
+      "weight": 12
+    },
+    "transportista taxista empezar de": {
+      "count": 3,
+      "weight": 12
+    },
+    "taxista empezar de cero": {
+      "count": 3,
+      "weight": 12
+    },
+    "empezar de cero tranquilamente": {
+      "count": 3,
+      "weight": 12
+    },
+    "de cero tranquilamente datos": {
+      "count": 3,
+      "weight": 12
+    },
+    "cero tranquilamente datos ooc": {
+      "count": 3,
+      "weight": 12
+    },
+    "tranquilamente datos ooc del": {
+      "count": 3,
+      "weight": 12
+    },
+    "datos ooc del jugador": {
+      "count": 6,
+      "weight": 14
+    },
+    "ooc del jugador obligatorio": {
+      "count": 6,
+      "weight": 14
+    },
+    "del jugador obligatorio dani": {
+      "count": 3,
+      "weight": 12
+    },
+    "jugador obligatorio dani 22": {
+      "count": 3,
+      "weight": 12
+    },
+    "obligatorio dani 22 años": {
+      "count": 3,
+      "weight": 12
+    },
+    "dani 22 años españa": {
+      "count": 3,
+      "weight": 12
+    },
+    "valoración de vida": {
+      "count": 2,
+      "weight": 10
+    },
+    "comprende la preservación": {
+      "count": 2,
+      "weight": 10
+    },
+    "la preservación absoluta": {
+      "count": 2,
+      "weight": 10
+    },
+    "preservación absoluta de": {
+      "count": 2,
+      "weight": 10
+    },
+    "la integridad biológica": {
+      "count": 2,
+      "weight": 10
+    },
+    "integridad biológica psicológica": {
+      "count": 2,
+      "weight": 10
+    },
+    "biológica psicológica del": {
+      "count": 2,
+      "weight": 10
+    },
+    "psicológica del personaje": {
+      "count": 2,
+      "weight": 10
+    },
+    "personaje ante cualquier": {
+      "count": 2,
+      "weight": 10
+    },
+    "ante cualquier riesgo": {
+      "count": 2,
+      "weight": 10
+    },
+    "cualquier riesgo inminente": {
+      "count": 2,
+      "weight": 10
+    },
+    "riesgo inminente priorizando": {
+      "count": 2,
+      "weight": 10
+    },
+    "inminente priorizando la": {
+      "count": 2,
+      "weight": 10
+    },
+    "priorizando la supervivencia": {
+      "count": 2,
+      "weight": 10
+    },
+    "supervivencia la cooperación": {
+      "count": 2,
+      "weight": 10
+    },
+    "la cooperación incondicional": {
+      "count": 2,
+      "weight": 10
+    },
+    "cooperación incondicional frente": {
+      "count": 2,
+      "weight": 10
+    },
+    "incondicional frente amenazas": {
+      "count": 2,
+      "weight": 10
+    },
+    "frente amenazas letales": {
+      "count": 2,
+      "weight": 10
+    },
+    "amenazas letales situaciones": {
+      "count": 2,
+      "weight": 10
+    },
+    "letales situaciones de": {
+      "count": 2,
+      "weight": 10
+    },
+    "situaciones de clara": {
+      "count": 2,
+      "weight": 10
+    },
+    "de clara indefensión": {
+      "count": 2,
+      "weight": 10
+    },
+    "clara indefensión vida": {
+      "count": 2,
+      "weight": 10
+    },
+    "indefensión vida única": {
+      "count": 2,
+      "weight": 10
+    },
+    "permanente pkt entiendo": {
+      "count": 2,
+      "weight": 10
+    },
+    "pkt entiendo acepto": {
+      "count": 2,
+      "weight": 10
+    },
+    "entiendo acepto en": {
+      "count": 2,
+      "weight": 10
+    },
+    "totalidad las implicaciones": {
+      "count": 2,
+      "weight": 10
+    },
+    "las implicaciones narrativas": {
+      "count": 2,
+      "weight": 10
+    },
+    "implicaciones narrativas del": {
+      "count": 2,
+      "weight": 10
+    },
+    "narrativas del pkt": {
+      "count": 2,
+      "weight": 10
+    },
+    "del pkt asumiendo": {
+      "count": 2,
+      "weight": 10
+    },
+    "pkt asumiendo la": {
+      "count": 2,
+      "weight": 10
+    },
+    "asumiendo la pérdida": {
+      "count": 2,
+      "weight": 10
+    },
+    "la pérdida irrever": {
+      "count": 2,
+      "weight": 10
+    },
+    "pérdida irrever historia": {
+      "count": 2,
+      "weight": 10
+    },
+    "irrever historia de": {
+      "count": 2,
+      "weight": 10
+    },
+    "personaje obligatorio desde": {
+      "count": 2,
+      "weight": 10
+    },
+    "obligatorio desde temprana": {
+      "count": 3,
+      "weight": 12
+    },
+    "desde temprana edad": {
+      "count": 3,
+      "weight": 12
+    },
+    "temprana edad creció": {
+      "count": 3,
+      "weight": 12
+    },
+    "edad creció en": {
+      "count": 3,
+      "weight": 12
+    },
+    "un barrio humilde": {
+      "count": 3,
+      "weight": 12
+    },
+    "barrio humilde conflictivo": {
+      "count": 3,
+      "weight": 12
+    },
+    "humilde conflictivo forjando": {
+      "count": 3,
+      "weight": 12
+    },
+    "conflictivo forjando su": {
+      "count": 3,
+      "weight": 12
+    },
+    "forjando su propio": {
+      "count": 3,
+      "weight": 12
+    },
+    "su propio destino": {
+      "count": 3,
+      "weight": 12
+    },
+    "propio destino pesar": {
+      "count": 3,
+      "weight": 12
+    },
+    "destino pesar de": {
+      "count": 3,
+      "weight": 12
+    },
+    "las continuas dificultades": {
+      "count": 3,
+      "weight": 12
+    },
+    "continuas dificultades que": {
+      "count": 3,
+      "weight": 12
+    },
+    "vida le tenía": {
+      "count": 3,
+      "weight": 12
+    },
+    "le tenía preparadas": {
+      "count": 3,
+      "weight": 12
+    },
+    "tenía preparadas guiado": {
+      "count": 3,
+      "weight": 12
+    },
+    "preparadas guiado por": {
+      "count": 3,
+      "weight": 12
+    },
+    "una firme convicción": {
+      "count": 3,
+      "weight": 12
+    },
+    "firme convicción moral": {
+      "count": 3,
+      "weight": 12
+    },
+    "convicción moral una": {
+      "count": 3,
+      "weight": 12
+    },
+    "moral una inquebrantable": {
+      "count": 3,
+      "weight": 12
+    },
+    "una inquebrantable resiliencia": {
+      "count": 3,
+      "weight": 12
+    },
+    "inquebrantable resiliencia aprendió": {
+      "count": 3,
+      "weight": 12
+    },
+    "resiliencia aprendió el": {
+      "count": 3,
+      "weight": 12
+    },
+    "aprendió el valor": {
+      "count": 3,
+      "weight": 12
+    },
+    "valor del sacrificio": {
+      "count": 3,
+      "weight": 12
+    },
+    "del sacrificio mientras": {
+      "count": 3,
+      "weight": 12
+    },
+    "sacrificio mientras observaba": {
+      "count": 3,
+      "weight": 12
+    },
+    "mientras observaba cómo": {
+      "count": 3,
+      "weight": 12
+    },
+    "observaba cómo las": {
+      "count": 3,
+      "weight": 12
+    },
+    "cómo las circunstancias": {
+      "count": 3,
+      "weight": 12
+    },
+    "las circunstancias marcaban": {
+      "count": 3,
+      "weight": 12
+    },
+    "circunstancias marcaban un": {
+      "count": 3,
+      "weight": 12
+    },
+    "su entorno familiar": {
+      "count": 3,
+      "weight": 12
+    },
+    "entorno familiar con": {
+      "count": 3,
+      "weight": 12
+    },
+    "años su vida": {
+      "count": 3,
+      "weight": 12
+    },
+    "su vida dio": {
+      "count": 3,
+      "weight": 12
+    },
+    "vida dio un": {
+      "count": 3,
+      "weight": 12
+    },
+    "dio un giro": {
+      "count": 3,
+      "weight": 12
+    },
+    "un giro inesperado": {
+      "count": 3,
+      "weight": 12
+    },
+    "giro inesperado decidió": {
+      "count": 3,
+      "weight": 12
+    },
+    "inesperado decidió trasladarse": {
+      "count": 3,
+      "weight": 12
+    },
+    "decidió trasladarse la": {
+      "count": 3,
+      "weight": 12
+    },
+    "trasladarse la ciudad": {
+      "count": 3,
+      "weight": 12
+    },
+    "un objetivo claro": {
+      "count": 3,
+      "weight": 12
+    },
+    "objetivo claro encontrar": {
+      "count": 3,
+      "weight": 12
+    },
+    "claro encontrar su": {
+      "count": 3,
+      "weight": 12
+    },
+    "encontrar su lugar": {
+      "count": 3,
+      "weight": 12
+    },
+    "mundo en busca": {
+      "count": 3,
+      "weight": 12
+    },
+    "un nuevo comienzo": {
+      "count": 3,
+      "weight": 12
+    },
+    "nuevo comienzo de": {
+      "count": 3,
+      "weight": 12
+    },
+    "comienzo de nuevas": {
+      "count": 3,
+      "weight": 12
+    },
+    "de nuevas oportunidades": {
+      "count": 3,
+      "weight": 12
+    },
+    "nuevas oportunidades que": {
+      "count": 3,
+      "weight": 12
+    },
+    "le permitan alcanzar": {
+      "count": 3,
+      "weight": 12
+    },
+    "permitan alcanzar la": {
+      "count": 3,
+      "weight": 12
+    },
+    "alcanzar la prosperidad": {
+      "count": 3,
+      "weight": 12
+    },
+    "la prosperidad datos": {
+      "count": 3,
+      "weight": 12
+    },
+    "prosperidad datos ooc": {
+      "count": 3,
+      "weight": 12
+    },
+    "jugador obligatorio marco": {
+      "count": 3,
+      "weight": 12
+    },
+    "obligatorio marco 25": {
+      "count": 3,
+      "weight": 12
+    },
+    "marco 25 años": {
+      "count": 3,
+      "weight": 12
+    },
+    "25 años españa": {
+      "count": 3,
+      "weight": 12
+    },
+    "comprende la preservación absoluta": {
+      "count": 2,
+      "weight": 10
+    },
+    "la preservación absoluta de": {
+      "count": 2,
+      "weight": 10
+    },
+    "preservación absoluta de la": {
+      "count": 2,
+      "weight": 10
+    },
+    "absoluta de la integridad": {
+      "count": 2,
+      "weight": 10
+    },
+    "de la integridad biológica": {
+      "count": 2,
+      "weight": 10
+    },
+    "la integridad biológica psicológica": {
+      "count": 2,
+      "weight": 10
+    },
+    "integridad biológica psicológica del": {
+      "count": 2,
+      "weight": 10
+    },
+    "biológica psicológica del personaje": {
+      "count": 2,
+      "weight": 10
+    },
+    "psicológica del personaje ante": {
+      "count": 2,
+      "weight": 10
+    },
+    "del personaje ante cualquier": {
+      "count": 2,
+      "weight": 10
+    },
+    "personaje ante cualquier riesgo": {
+      "count": 2,
+      "weight": 10
+    },
+    "ante cualquier riesgo inminente": {
+      "count": 2,
+      "weight": 10
+    },
+    "cualquier riesgo inminente priorizando": {
+      "count": 2,
+      "weight": 10
+    },
+    "riesgo inminente priorizando la": {
+      "count": 2,
+      "weight": 10
+    },
+    "inminente priorizando la supervivencia": {
+      "count": 2,
+      "weight": 10
+    },
+    "priorizando la supervivencia la": {
+      "count": 2,
+      "weight": 10
+    },
+    "la supervivencia la cooperación": {
+      "count": 2,
+      "weight": 10
+    },
+    "supervivencia la cooperación incondicional": {
+      "count": 2,
+      "weight": 10
+    },
+    "la cooperación incondicional frente": {
+      "count": 2,
+      "weight": 10
+    },
+    "cooperación incondicional frente amenazas": {
+      "count": 2,
+      "weight": 10
+    },
+    "incondicional frente amenazas letales": {
+      "count": 2,
+      "weight": 10
+    },
+    "frente amenazas letales situaciones": {
+      "count": 2,
+      "weight": 10
+    },
+    "amenazas letales situaciones de": {
+      "count": 2,
+      "weight": 10
+    },
+    "letales situaciones de clara": {
+      "count": 2,
+      "weight": 10
+    },
+    "situaciones de clara indefensión": {
+      "count": 2,
+      "weight": 10
+    },
+    "de clara indefensión vida": {
+      "count": 2,
+      "weight": 10
+    },
+    "clara indefensión vida única": {
+      "count": 2,
+      "weight": 10
+    },
+    "indefensión vida única muerte": {
+      "count": 2,
+      "weight": 10
+    },
+    "muerte permanente pkt entiendo": {
+      "count": 2,
+      "weight": 10
+    },
+    "permanente pkt entiendo acepto": {
+      "count": 2,
+      "weight": 10
+    },
+    "pkt entiendo acepto en": {
+      "count": 2,
+      "weight": 10
+    },
+    "entiendo acepto en su": {
+      "count": 2,
+      "weight": 10
+    },
+    "acepto en su totalidad": {
+      "count": 2,
+      "weight": 10
+    },
+    "su totalidad las implicaciones": {
+      "count": 2,
+      "weight": 10
+    },
+    "totalidad las implicaciones narrativas": {
+      "count": 2,
+      "weight": 10
+    },
+    "las implicaciones narrativas del": {
+      "count": 2,
+      "weight": 10
+    },
+    "implicaciones narrativas del pkt": {
+      "count": 2,
+      "weight": 10
+    },
+    "narrativas del pkt asumiendo": {
+      "count": 2,
+      "weight": 10
+    },
+    "del pkt asumiendo la": {
+      "count": 2,
+      "weight": 10
+    },
+    "pkt asumiendo la pérdida": {
+      "count": 2,
+      "weight": 10
+    },
+    "asumiendo la pérdida irrever": {
+      "count": 2,
+      "weight": 10
+    },
+    "la pérdida irrever historia": {
+      "count": 2,
+      "weight": 10
+    },
+    "pérdida irrever historia de": {
+      "count": 2,
+      "weight": 10
+    },
+    "irrever historia de tu": {
+      "count": 2,
+      "weight": 10
+    },
+    "tu personaje obligatorio desde": {
+      "count": 2,
+      "weight": 10
+    },
+    "personaje obligatorio desde temprana": {
+      "count": 2,
+      "weight": 10
+    },
+    "obligatorio desde temprana edad": {
+      "count": 3,
+      "weight": 12
+    },
+    "desde temprana edad creció": {
+      "count": 3,
+      "weight": 12
+    },
+    "temprana edad creció en": {
+      "count": 3,
+      "weight": 12
+    },
+    "edad creció en un": {
+      "count": 3,
+      "weight": 12
+    },
+    "creció en un barrio": {
+      "count": 3,
+      "weight": 12
+    },
+    "en un barrio humilde": {
+      "count": 3,
+      "weight": 12
+    },
+    "un barrio humilde conflictivo": {
+      "count": 3,
+      "weight": 12
+    },
+    "barrio humilde conflictivo forjando": {
+      "count": 3,
+      "weight": 12
+    },
+    "humilde conflictivo forjando su": {
+      "count": 3,
+      "weight": 12
+    },
+    "conflictivo forjando su propio": {
+      "count": 3,
+      "weight": 12
+    },
+    "forjando su propio destino": {
+      "count": 3,
+      "weight": 12
+    },
+    "su propio destino pesar": {
+      "count": 3,
+      "weight": 12
+    },
+    "propio destino pesar de": {
+      "count": 3,
+      "weight": 12
+    },
+    "destino pesar de las": {
+      "count": 3,
+      "weight": 12
+    },
+    "pesar de las adversidades": {
+      "count": 3,
+      "weight": 12
+    },
+    "adversidades de las continuas": {
+      "count": 3,
+      "weight": 12
+    },
+    "de las continuas dificultades": {
+      "count": 3,
+      "weight": 12
+    },
+    "las continuas dificultades que": {
+      "count": 3,
+      "weight": 12
+    },
+    "continuas dificultades que la": {
+      "count": 3,
+      "weight": 12
+    },
+    "dificultades que la vida": {
+      "count": 3,
+      "weight": 12
+    },
+    "la vida le tenía": {
+      "count": 3,
+      "weight": 12
+    },
+    "vida le tenía preparadas": {
+      "count": 3,
+      "weight": 12
+    },
+    "le tenía preparadas guiado": {
+      "count": 3,
+      "weight": 12
+    },
+    "tenía preparadas guiado por": {
+      "count": 3,
+      "weight": 12
+    },
+    "preparadas guiado por una": {
+      "count": 3,
+      "weight": 12
+    },
+    "guiado por una firme": {
+      "count": 3,
+      "weight": 12
+    },
+    "por una firme convicción": {
+      "count": 3,
+      "weight": 12
+    },
+    "una firme convicción moral": {
+      "count": 3,
+      "weight": 12
+    },
+    "firme convicción moral una": {
+      "count": 3,
+      "weight": 12
+    },
+    "convicción moral una inquebrantable": {
+      "count": 3,
+      "weight": 12
+    },
+    "moral una inquebrantable resiliencia": {
+      "count": 3,
+      "weight": 12
+    },
+    "una inquebrantable resiliencia aprendió": {
+      "count": 3,
+      "weight": 12
+    },
+    "inquebrantable resiliencia aprendió el": {
+      "count": 3,
+      "weight": 12
+    },
+    "resiliencia aprendió el valor": {
+      "count": 3,
+      "weight": 12
+    },
+    "aprendió el valor del": {
+      "count": 3,
+      "weight": 12
+    },
+    "el valor del sacrificio": {
+      "count": 3,
+      "weight": 12
+    },
+    "valor del sacrificio mientras": {
+      "count": 3,
+      "weight": 12
+    },
+    "del sacrificio mientras observaba": {
+      "count": 3,
+      "weight": 12
+    },
+    "sacrificio mientras observaba cómo": {
+      "count": 3,
+      "weight": 12
+    },
+    "mientras observaba cómo las": {
+      "count": 3,
+      "weight": 12
+    },
+    "observaba cómo las circunstancias": {
+      "count": 3,
+      "weight": 12
+    },
+    "cómo las circunstancias marcaban": {
+      "count": 3,
+      "weight": 12
+    },
+    "las circunstancias marcaban un": {
+      "count": 3,
+      "weight": 12
+    },
+    "circunstancias marcaban un antes": {
+      "count": 3,
+      "weight": 12
+    },
+    "después en su entorno": {
+      "count": 3,
+      "weight": 12
+    },
+    "en su entorno familiar": {
+      "count": 3,
+      "weight": 12
+    },
+    "su entorno familiar con": {
+      "count": 3,
+      "weight": 12
+    },
+    "entorno familiar con el": {
+      "count": 3,
+      "weight": 12
+    },
+    "familiar con el paso": {
+      "count": 3,
+      "weight": 12
+    },
+    "paso de los años": {
+      "count": 3,
+      "weight": 12
+    },
+    "los años su vida": {
+      "count": 3,
+      "weight": 12
+    },
+    "años su vida dio": {
+      "count": 3,
+      "weight": 12
+    },
+    "su vida dio un": {
+      "count": 3,
+      "weight": 12
+    },
+    "vida dio un giro": {
+      "count": 3,
+      "weight": 12
+    },
+    "dio un giro inesperado": {
+      "count": 3,
+      "weight": 12
+    },
+    "un giro inesperado decidió": {
+      "count": 3,
+      "weight": 12
+    },
+    "giro inesperado decidió trasladarse": {
+      "count": 3,
+      "weight": 12
+    },
+    "inesperado decidió trasladarse la": {
+      "count": 3,
+      "weight": 12
+    },
+    "decidió trasladarse la ciudad": {
+      "count": 3,
+      "weight": 12
+    },
+    "trasladarse la ciudad de": {
+      "count": 3,
+      "weight": 12
+    },
+    "ciudad de los santos": {
+      "count": 3,
+      "weight": 12
+    },
+    "santos con un objetivo": {
+      "count": 3,
+      "weight": 12
+    },
+    "con un objetivo claro": {
+      "count": 3,
+      "weight": 12
+    },
+    "un objetivo claro encontrar": {
+      "count": 3,
+      "weight": 12
+    },
+    "objetivo claro encontrar su": {
+      "count": 3,
+      "weight": 12
+    },
+    "claro encontrar su lugar": {
+      "count": 3,
+      "weight": 12
+    },
+    "encontrar su lugar en": {
+      "count": 3,
+      "weight": 12
+    },
+    "lugar en el mundo": {
+      "count": 3,
+      "weight": 12
+    },
+    "el mundo en busca": {
+      "count": 3,
+      "weight": 12
+    },
+    "mundo en busca de": {
+      "count": 3,
+      "weight": 12
+    },
+    "busca de un nuevo": {
+      "count": 3,
+      "weight": 12
+    },
+    "de un nuevo comienzo": {
+      "count": 3,
+      "weight": 12
+    },
+    "un nuevo comienzo de": {
+      "count": 3,
+      "weight": 12
+    },
+    "nuevo comienzo de nuevas": {
+      "count": 3,
+      "weight": 12
+    },
+    "comienzo de nuevas oportunidades": {
+      "count": 3,
+      "weight": 12
+    },
+    "de nuevas oportunidades que": {
+      "count": 3,
+      "weight": 12
+    },
+    "nuevas oportunidades que le": {
+      "count": 3,
+      "weight": 12
+    },
+    "oportunidades que le permitan": {
+      "count": 3,
+      "weight": 12
+    },
+    "que le permitan alcanzar": {
+      "count": 3,
+      "weight": 12
+    },
+    "le permitan alcanzar la": {
+      "count": 3,
+      "weight": 12
+    },
+    "permitan alcanzar la prosperidad": {
+      "count": 3,
+      "weight": 12
+    },
+    "alcanzar la prosperidad datos": {
+      "count": 3,
+      "weight": 12
+    },
+    "la prosperidad datos ooc": {
+      "count": 3,
+      "weight": 12
+    },
+    "prosperidad datos ooc del": {
+      "count": 3,
+      "weight": 12
+    },
+    "del jugador obligatorio marco": {
+      "count": 3,
+      "weight": 12
+    },
+    "jugador obligatorio marco 25": {
+      "count": 3,
+      "weight": 12
+    },
+    "obligatorio marco 25 años": {
+      "count": 3,
+      "weight": 12
+    },
+    "marco 25 años españa": {
+      "count": 3,
+      "weight": 12
+    }
+  },
+  "learnedHumanPatterns": {},
+  "deniedPhrasesCount": {
+    "un personaje ficticio": 1,
+    "personaje ficticio actuar": 1,
+    "ficticio actuar como": 1,
+    "fuera la vida": 1,
+    "la vida real": 1,
+    "vida real respetando": 1,
+    "real respetando el": 1,
+    "respetando el entorno": 1,
+    "entorno las situaciones": 1,
+    "ciudad sin salirte": 1,
+    "salirte del papel": 1,
+    "del papel valoración": 1,
+    "papel valoración de": 1,
+    "valoración de vida": 2,
+    "de vida significa": 1,
+    "vida significa valorar": 1,
+    "significa valorar la": 2,
+    "valorar la vida": 2,
+    "personaje por encima": 2,
+    "un arma estoy": 2,
+    "arma estoy en": 2,
+    "estoy en desventaja": 2,
+    "en desventaja levanto": 2,
+    "desventaja levanto las": 2,
+    "levanto las manos": 2,
+    "las manos colaboro": 2,
+    "manos colaboro en": 2,
+    "no hago locuras": 2,
+    "hago locuras vida": 2,
+    "locuras vida única": 2,
+    "vida única muerte": 4,
+    "única muerte permanente": 4,
+    "muerte permanente pkt": 4,
+    "permanente pkt sí": 2,
+    "pkt sí entiendo": 2,
+    "sí entiendo que": 2,
+    "pkt se pierde": 2,
+    "pierde la memoria": 2,
+    "hechos la historia": 2,
+    "historia del personaje": 2,
+    "del personaje según": 3,
+    "personaje según ap": 3,
+    "según ap historia": 3,
+    "ap historia de": 3,
+    "historia de tu": 5,
+    "de tu personaje": 5,
+    "tu personaje obligatorio": 5,
+    "personaje obligatorio alejandro": 3,
+    "obligatorio alejandro nació": 3,
+    "alejandro nació en": 3,
+    "nació en sevilla": 3,
+    "sevilla se crio": 3,
+    "se crio junto": 3,
+    "crio junto sus": 3,
+    "junto sus abuelos": 3,
+    "sus padres trabajaban": 3,
+    "padres trabajaban todo": 3,
+    "los 18 años": 3,
+    "18 años estuvo": 3,
+    "años estuvo echando": 3,
+    "estuvo echando horas": 3,
+    "echando horas repartiendo": 3,
+    "horas repartiendo paquetes": 3,
+    "repartiendo paquetes en": 3,
+    "una furgoneta haciendo": 3,
+    "furgoneta haciendo portes": 3,
+    "haciendo portes para": 3,
+    "empresa de mudanzas": 3,
+    "falta de curro": 3,
+    "su pueblo decidió": 3,
+    "pueblo decidió coger": 3,
+    "decidió coger los": 3,
+    "coger los pocos": 3,
+    "los pocos ahorros": 3,
+    "pocos ahorros que": 3,
+    "la cuenta viajar": 3,
+    "cuenta viajar los": 3,
+    "viajar los santos": 3,
+    "santos para buscarse": 3,
+    "buscarse la vida": 3,
+    "vida de transportista": 3,
+    "de transportista taxista": 3,
+    "transportista taxista empezar": 3,
+    "taxista empezar de": 3,
+    "empezar de cero": 3,
+    "de cero tranquilamente": 3,
+    "cero tranquilamente datos": 3,
+    "tranquilamente datos ooc": 3,
+    "datos ooc del": 6,
+    "ooc del jugador": 6,
+    "del jugador obligatorio": 6,
+    "jugador obligatorio dani": 3,
+    "obligatorio dani 22": 3,
+    "dani 22 años": 3,
+    "22 años españa": 3,
+    "años españa significa": 1,
+    "españa significa valorar": 1,
+    "años españa del": 1,
+    "españa del personaje": 1,
+    "ponerte en la piel": 1,
+    "piel de un personaje": 1,
+    "de un personaje ficticio": 1,
+    "un personaje ficticio actuar": 1,
+    "personaje ficticio actuar como": 1,
+    "ficticio actuar como si": 1,
+    "actuar como si fuera": 1,
+    "si fuera la vida": 1,
+    "fuera la vida real": 1,
+    "la vida real respetando": 1,
+    "vida real respetando el": 1,
+    "real respetando el entorno": 1,
+    "respetando el entorno las": 1,
+    "el entorno las situaciones": 1,
+    "entorno las situaciones de": 1,
+    "situaciones de la ciudad": 1,
+    "la ciudad sin salirte": 1,
+    "ciudad sin salirte del": 1,
+    "sin salirte del papel": 1,
+    "salirte del papel valoración": 1,
+    "del papel valoración de": 1,
+    "papel valoración de vida": 1,
+    "valoración de vida significa": 1,
+    "de vida significa valorar": 1,
+    "vida significa valorar la": 1,
+    "significa valorar la vida": 2,
+    "valorar la vida de": 2,
+    "vida de mi personaje": 2,
+    "mi personaje por encima": 2,
+    "personaje por encima de": 2,
+    "apuntan con un arma": 2,
+    "con un arma estoy": 2,
+    "un arma estoy en": 2,
+    "arma estoy en desventaja": 2,
+    "estoy en desventaja levanto": 2,
+    "en desventaja levanto las": 2,
+    "desventaja levanto las manos": 2,
+    "levanto las manos colaboro": 2,
+    "las manos colaboro en": 2,
+    "manos colaboro en todo": 2,
+    "todo no hago locuras": 2,
+    "no hago locuras vida": 2,
+    "hago locuras vida única": 2,
+    "locuras vida única muerte": 2,
+    "vida única muerte permanente": 4,
+    "única muerte permanente pkt": 4,
+    "muerte permanente pkt sí": 2,
+    "permanente pkt sí entiendo": 2,
+    "pkt sí entiendo que": 2,
+    "sí entiendo que ante": 2,
+    "un pkt se pierde": 2,
+    "pkt se pierde la": 2,
+    "se pierde la memoria": 2,
+    "pierde la memoria de": 2,
+    "memoria de los hechos": 2,
+    "los hechos la historia": 2,
+    "hechos la historia del": 2,
+    "la historia del personaje": 2,
+    "historia del personaje según": 2,
+    "del personaje según ap": 3,
+    "personaje según ap historia": 3,
+    "según ap historia de": 3,
+    "ap historia de tu": 3,
+    "historia de tu personaje": 5,
+    "de tu personaje obligatorio": 5,
+    "tu personaje obligatorio alejandro": 3,
+    "personaje obligatorio alejandro nació": 3,
+    "obligatorio alejandro nació en": 3,
+    "alejandro nació en sevilla": 3,
+    "nació en sevilla se": 3,
+    "en sevilla se crio": 3,
+    "sevilla se crio junto": 3,
+    "se crio junto sus": 3,
+    "crio junto sus abuelos": 3,
+    "junto sus abuelos porque": 3,
+    "abuelos porque sus padres": 3,
+    "porque sus padres trabajaban": 3,
+    "sus padres trabajaban todo": 3,
+    "padres trabajaban todo el": 3,
+    "trabajaban todo el día": 3,
+    "día en el campo": 3,
+    "campo desde los 18": 3,
+    "desde los 18 años": 3,
+    "los 18 años estuvo": 3,
+    "18 años estuvo echando": 3,
+    "años estuvo echando horas": 3,
+    "estuvo echando horas repartiendo": 3,
+    "echando horas repartiendo paquetes": 3,
+    "horas repartiendo paquetes en": 3,
+    "repartiendo paquetes en una": 3,
+    "paquetes en una furgoneta": 3,
+    "en una furgoneta haciendo": 3,
+    "una furgoneta haciendo portes": 3,
+    "furgoneta haciendo portes para": 3,
+    "haciendo portes para una": 3,
+    "portes para una empresa": 3,
+    "una empresa de mudanzas": 3,
+    "empresa de mudanzas con": 3,
+    "mudanzas con la falta": 3,
+    "la falta de curro": 3,
+    "falta de curro en": 3,
+    "curro en su pueblo": 3,
+    "en su pueblo decidió": 3,
+    "su pueblo decidió coger": 3,
+    "pueblo decidió coger los": 3,
+    "decidió coger los pocos": 3,
+    "coger los pocos ahorros": 3,
+    "los pocos ahorros que": 3,
+    "pocos ahorros que le": 3,
+    "ahorros que le quedaban": 3,
+    "quedaban en la cuenta": 3,
+    "en la cuenta viajar": 3,
+    "la cuenta viajar los": 3,
+    "cuenta viajar los santos": 3,
+    "viajar los santos para": 3,
+    "los santos para buscarse": 3,
+    "santos para buscarse la": 3,
+    "para buscarse la vida": 3,
+    "buscarse la vida de": 3,
+    "la vida de transportista": 3,
+    "vida de transportista taxista": 3,
+    "de transportista taxista empezar": 3,
+    "transportista taxista empezar de": 3,
+    "taxista empezar de cero": 3,
+    "empezar de cero tranquilamente": 3,
+    "de cero tranquilamente datos": 3,
+    "cero tranquilamente datos ooc": 3,
+    "tranquilamente datos ooc del": 3,
+    "datos ooc del jugador": 6,
+    "ooc del jugador obligatorio": 6,
+    "del jugador obligatorio dani": 3,
+    "jugador obligatorio dani 22": 3,
+    "obligatorio dani 22 años": 3,
+    "dani 22 años españa": 3,
+    "22 años españa significa": 1,
+    "años españa significa valorar": 1,
+    "españa significa valorar la": 1,
+    "22 años españa del": 1,
+    "años españa del personaje": 1,
+    "españa del personaje según": 1,
+    "concepto de roleplay": 1,
+    "de roleplay constituye": 1,
+    "roleplay constituye la": 1,
+    "constituye la personificación": 1,
+    "la personificación integral": 1,
+    "personificación integral de": 1,
+    "una identidad ficticia": 1,
+    "identidad ficticia dentro": 1,
+    "ficticia dentro de": 1,
+    "un entorno estructurado": 1,
+    "entorno estructurado adoptando": 1,
+    "estructurado adoptando sus": 1,
+    "adoptando sus convicciones": 1,
+    "sus convicciones dilemas": 1,
+    "convicciones dilemas morales": 1,
+    "dilemas morales patrones": 1,
+    "morales patrones de": 1,
+    "patrones de conducta": 1,
+    "conducta para interactuar": 1,
+    "interactuar con coherencia": 1,
+    "con coherencia respecto": 1,
+    "coherencia respecto las": 1,
+    "respecto las circunstancias": 1,
+    "circunstancias del entorno": 1,
+    "del entorno valoración": 1,
+    "entorno valoración de": 1,
+    "de vida comprende": 1,
+    "vida comprende la": 1,
+    "comprende la preservación": 2,
+    "la preservación absoluta": 2,
+    "preservación absoluta de": 2,
+    "la integridad biológica": 2,
+    "integridad biológica psicológica": 2,
+    "biológica psicológica del": 2,
+    "psicológica del personaje": 2,
+    "personaje ante cualquier": 2,
+    "ante cualquier riesgo": 2,
+    "cualquier riesgo inminente": 2,
+    "riesgo inminente priorizando": 2,
+    "inminente priorizando la": 2,
+    "priorizando la supervivencia": 2,
+    "supervivencia la cooperación": 2,
+    "la cooperación incondicional": 2,
+    "cooperación incondicional frente": 2,
+    "incondicional frente amenazas": 2,
+    "frente amenazas letales": 2,
+    "amenazas letales situaciones": 2,
+    "letales situaciones de": 2,
+    "situaciones de clara": 2,
+    "de clara indefensión": 2,
+    "clara indefensión vida": 2,
+    "indefensión vida única": 2,
+    "permanente pkt entiendo": 2,
+    "pkt entiendo acepto": 2,
+    "entiendo acepto en": 2,
+    "totalidad las implicaciones": 2,
+    "las implicaciones narrativas": 2,
+    "implicaciones narrativas del": 2,
+    "narrativas del pkt": 2,
+    "del pkt asumiendo": 2,
+    "pkt asumiendo la": 2,
+    "asumiendo la pérdida": 2,
+    "la pérdida irrever": 2,
+    "pérdida irrever historia": 2,
+    "irrever historia de": 2,
+    "personaje obligatorio desde": 2,
+    "obligatorio desde temprana": 3,
+    "desde temprana edad": 3,
+    "temprana edad creció": 3,
+    "edad creció en": 3,
+    "un barrio humilde": 3,
+    "barrio humilde conflictivo": 3,
+    "humilde conflictivo forjando": 3,
+    "conflictivo forjando su": 3,
+    "forjando su propio": 3,
+    "su propio destino": 3,
+    "propio destino pesar": 3,
+    "destino pesar de": 3,
+    "las continuas dificultades": 3,
+    "continuas dificultades que": 3,
+    "vida le tenía": 3,
+    "le tenía preparadas": 3,
+    "tenía preparadas guiado": 3,
+    "preparadas guiado por": 3,
+    "una firme convicción": 3,
+    "firme convicción moral": 3,
+    "convicción moral una": 3,
+    "moral una inquebrantable": 3,
+    "una inquebrantable resiliencia": 3,
+    "inquebrantable resiliencia aprendió": 3,
+    "resiliencia aprendió el": 3,
+    "aprendió el valor": 3,
+    "valor del sacrificio": 3,
+    "del sacrificio mientras": 3,
+    "sacrificio mientras observaba": 3,
+    "mientras observaba cómo": 3,
+    "observaba cómo las": 3,
+    "cómo las circunstancias": 3,
+    "las circunstancias marcaban": 3,
+    "circunstancias marcaban un": 3,
+    "su entorno familiar": 3,
+    "entorno familiar con": 3,
+    "años su vida": 3,
+    "su vida dio": 3,
+    "vida dio un": 3,
+    "dio un giro": 3,
+    "un giro inesperado": 3,
+    "giro inesperado decidió": 3,
+    "inesperado decidió trasladarse": 3,
+    "decidió trasladarse la": 3,
+    "trasladarse la ciudad": 3,
+    "un objetivo claro": 3,
+    "objetivo claro encontrar": 3,
+    "claro encontrar su": 3,
+    "encontrar su lugar": 3,
+    "mundo en busca": 3,
+    "un nuevo comienzo": 3,
+    "nuevo comienzo de": 3,
+    "comienzo de nuevas": 3,
+    "de nuevas oportunidades": 3,
+    "nuevas oportunidades que": 3,
+    "le permitan alcanzar": 3,
+    "permitan alcanzar la": 3,
+    "alcanzar la prosperidad": 3,
+    "la prosperidad datos": 3,
+    "prosperidad datos ooc": 3,
+    "jugador obligatorio marco": 3,
+    "obligatorio marco 25": 3,
+    "marco 25 años": 3,
+    "25 años españa": 3,
+    "años españa comprende": 1,
+    "españa comprende la": 1,
+    "años españa obligatorio": 1,
+    "españa obligatorio desde": 1,
+    "el concepto de roleplay": 1,
+    "concepto de roleplay constituye": 1,
+    "de roleplay constituye la": 1,
+    "roleplay constituye la personificación": 1,
+    "constituye la personificación integral": 1,
+    "la personificación integral de": 1,
+    "personificación integral de una": 1,
+    "integral de una identidad": 1,
+    "de una identidad ficticia": 1,
+    "una identidad ficticia dentro": 1,
+    "identidad ficticia dentro de": 1,
+    "ficticia dentro de un": 1,
+    "dentro de un entorno": 1,
+    "de un entorno estructurado": 1,
+    "un entorno estructurado adoptando": 1,
+    "entorno estructurado adoptando sus": 1,
+    "estructurado adoptando sus convicciones": 1,
+    "adoptando sus convicciones dilemas": 1,
+    "sus convicciones dilemas morales": 1,
+    "convicciones dilemas morales patrones": 1,
+    "dilemas morales patrones de": 1,
+    "morales patrones de conducta": 1,
+    "patrones de conducta para": 1,
+    "de conducta para interactuar": 1,
+    "conducta para interactuar con": 1,
+    "para interactuar con coherencia": 1,
+    "interactuar con coherencia respecto": 1,
+    "con coherencia respecto las": 1,
+    "coherencia respecto las circunstancias": 1,
+    "respecto las circunstancias del": 1,
+    "las circunstancias del entorno": 1,
+    "circunstancias del entorno valoración": 1,
+    "del entorno valoración de": 1,
+    "entorno valoración de vida": 1,
+    "valoración de vida comprende": 1,
+    "de vida comprende la": 1,
+    "vida comprende la preservación": 1,
+    "comprende la preservación absoluta": 2,
+    "la preservación absoluta de": 2,
+    "preservación absoluta de la": 2,
+    "absoluta de la integridad": 2,
+    "de la integridad biológica": 2,
+    "la integridad biológica psicológica": 2,
+    "integridad biológica psicológica del": 2,
+    "biológica psicológica del personaje": 2,
+    "psicológica del personaje ante": 2,
+    "del personaje ante cualquier": 2,
+    "personaje ante cualquier riesgo": 2,
+    "ante cualquier riesgo inminente": 2,
+    "cualquier riesgo inminente priorizando": 2,
+    "riesgo inminente priorizando la": 2,
+    "inminente priorizando la supervivencia": 2,
+    "priorizando la supervivencia la": 2,
+    "la supervivencia la cooperación": 2,
+    "supervivencia la cooperación incondicional": 2,
+    "la cooperación incondicional frente": 2,
+    "cooperación incondicional frente amenazas": 2,
+    "incondicional frente amenazas letales": 2,
+    "frente amenazas letales situaciones": 2,
+    "amenazas letales situaciones de": 2,
+    "letales situaciones de clara": 2,
+    "situaciones de clara indefensión": 2,
+    "de clara indefensión vida": 2,
+    "clara indefensión vida única": 2,
+    "indefensión vida única muerte": 2,
+    "muerte permanente pkt entiendo": 2,
+    "permanente pkt entiendo acepto": 2,
+    "pkt entiendo acepto en": 2,
+    "entiendo acepto en su": 2,
+    "acepto en su totalidad": 2,
+    "su totalidad las implicaciones": 2,
+    "totalidad las implicaciones narrativas": 2,
+    "las implicaciones narrativas del": 2,
+    "implicaciones narrativas del pkt": 2,
+    "narrativas del pkt asumiendo": 2,
+    "del pkt asumiendo la": 2,
+    "pkt asumiendo la pérdida": 2,
+    "asumiendo la pérdida irrever": 2,
+    "la pérdida irrever historia": 2,
+    "pérdida irrever historia de": 2,
+    "irrever historia de tu": 2,
+    "tu personaje obligatorio desde": 2,
+    "personaje obligatorio desde temprana": 2,
+    "obligatorio desde temprana edad": 3,
+    "desde temprana edad creció": 3,
+    "temprana edad creció en": 3,
+    "edad creció en un": 3,
+    "creció en un barrio": 3,
+    "en un barrio humilde": 3,
+    "un barrio humilde conflictivo": 3,
+    "barrio humilde conflictivo forjando": 3,
+    "humilde conflictivo forjando su": 3,
+    "conflictivo forjando su propio": 3,
+    "forjando su propio destino": 3,
+    "su propio destino pesar": 3,
+    "propio destino pesar de": 3,
+    "destino pesar de las": 3,
+    "pesar de las adversidades": 3,
+    "adversidades de las continuas": 3,
+    "de las continuas dificultades": 3,
+    "las continuas dificultades que": 3,
+    "continuas dificultades que la": 3,
+    "dificultades que la vida": 3,
+    "la vida le tenía": 3,
+    "vida le tenía preparadas": 3,
+    "le tenía preparadas guiado": 3,
+    "tenía preparadas guiado por": 3,
+    "preparadas guiado por una": 3,
+    "guiado por una firme": 3,
+    "por una firme convicción": 3,
+    "una firme convicción moral": 3,
+    "firme convicción moral una": 3,
+    "convicción moral una inquebrantable": 3,
+    "moral una inquebrantable resiliencia": 3,
+    "una inquebrantable resiliencia aprendió": 3,
+    "inquebrantable resiliencia aprendió el": 3,
+    "resiliencia aprendió el valor": 3,
+    "aprendió el valor del": 3,
+    "el valor del sacrificio": 3,
+    "valor del sacrificio mientras": 3,
+    "del sacrificio mientras observaba": 3,
+    "sacrificio mientras observaba cómo": 3,
+    "mientras observaba cómo las": 3,
+    "observaba cómo las circunstancias": 3,
+    "cómo las circunstancias marcaban": 3,
+    "las circunstancias marcaban un": 3,
+    "circunstancias marcaban un antes": 3,
+    "después en su entorno": 3,
+    "en su entorno familiar": 3,
+    "su entorno familiar con": 3,
+    "entorno familiar con el": 3,
+    "familiar con el paso": 3,
+    "paso de los años": 3,
+    "los años su vida": 3,
+    "años su vida dio": 3,
+    "su vida dio un": 3,
+    "vida dio un giro": 3,
+    "dio un giro inesperado": 3,
+    "un giro inesperado decidió": 3,
+    "giro inesperado decidió trasladarse": 3,
+    "inesperado decidió trasladarse la": 3,
+    "decidió trasladarse la ciudad": 3,
+    "trasladarse la ciudad de": 3,
+    "ciudad de los santos": 3,
+    "santos con un objetivo": 3,
+    "con un objetivo claro": 3,
+    "un objetivo claro encontrar": 3,
+    "objetivo claro encontrar su": 3,
+    "claro encontrar su lugar": 3,
+    "encontrar su lugar en": 3,
+    "lugar en el mundo": 3,
+    "el mundo en busca": 3,
+    "mundo en busca de": 3,
+    "busca de un nuevo": 3,
+    "de un nuevo comienzo": 3,
+    "un nuevo comienzo de": 3,
+    "nuevo comienzo de nuevas": 3,
+    "comienzo de nuevas oportunidades": 3,
+    "de nuevas oportunidades que": 3,
+    "nuevas oportunidades que le": 3,
+    "oportunidades que le permitan": 3,
+    "que le permitan alcanzar": 3,
+    "le permitan alcanzar la": 3,
+    "permitan alcanzar la prosperidad": 3,
+    "alcanzar la prosperidad datos": 3,
+    "la prosperidad datos ooc": 3,
+    "prosperidad datos ooc del": 3,
+    "del jugador obligatorio marco": 3,
+    "jugador obligatorio marco 25": 3,
+    "obligatorio marco 25 años": 3,
+    "marco 25 años españa": 3,
+    "25 años españa comprende": 1,
+    "años españa comprende la": 1,
+    "españa comprende la preservación": 1,
+    "25 años españa obligatorio": 1,
+    "años españa obligatorio desde": 1,
+    "españa obligatorio desde temprana": 1
+  },
+  "approvedPhrasesCount": {},
+  "samples": [
+    {
+      "applicant": "<@1308814761269395527>",
+      "decision": "DENEGADA",
+      "textPreview": "**\nEs ponerte en la piel de un personaje ficticio y actuar como si fuera la vida real, respetando el entorno y las situa",
+      "date": "2026-09-21T18:42:35.033Z"
+    },
+    {
+      "applicant": "<@1308814761269395527>",
+      "decision": "DENEGADA",
+      "textPreview": "**\nEl concepto de roleplay constituye la personificación integral de una identidad ficticia dentro de un entorno estruct",
+      "date": "2026-09-21T18:45:56.063Z"
+    }
+  ]
+}

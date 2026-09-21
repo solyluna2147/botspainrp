@@ -37,11 +37,29 @@ Activa el **Modo Desarrollador** en Discord (*Ajustes de Discord -> Avanzado -> 
 - **`!aprobar @usuario`** *(o `!aprobado @usuario`, `!aprobar ID`)*: Envía el anuncio oficial de Whitelist Aprobada mencionando al usuario y mostrando qué Staff lo aprobó.
 - **`!denegar @usuario`** *(o `!denegado @usuario`, `!denegar ID`)*: Envía el anuncio oficial de Whitelist Denegada mencionando al usuario y mostrando qué Staff lo denegó.
 - **`!borrar`**: Elimina el último mensaje del bot (o responde a cualquier mensaje con `!borrar` para eliminar ese mensaje específico).
-- **`!stream @usuario <enlace> [título]`**: Publica el anuncio oficial de streamer en directo en el canal de directos.
+- **`!notificarstream`** *(o `!panel-stream`, `!notificarstream #canal`)*: Publica el panel interactivo con el botón **📢 🟣 Notificar Directo** manualmente en el canal donde lo escribas o en el canal mencionado.
+- **`!addstreamer @usuario <link>`**: Registra a un streamer oficial para que pueda usar el botón de notificar directo.
+- **`!stream @usuario [enlace]`**: Publica manualmente el anuncio oficial de stream.
 - **`!estado`** *(o `!status`)*: Consulta el estado en vivo de FiveM (jugadores conectados, ping, IP y botón de conectar).
 - **`!fijar-estado`**: Crea un panel en vivo en el canal actual que se auto-actualiza cada 60 segundos.
 - **`!simular @usuario`**: Crea una tarjeta de solicitud pendiente de prueba con botones interactivos de Aprobar y Denegar.
 - **`!wl-ayuda`**: Muestra la lista de comandos disponibles.
+
+---
+
+## 👑 Comandos Exclusivos del Creador (ID: `418558256840179722`)
+
+Estos comandos solo pueden ser ejecutados por el Creador del bot y permiten cambiar cualquier canal, rol o IP en caliente **sin tocar código ni reiniciar Render**:
+
+- **`!admin`** / **`!config`**: Abre el panel de administración con todos los canales configurados, roles y servidor FiveM.
+- **`!setcanal <tipo> <#canal o ID>`**: Asigna un canal al bot.
+  - *Tipos:* `solicitudes`, `aprobados`, `denegados`, `streampanel`, `streamaviso`, `status`, `normativas`, `tickets`, `general`.
+  - *Ejemplo:* `!setcanal aprobados #wl-aprobados`
+- **`!setrol <staff|streamer> <@rol o ID>`**: Asigna roles autorizados.
+  - *Ejemplo:* `!setrol staff @Staff WL`
+- **`!setip <ip:puerto>`**: Cambia la IP del servidor de FiveM.
+- **`!setcfx <codigo>`**: Cambia el código de conexión CFX de FiveM.
+- **`!reiniciar-paneles`**: Vuelve a enviar y actualizar los paneles interactivos fijados.
 
 ---
 
