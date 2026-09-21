@@ -53,11 +53,162 @@ const client = new Client({
     ]
 });
 
-// IDs de canales configurables por Variables de Entorno (.env)
+// IDs de canales y servidor FiveM configurables por Variables de Entorno (.env)
 const CHANNEL_SOLICITUDES_ID = process.env.CHANNEL_SOLICITUDES_ID; // Canal donde llegan las solicitudes del bot de WL
 const CHANNEL_APROBADOS_ID = process.env.CHANNEL_APROBADOS_ID;     // Canal donde se anuncian las WL aprobadas
 const CHANNEL_DENEGADOS_ID = process.env.CHANNEL_DENEGADOS_ID;     // Opcional: Canal donde se anuncian las denegadas (si aplica)
+const CHANNEL_STATUS_ID = process.env.CHANNEL_STATUS_ID;           // Canal donde se fija el panel de estado en vivo
 const ROLE_STAFF_ID = process.env.ROLE_STAFF_ID || '1538191116610838691'; // Rol de Staff autorizado
+
+const FIVEM_SERVER_IP = process.env.FIVEM_SERVER_IP || '185.230.52.246:30120';
+const FIVEM_CFX_CODE = process.env.FIVEM_CFX_CODE || '7b97gmr';
+
+// Estado en memoria del servidor FiveM
+let liveServerState = {
+    online: true,
+    players: 0,
+    maxPlayers: 128,
+    ping: 0,
+    gametype: 'ESX Legacy',
+    hostname: 'SPAIN RP 🇪🇸'
+};
+
+let liveStatusMessageRef = null;
+
+// Helper para obtener el estado en tiempo real del servidor FiveM
+async function fetchFiveMServerStatus() {
+    const startTime = Date.now();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    try {
+        const [dynamicRes, playersRes] = await Promise.all([
+            fetch(`http://${FIVEM_SERVER_IP}/dynamic.json`, { signal: controller.signal }),
+            fetch(`http://${FIVEM_SERVER_IP}/players.json`, { signal: controller.signal }).catch(() => null)
+        ]);
+
+        clearTimeout(timeoutId);
+        const ping = Date.now() - startTime;
+
+        if (!dynamicRes.ok) {
+            liveServerState = { ...liveServerState, online: false, ping };
+            return liveServerState;
+        }
+
+        const dynamicData = await dynamicRes.json();
+        let playersCount = 0;
+        if (typeof dynamicData.clients === 'number') {
+            playersCount = dynamicData.clients;
+        } else if (playersRes && playersRes.ok) {
+            const playersList = await playersRes.json().catch(() => []);
+            playersCount = Array.isArray(playersList) ? playersList.length : 0;
+        }
+
+        liveServerState = {
+            online: true,
+            players: playersCount,
+            maxPlayers: dynamicData.sv_maxclients || '128',
+            hostname: dynamicData.hostname || 'SPAIN RP 🇪🇸',
+            gametype: dynamicData.gametype || 'Roleplay',
+            mapname: dynamicData.mapname || 'San Andreas',
+            ping
+        };
+        return liveServerState;
+    } catch (err) {
+        clearTimeout(timeoutId);
+        liveServerState = { ...liveServerState, online: false, ping: 0 };
+        return liveServerState;
+    }
+}
+
+// Función para construir el Embed de Estado del Servidor
+function buildStatusEmbed(state) {
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const isOnline = state.online;
+
+    const embed = new EmbedBuilder()
+        .setColor(isOnline ? 0x2ECC71 : 0xE74C3C)
+        .setAuthor({
+            name: 'ESTADO DEL SERVIDOR | SPAIN RP \uD83C\uDDEA\uD83C\uDDF8',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user?.displayAvatarURL()
+        })
+        .setTitle(isOnline ? '🟢 SERVIDOR ONLINE & DISPONIBLE' : '🔴 SERVIDOR EN MANTENIMIENTO')
+        .setDescription(
+            `\u200B\n` +
+            (isOnline
+                ? `✨ El servidor de **SPAIN RP** se encuentra en línea y listo para recibir jugadores.\n\n`
+                : `⚠️ El servidor se encuentra temporalmente **fuera de línea o en mantenimiento**.\n\n`) +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `📊 **Estado:** ${isOnline ? '`🟢 Online / Disponible`' : '`🔴 Desconectado`'}\n` +
+            `👥 **Jugadores:** \`${state.players} / ${state.maxPlayers}\` conectados\n` +
+            `⚡ **Latencia (Ping):** \`${state.ping} ms\`\n` +
+            `🔗 **Enlace Directo:** \`cfx.re/join/${FIVEM_CFX_CODE}\`\n` +
+            `💻 **Consola F8:** \`connect ${FIVEM_SERVER_IP}\`\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        )
+        .setFooter({
+            text: 'SPAIN RP • Actualización en tiempo real (cada 60s)',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user?.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    if (fs.existsSync(logoPath)) {
+        embed.setThumbnail('attachment://logo.png');
+    }
+
+    return embed;
+}
+
+// Función para construir el botón de conectar a FiveM
+function buildStatusActionRow() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setLabel('🚀 Conectar a SPAIN RP')
+            .setStyle(ButtonStyle.Link)
+            .setURL(`https://cfx.re/join/${FIVEM_CFX_CODE}`)
+    );
+}
+
+// Actualizador periódico del panel en el canal fijado
+async function updateChannelStatusPanel() {
+    const channelId = CHANNEL_STATUS_ID;
+    if (!channelId) return;
+
+    try {
+        const channel = await client.channels.fetch(channelId).catch(() => null);
+        if (!channel) return;
+
+        const state = await fetchFiveMServerStatus();
+        const embed = buildStatusEmbed(state);
+        const row = buildStatusActionRow();
+        const files = [];
+
+        const logoPath = path.join(__dirname, 'assets', 'logo.png');
+        if (fs.existsSync(logoPath)) {
+            files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+        }
+
+        if (liveStatusMessageRef) {
+            await liveStatusMessageRef.edit({ embeds: [embed], components: [row] }).catch(() => {
+                liveStatusMessageRef = null;
+            });
+        }
+
+        if (!liveStatusMessageRef) {
+            // Buscar si ya existía un mensaje anterior del bot en el canal
+            const fetched = await channel.messages.fetch({ limit: 10 }).catch(() => null);
+            const prevMsg = fetched ? fetched.find(m => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0].title?.includes('ESTADO DEL SERVIDOR')) : null;
+
+            if (prevMsg) {
+                liveStatusMessageRef = await prevMsg.edit({ embeds: [embed], components: [row] }).catch(() => null);
+            } else {
+                liveStatusMessageRef = await channel.send({ embeds: [embed], components: [row], files }).catch(() => null);
+            }
+        }
+    } catch (e) {
+        console.error('Error al actualizar el panel de estado:', e);
+    }
+}
 
 // Helper para verificar si un miembro tiene permisos de Staff (independientemente de cuántos otros roles tenga)
 async function isStaffMember(member, guild = null, userId = null) {
@@ -90,19 +241,12 @@ async function isStaffMember(member, guild = null, userId = null) {
 // Set para evitar procesar dos veces el mismo mensaje
 const processedMessages = new Set();
 
-// Lista de estados dinámicos / animados que rotarán
-const activities = [
-    { name: 'SPAIN RP 🇪🇸', type: ActivityType.Playing },
-    { name: '📋 Solicitudes de Whitelist', type: ActivityType.Watching },
-    { name: 'cfx.re/join/7b97gmr', type: ActivityType.Streaming, url: 'https://twitch.tv/spainrp' },
-    { name: '🛡️ Normativa de la Ciudad', type: ActivityType.Listening },
-    { name: '🌆 El estándar del RP realista', type: ActivityType.Watching }
-];
-
 client.once('ready', async () => {
     console.log(`✅ Bot conectado exitosamente como: ${client.user.tag}`);
     console.log(`📌 Canal de Solicitudes (Whitelist): ${CHANNEL_SOLICITUDES_ID || 'Todos los canales'}`);
     console.log(`📌 Canal de Resultados (Aprobados/Denegados): ${CHANNEL_APROBADOS_ID || 'No configurado'}`);
+    console.log(`📌 Canal de Estado FiveM: ${CHANNEL_STATUS_ID || 'No configurado'}`);
+    console.log(`🎮 Servidor FiveM IP: ${FIVEM_SERVER_IP} (Código: ${FIVEM_CFX_CODE})`);
 
     // Comprobación de acceso a los canales en el servidor
     try {
@@ -111,23 +255,61 @@ client.once('ready', async () => {
             console.log(`🏰 Servidor conectado: ${guild.name} (${guild.id})`);
             const chSolicitudes = guild.channels.cache.get(CHANNEL_SOLICITUDES_ID);
             const chAprobados = guild.channels.cache.get(CHANNEL_APROBADOS_ID);
+            const chStatus = guild.channels.cache.get(CHANNEL_STATUS_ID);
             console.log(`   -> Canal Solicitudes (${CHANNEL_SOLICITUDES_ID}): ${chSolicitudes ? `✅ #${chSolicitudes.name}` : '❌ NO ENCONTRADO O SIN PERMISO'}`);
             console.log(`   -> Canal Aprobados (${CHANNEL_APROBADOS_ID}): ${chAprobados ? `✅ #${chAprobados.name}` : '❌ NO ENCONTRADO O SIN PERMISO'}`);
+            if (CHANNEL_STATUS_ID) {
+                console.log(`   -> Canal Estado (${CHANNEL_STATUS_ID}): ${chStatus ? `✅ #${chStatus.name}` : '❌ NO ENCONTRADO O SIN PERMISO'}`);
+            }
         });
     } catch (e) {
         console.error('Error al listar canales del servidor:', e);
     }
 
-    // Rotar estado cada 8 segundos
+    // 1. Actualización inicial del estado de FiveM
+    await fetchFiveMServerStatus();
+
+    // 2. Rotación dinámica del perfil del bot con datos de FiveM en tiempo real
     let activityIndex = 0;
-    setInterval(() => {
-        const activity = activities[activityIndex];
+    setInterval(async () => {
+        // Actualizar datos cada 3 ciclos (24s)
+        if (activityIndex === 0) {
+            await fetchFiveMServerStatus();
+        }
+
+        const state = liveServerState;
+        let dynamicActivities = [];
+
+        if (state.online) {
+            dynamicActivities = [
+                { name: `👥 ${state.players}/${state.maxPlayers} Jugadores`, type: ActivityType.Watching },
+                { name: '🟢 SPAIN RP | En línea', type: ActivityType.Playing },
+                { name: `cfx.re/join/${FIVEM_CFX_CODE}`, type: ActivityType.Streaming, url: 'https://twitch.tv/spainrp' },
+                { name: '🛡️ SPAIN RP Whitelist', type: ActivityType.Listening },
+                { name: '🌆 El estándar del RP', type: ActivityType.Watching }
+            ];
+        } else {
+            dynamicActivities = [
+                { name: '🔴 Servidor en Mantenimiento', type: ActivityType.Watching },
+                { name: '🛠️ SPAIN RP Actualizándose', type: ActivityType.Playing },
+                { name: '📋 Whitelist Disponible', type: ActivityType.Listening }
+            ];
+        }
+
+        const currentActivity = dynamicActivities[activityIndex % dynamicActivities.length];
         client.user.setPresence({
-            activities: [activity],
-            status: 'online'
+            activities: [currentActivity],
+            status: state.online ? 'online' : 'dnd'
         });
-        activityIndex = (activityIndex + 1) % activities.length;
+
+        activityIndex = (activityIndex + 1) % dynamicActivities.length;
     }, 8000);
+
+    // 3. Actualizar el panel del canal cada 60 segundos
+    if (CHANNEL_STATUS_ID) {
+        await updateChannelStatusPanel();
+        setInterval(updateChannelStatusPanel, 60000);
+    }
 });
 
 // ==========================================
@@ -460,6 +642,8 @@ client.on('messageCreate', async (message) => {
             '!aprobar', '!aprobado', '!wl-aprobar', '!wlaprobar',
             '!denegar', '!denegado', '!wl-denegar', '!wldenegar',
             '!borrar', '!delete', '!clear', '!purge',
+            '!estado', '!status', '!servidor',
+            '!fijar-estado', '!panel-estado',
             '!wl-ayuda', '!wl-comandos', '!comandos-wl',
             '!simular', '!simular-pendiente'
         ];
@@ -599,14 +783,63 @@ client.on('messageCreate', async (message) => {
         }
 
         // ----------------------------------------------------
+        // COMANDO: !estado / !status (Muestra el estado en tiempo real)
+        // ----------------------------------------------------
+        if (['!estado', '!status', '!servidor'].includes(command)) {
+            try {
+                const state = await fetchFiveMServerStatus();
+                const embed = buildStatusEmbed(state);
+                const row = buildStatusActionRow();
+                const files = [];
+
+                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                if (fs.existsSync(logoPath)) {
+                    files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+                }
+
+                return message.channel.send({ embeds: [embed], components: [row], files });
+            } catch (err) {
+                console.error('Error al enviar estado del servidor:', err);
+                return;
+            }
+        }
+
+        // ----------------------------------------------------
+        // COMANDO: !fijar-estado / !panel-estado (Crea el panel auto-actualizable)
+        // ----------------------------------------------------
+        if (['!fijar-estado', '!panel-estado'].includes(command)) {
+            try {
+                await message.delete().catch(() => {});
+                const state = await fetchFiveMServerStatus();
+                const embed = buildStatusEmbed(state);
+                const row = buildStatusActionRow();
+                const files = [];
+
+                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                if (fs.existsSync(logoPath)) {
+                    files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+                }
+
+                liveStatusMessageRef = await message.channel.send({ embeds: [embed], components: [row], files });
+                console.log(`📌 [PANEL FIJADO] Panel de estado fijado en canal #${message.channel.name} (${message.channel.id})`);
+                return;
+            } catch (err) {
+                console.error('Error al fijar panel de estado:', err);
+                return;
+            }
+        }
+
+        // ----------------------------------------------------
         // COMANDO DE AYUDA: !wl-ayuda / !wl-comandos
         // ----------------------------------------------------
         if (['!wl-ayuda', '!wl-comandos', '!comandos-wl'].includes(command)) {
             return message.reply({
-                content: `📖 **COMANDOS DEL BOT DE WHITELIST:**\n\n` +
+                content: `📖 **COMANDOS DEL BOT DE WHITELIST Y SERVIDOR:**\n\n` +
                     `✅ \`!aprobar @usuario\` o \`!aprobado @usuario\` → Envía el anuncio oficial de Whitelist Aprobada.\n` +
                     `❌ \`!denegar @usuario\` o \`!denegado @usuario\` → Envía el anuncio oficial de Whitelist Denegada.\n` +
                     `🗑️ \`!borrar\` → Borra el mensaje anterior del bot (o responde a un mensaje con \`!borrar\` para borrarlo).\n` +
+                    `🌐 \`!estado\` o \`!status\` → Muestra el estado en tiempo real, jugadores y ping de FiveM.\n` +
+                    `📌 \`!fijar-estado\` → Publica el panel de estado en vivo que se auto-actualiza cada 60s.\n` +
                     `🧪 \`!simular @usuario\` → Crea un mensaje interactivo con botones de prueba.\n`
             });
         }
