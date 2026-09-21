@@ -37,6 +37,7 @@ Activa el **Modo Desarrollador** en Discord (*Ajustes de Discord -> Avanzado -> 
 - **`!aprobar @usuario`** *(o `!aprobado @usuario`, `!aprobar ID`)*: Envía el anuncio oficial de Whitelist Aprobada mencionando al usuario y mostrando qué Staff lo aprobó.
 - **`!denegar @usuario`** *(o `!denegado @usuario`, `!denegar ID`)*: Envía el anuncio oficial de Whitelist Denegada mencionando al usuario y mostrando qué Staff lo denegó.
 - **`!borrar`**: Elimina el último mensaje del bot (o responde a cualquier mensaje con `!borrar` para eliminar ese mensaje específico).
+- **`!stream @usuario <enlace> [título]`**: Publica el anuncio oficial de streamer en directo en el canal de directos.
 - **`!estado`** *(o `!status`)*: Consulta el estado en vivo de FiveM (jugadores conectados, ping, IP y botón de conectar).
 - **`!fijar-estado`**: Crea un panel en vivo en el canal actual que se auto-actualiza cada 60 segundos.
 - **`!simular @usuario`**: Crea una tarjeta de solicitud pendiente de prueba con botones interactivos de Aprobar y Denegar.

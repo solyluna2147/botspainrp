@@ -42,6 +42,7 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.GuildPresences, // Necesario para detectar cuando los streamers inician directo
         GatewayIntentBits.DirectMessages,
     ],
     partials: [
@@ -58,7 +59,11 @@ const CHANNEL_SOLICITUDES_ID = process.env.CHANNEL_SOLICITUDES_ID; // Canal dond
 const CHANNEL_APROBADOS_ID = process.env.CHANNEL_APROBADOS_ID;     // Canal donde se anuncian las WL aprobadas
 const CHANNEL_DENEGADOS_ID = process.env.CHANNEL_DENEGADOS_ID;     // Opcional: Canal donde se anuncian las denegadas (si aplica)
 const CHANNEL_STATUS_ID = process.env.CHANNEL_STATUS_ID;           // Canal donde se fija el panel de estado en vivo
+const CHANNEL_STREAMERS_ID = process.env.CHANNEL_STREAMERS_ID || '1551179646865772644'; // Canal de directos
 const ROLE_STAFF_ID = process.env.ROLE_STAFF_ID || '1538191116610838691'; // Rol de Staff autorizado
+const ROLE_STREAMER_ID = process.env.ROLE_STREAMER_ID;             // Opcional: Rol de Streamer verificado
+
+const streamerCooldowns = new Map();
 
 const FIVEM_SERVER_IP = process.env.FIVEM_SERVER_IP || '185.230.52.246:30120';
 const FIVEM_CFX_CODE = process.env.FIVEM_CFX_CODE || '7b97gmr';
@@ -514,6 +519,92 @@ async function sendDeniedNotification({ userMention, staffName = 'Equipo de Staf
     return { success: true, channelId: targetChannelId, messageId: sentMsg.id };
 }
 
+async function sendStreamerNotification({ userMention, streamUrl, streamTitle, platform = 'Twitch', avatarUrl = null }) {
+    const targetChannelId = CHANNEL_STREAMERS_ID;
+    if (!targetChannelId) return;
+
+    const targetChannel = await client.channels.fetch(targetChannelId).catch(err => {
+        console.error(`❌ [ERROR FETCH CANAL STREAMERS] No se pudo obtener el canal con ID ${targetChannelId}:`, err.message);
+        return null;
+    });
+
+    if (!targetChannel) {
+        console.error(`❌ [ERROR CANAL] No se encontró el canal de streamers (${targetChannelId}).`);
+        return null;
+    }
+
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const imgDirectoPath = path.join(__dirname, 'assets', 'directo.png');
+    const files = [];
+
+    if (fs.existsSync(logoPath)) {
+        files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+    }
+
+    if (fs.existsSync(imgDirectoPath)) {
+        files.push(new AttachmentBuilder(imgDirectoPath, { name: 'directo.png' }));
+    }
+
+    const cleanTitle = streamTitle && streamTitle.trim() ? streamTitle.trim() : 'Roleplay en vivo en SPAIN RP \uD83C\uDDEA\uD83C\uDDF8';
+    const validStreamUrl = streamUrl.startsWith('http') ? streamUrl : `https://${streamUrl}`;
+
+    // Canales oficiales interactivos (<#ID>)
+    const canalGeneral = `<#${process.env.CHANNEL_GENERAL_ID || '1517530849032016002'}>`;
+
+    const embedStream = new EmbedBuilder()
+        .setColor(0x9146FF) // Morado Twitch brillante
+        .setAuthor({
+            name: 'SISTEMA DE DIRECTOS | SPAIN RP \uD83C\uDDEA\uD83C\uDDF8',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setThumbnail(avatarUrl || (fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()))
+        .setTitle('🟣 ¡CREADOR EN DIRECTO!')
+        .setDescription(
+            `\u200B\n` +
+            `✨ ¡El creador de contenido **${userMention}** acaba de iniciar transmisión en vivo en **SPAIN RP** \uD83C\uDDEA\uD83C\uDDF8!\n\n` +
+            `🎮 **Título de la Transmisión:**\n` +
+            `> 💬 *"${cleanTitle}"*\n\n` +
+            `📺 **Plataforma:** \`${platform}\`\n` +
+            `🏙️ **Servidor:** **SPAIN RP** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
+            `🔗 **| Entra al directo a dejar tu apoyo y follow:**\n` +
+            `> ${validStreamUrl} ❗\n\n` +
+            `🌍 **| Comenta el directo en la comunidad:**\n` +
+            `> ${canalGeneral} ❗\n\n` +
+            `\uD83C\uDDEA\uD83C\uDDF8 **| ¡Disfruta del mejor Roleplay en SPAIN RP! |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
+            `👤 **Streamer:** ${userMention}`
+        )
+        .setFooter({
+            text: 'SPAIN RP • Creadores de Contenido Oficiales',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    if (fs.existsSync(imgDirectoPath)) {
+        embedStream.setImage('attachment://directo.png');
+    }
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setLabel('🟣 Ver Directo en Vivo')
+            .setStyle(ButtonStyle.Link)
+            .setURL(validStreamUrl),
+        new ButtonBuilder()
+            .setLabel('🚀 Conectar a SPAIN RP')
+            .setStyle(ButtonStyle.Link)
+            .setURL(`https://cfx.re/join/${FIVEM_CFX_CODE}`)
+    );
+
+    const sentMsg = await targetChannel.send({
+        content: `# 🟣 ¡${userMention} ESTÁ EN DIRECTO!\n# ¡Entra a apoyar el stream en SPAIN RP!`,
+        embeds: [embedStream],
+        components: [row],
+        files: files
+    });
+
+    console.log(`[DIRECTO NOTIFICADO] Stream publicado para ${userMention} en canal ${targetChannelId}`);
+    return { success: true, channelId: targetChannelId, messageId: sentMsg.id };
+}
+
 // ==========================================
 // 4. PROCESAMIENTO DE SOLICITUDES DEL BOT KING
 // ==========================================
@@ -695,6 +786,7 @@ client.on('messageCreate', async (message) => {
             '!borrar', '!delete', '!clear', '!purge',
             '!estado', '!status', '!servidor',
             '!fijar-estado', '!panel-estado',
+            '!stream', '!directo', '!streamer',
             '!wl-ayuda', '!wl-comandos', '!comandos-wl',
             '!simular', '!simular-pendiente'
         ];
@@ -881,6 +973,54 @@ client.on('messageCreate', async (message) => {
         }
 
         // ----------------------------------------------------
+        // COMANDO: !stream / !directo (Publica anuncio de streamer)
+        // ----------------------------------------------------
+        if (['!stream', '!directo', '!streamer'].includes(command)) {
+            try {
+                // Formato: !stream @usuario <enlace> [título...]  O  !stream <enlace> [título...]
+                let targetUser = message.mentions.users.first();
+                let filteredArgs = args.slice(1);
+
+                if (targetUser) {
+                    filteredArgs = filteredArgs.filter(arg => !arg.includes(targetUser.id));
+                } else {
+                    targetUser = message.author;
+                }
+
+                const urlArg = filteredArgs.find(arg => arg.startsWith('http') || arg.includes('twitch.tv') || arg.includes('kick.com') || arg.includes('youtube.com'));
+                if (!urlArg) {
+                    return message.reply({
+                        content: `❌ **Uso incorrecto:** Debes proporcionar el enlace del stream.\n📌 *Ejemplo:* \`!stream @usuario https://twitch.tv/canal Título del Directo\` o \`!stream https://kick.com/canal\``
+                    });
+                }
+
+                const titleArgs = filteredArgs.filter(arg => arg !== urlArg);
+                const streamTitle = titleArgs.length > 0 ? titleArgs.join(' ') : 'Roleplay en vivo en SPAIN RP \uD83C\uDDEA\uD83C\uDDF8';
+
+                let platform = 'Twitch';
+                if (urlArg.includes('kick.com')) platform = 'Kick';
+                else if (urlArg.includes('youtube.com') || urlArg.includes('youtu.be')) platform = 'YouTube';
+                else if (urlArg.includes('tiktok.com')) platform = 'TikTok';
+
+                const res = await sendStreamerNotification({
+                    userMention: `<@${targetUser.id}>`,
+                    streamUrl: urlArg,
+                    streamTitle,
+                    platform,
+                    avatarUrl: targetUser.displayAvatarURL({ dynamic: true })
+                });
+
+                if (res && res.success) {
+                    await message.delete().catch(() => {});
+                }
+                return;
+            } catch (err) {
+                console.error('Error al ejecutar comando !stream:', err);
+                return;
+            }
+        }
+
+        // ----------------------------------------------------
         // COMANDO DE AYUDA: !wl-ayuda / !wl-comandos
         // ----------------------------------------------------
         if (['!wl-ayuda', '!wl-comandos', '!comandos-wl'].includes(command)) {
@@ -889,6 +1029,7 @@ client.on('messageCreate', async (message) => {
                     `✅ \`!aprobar @usuario\` o \`!aprobado @usuario\` → Envía el anuncio oficial de Whitelist Aprobada.\n` +
                     `❌ \`!denegar @usuario\` o \`!denegado @usuario\` → Envía el anuncio oficial de Whitelist Denegada.\n` +
                     `🗑️ \`!borrar\` → Borra el mensaje anterior del bot (o responde a un mensaje con \`!borrar\` para borrarlo).\n` +
+                    `🟣 \`!stream @usuario <link> [título]\` → Publica el anuncio oficial de streamer en directo.\n` +
                     `🌐 \`!estado\` o \`!status\` → Muestra el estado en tiempo real, jugadores y ping de FiveM.\n` +
                     `📌 \`!fijar-estado\` → Publica el panel de estado en vivo que se auto-actualiza cada 60s.\n` +
                     `🧪 \`!simular @usuario\` → Crea un mensaje interactivo con botones de prueba.\n`
@@ -999,6 +1140,74 @@ client.on('messageUpdate', async (oldMessage, newMessage) => {
 
     if (newMessage.author && newMessage.author.id === client.user.id) return;
     await handleWhitelistMessage(newMessage, 'messageUpdate (instantáneo)');
+});
+
+// ==========================================
+// 6. DETECCIÓN AUTOMÁTICA DE STREAMERS (PRESENCE UPDATE)
+// ==========================================
+client.on('presenceUpdate', async (oldPresence, newPresence) => {
+    try {
+        if (!newPresence || !newPresence.user || newPresence.user.bot) return;
+
+        // Buscar si el usuario tiene una actividad de Streaming
+        const streamingActivity = newPresence.activities.find(act =>
+            act.type === ActivityType.Streaming ||
+            (act.url && (act.url.includes('twitch.tv') || act.url.includes('kick.com') || act.url.includes('youtube.com')))
+        );
+
+        if (!streamingActivity) return;
+
+        // Comprobar si ya estaba streameando antes para no repetir el aviso
+        const oldStreamingActivity = oldPresence?.activities?.find(act =>
+            act.type === ActivityType.Streaming ||
+            (act.url && (act.url.includes('twitch.tv') || act.url.includes('kick.com') || act.url.includes('youtube.com')))
+        );
+
+        if (oldStreamingActivity && oldStreamingActivity.url === streamingActivity.url) {
+            return; // Ya estaba en directo con el mismo stream
+        }
+
+        // Anti-spam Cooldown: 3 horas por streamer
+        const userId = newPresence.userId;
+        const lastNotified = streamerCooldowns.get(userId);
+        if (lastNotified && Date.now() - lastNotified < 3 * 60 * 60 * 1000) {
+            return;
+        }
+
+        // Si se configuró un rol de streamer específico, comprobar que el usuario lo tenga
+        if (ROLE_STREAMER_ID) {
+            const member = newPresence.member || await newPresence.guild.members.fetch(userId).catch(() => null);
+            if (!member || !member.roles.cache.has(ROLE_STREAMER_ID)) {
+                return;
+            }
+        }
+
+        const streamUrl = streamingActivity.url || `https://twitch.tv/${streamingActivity.name || ''}`;
+        const streamTitle = streamingActivity.details || streamingActivity.name || 'Roleplay en directo en SPAIN RP \uD83C\uDDEA\uD83C\uDDF8';
+
+        // Detectar plataforma
+        let platform = 'Twitch';
+        if (streamUrl.includes('kick.com')) platform = 'Kick';
+        else if (streamUrl.includes('youtube.com') || streamUrl.includes('youtu.be')) platform = 'YouTube';
+        else if (streamUrl.includes('tiktok.com')) platform = 'TikTok';
+
+        const userMention = `<@${userId}>`;
+        const avatarUrl = newPresence.user.displayAvatarURL({ dynamic: true });
+
+        const result = await sendStreamerNotification({
+            userMention,
+            streamUrl,
+            streamTitle,
+            platform,
+            avatarUrl
+        });
+
+        if (result && result.success) {
+            streamerCooldowns.set(userId, Date.now());
+        }
+    } catch (err) {
+        console.error('Error en presenceUpdate de streamers:', err);
+    }
 });
 
 // Iniciar sesión en Discord
