@@ -121,33 +121,84 @@ async function fetchFiveMServerStatus() {
     }
 }
 
-// Función para construir el Embed de Estado del Servidor
+// Seguimiento de Uptime y Reinicios
+let serverOnlineSince = Date.now();
+
+function getUptimeString() {
+    if (!serverOnlineSince) return '0 mins';
+    const diffMs = Date.now() - serverOnlineSince;
+    const diffMins = Math.floor(diffMs / 60000);
+    const hours = Math.floor(diffMins / 60);
+    const mins = diffMins % 60;
+    if (hours > 0) {
+        return `${hours} hrs, ${mins} mins`;
+    }
+    return `${mins} mins`;
+}
+
+function getNextRestartString() {
+    const now = new Date();
+    const restarts = [6, 18];
+    const nowHour = now.getHours() + now.getMinutes() / 60;
+    let nextHour = restarts.find(h => h > nowHour);
+    let diffHours;
+    if (nextHour !== undefined) {
+        diffHours = nextHour - nowHour;
+    } else {
+        diffHours = (24 - nowHour) + restarts[0];
+    }
+    const h = Math.floor(diffHours);
+    const m = Math.floor((diffHours - h) * 60);
+    return `in ${h} hrs, ${m} mins`;
+}
+
+// Función para construir el Embed de Estado del Servidor (Formato idéntico a txAdmin con Logo)
 function buildStatusEmbed(state) {
     const logoPath = path.join(__dirname, 'assets', 'logo.png');
     const isOnline = state.online;
 
+    if (isOnline && !serverOnlineSince) {
+        serverOnlineSince = Date.now();
+    } else if (!isOnline) {
+        serverOnlineSince = null;
+    }
+
     const embed = new EmbedBuilder()
         .setColor(isOnline ? 0x2ECC71 : 0xE74C3C)
         .setAuthor({
-            name: 'ESTADO DEL SERVIDOR | SPAIN RP \uD83C\uDDEA\uD83C\uDDF8',
+            name: 'SPAIN RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user?.displayAvatarURL()
         })
-        .setTitle(isOnline ? '🟢 SERVIDOR ONLINE & DISPONIBLE' : '🔴 SERVIDOR EN MANTENIMIENTO')
-        .setDescription(
-            `\u200B\n` +
-            (isOnline
-                ? `✨ El servidor de **SPAIN RP** se encuentra en línea y listo para recibir jugadores.\n\n`
-                : `⚠️ El servidor se encuentra temporalmente **fuera de línea o en mantenimiento**.\n\n`) +
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-            `📊 **Estado:** ${isOnline ? '`🟢 Online / Disponible`' : '`🔴 Desconectado`'}\n` +
-            `👥 **Jugadores:** \`${state.players} / ${state.maxPlayers}\` conectados\n` +
-            `⚡ **Latencia (Ping):** \`${state.ping} ms\`\n` +
-            `🔗 **Enlace Directo:** \`cfx.re/join/${FIVEM_CFX_CODE}\`\n` +
-            `💻 **Consola F8:** \`connect ${FIVEM_SERVER_IP}\`\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        .setTitle('SPAIN RP')
+        .addFields(
+            {
+                name: '▍ Estado',
+                value: isOnline ? '`🟢 Encendido`' : '`🔴 Apagado`',
+                inline: true
+            },
+            {
+                name: '▍ Jugadores',
+                value: `\`${state.players}/${state.maxPlayers}\``,
+                inline: true
+            },
+            {
+                name: '▍ F8 Comando',
+                value: `\`cfx.re/join/${FIVEM_CFX_CODE}\``,
+                inline: false
+            },
+            {
+                name: '▍ Reinicios',
+                value: `\`${getNextRestartString()}\``,
+                inline: true
+            },
+            {
+                name: '▍ ON',
+                value: `\`${getUptimeString()}\``,
+                inline: true
+            }
         )
         .setFooter({
-            text: 'SPAIN RP • Actualización en tiempo real (cada 60s)',
+            text: 'txAdmin 8.0.1 • Updated every minute',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user?.displayAvatarURL()
         })
         .setTimestamp();
