@@ -32,6 +32,15 @@ Activa el **Modo Desarrollador** en Discord (*Ajustes de Discord -> Avanzado -> 
 
 ---
 
+## 🎮 Comandos Disponibles
+
+- **`!aprobar @usuario`** *(o `!aprobado @usuario`, `!aprobar ID`)*: Envía el anuncio oficial de Whitelist Aprobada mencionando al usuario y mostrando qué Staff lo aprobó.
+- **`!denegar @usuario`** *(o `!denegado @usuario`, `!denegar ID`)*: Envía el anuncio oficial de Whitelist Denegada mencionando al usuario y mostrando qué Staff lo denegó.
+- **`!simular @usuario`**: Crea una tarjeta de solicitud pendiente de prueba con botones interactivos de Aprobar y Denegar.
+- **`!wl-ayuda`**: Muestra la lista de comandos disponibles.
+
+---
+
 ## ☁️ Paso 3: Subir a Render (24/7 Gratis)
 
 1. Sube este proyecto a tu repositorio de **GitHub**.

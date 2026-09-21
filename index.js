@@ -102,7 +102,158 @@ client.once('ready', async () => {
 });
 
 // ==========================================
-// 3. PROCESAMIENTO DE SOLICITUDES DEL BOT KING
+// 3. FUNCIONES PARA ENVIAR NOTIFICACIONES
+// ==========================================
+
+async function sendApprovedNotification({ userMention, staffName = 'Equipo de Staff' }) {
+    const targetChannelId = CHANNEL_APROBADOS_ID || '1550880724930797610';
+    console.log(`📤 [INTENTO DE ENVÍO APROBADO] Buscando canal de resultados con ID: ${targetChannelId}`);
+
+    const targetChannel = await client.channels.fetch(targetChannelId).catch(err => {
+        console.error(`❌ [ERROR FETCH CANAL] No se pudo obtener el canal con ID ${targetChannelId}:`, err.message);
+        return null;
+    });
+
+    if (!targetChannel) {
+        console.error(`❌ [ERROR CANAL] El bot no encuentra el canal ${targetChannelId}. Verifica permisos.`);
+        throw new Error(`No se pudo acceder al canal con ID ${targetChannelId}`);
+    }
+
+    const imgPngPath = path.join(__dirname, 'assets', 'aprobado.png');
+    const imgGifPath = path.join(__dirname, 'assets', 'aprobado.gif');
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const files = [];
+
+    if (fs.existsSync(logoPath)) {
+        files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+    }
+
+    const canalNormativas = `<#${process.env.CHANNEL_NORMATIVAS_ID || '1517530848658849996'}>`;
+    const canalTickets = `<#${process.env.CHANNEL_TICKETS_ID || '1517530849334136844'}>`;
+    const canalGeneral = `<#${process.env.CHANNEL_GENERAL_ID || '1517530849032016002'}>`;
+
+    const embedAprobado = new EmbedBuilder()
+        .setColor(0x2ECC71) // Verde esmeralda brillante
+        .setAuthor({
+            name: 'SISTEMA DE WHITELIST | SPAIN RP \uD83C\uDDEA\uD83C\uDDF8',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setThumbnail('attachment://logo.png')
+        .setTitle('🎉 ¡WHITELIST APROBADA!')
+        .setDescription(
+            `\u200B\n` +
+            `✨ ¡Enhorabuena **${userMention}**! Tu solicitud de Whitelist ha sido aprobada con éxito por el equipo de Staff.\n\n` +
+            `🏙️ Ya puedes acceder al servidor y formar parte de la comunidad de **SPAIN RP** \uD83C\uDDEA\uD83C\uDDF8.\n\n` +
+            `📝 **| Puedes consultar nuestras,**\n` +
+            `> ${canalNormativas} ❗\n\n` +
+            `📁 **| Si tienes dudas abre un,**\n` +
+            `> ${canalTickets} ❗\n\n` +
+            `🌍 **| 𝗗𝗶𝘀𝗳𝗿𝘂𝘁𝗮 𝘆 𝗱𝗶𝘃𝗶𝗲𝗿𝘁𝗲𝘁𝗲,**\n` +
+            `> ${canalGeneral} ❗\n\n` +
+            `\uD83C\uDDEA\uD83C\uDDF8 **| ¡Disfruta de SPAIN RP! |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
+            `👤 **Solicitante:** ${userMention}\n` +
+            `🛡️ **Decidido Por:** ${staffName}`
+        )
+        .setFooter({
+            text: 'SPAIN RP • ¡Bienvenido a la ciudad!',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    if (fs.existsSync(imgPngPath)) {
+        const attachment = new AttachmentBuilder(imgPngPath, { name: 'aprobado.png' });
+        embedAprobado.setImage('attachment://aprobado.png');
+        files.push(attachment);
+    } else if (fs.existsSync(imgGifPath)) {
+        const attachment = new AttachmentBuilder(imgGifPath, { name: 'aprobado.gif' });
+        embedAprobado.setImage('attachment://aprobado.gif');
+        files.push(attachment);
+    }
+
+    const sentMsg = await targetChannel.send({
+        content: `# 🎉 ¡Enhorabuena ${userMention}!\n# ¡Tu Whitelist ha sido aprobada!`,
+        embeds: [embedAprobado],
+        files: files
+    });
+
+    console.log(`[WL APROBADA] Notificación enviada para ${userMention}`);
+    return { success: true, channelId: targetChannelId, messageId: sentMsg.id };
+}
+
+async function sendDeniedNotification({ userMention, staffName = 'Equipo de Staff' }) {
+    const targetChannelId = (CHANNEL_DENEGADOS_ID || CHANNEL_APROBADOS_ID) || '1550880724930797610';
+    console.log(`📤 [INTENTO DE ENVÍO DENEGADO] Buscando canal de resultados con ID: ${targetChannelId}`);
+
+    const targetChannel = await client.channels.fetch(targetChannelId).catch(err => {
+        console.error(`❌ [ERROR FETCH CANAL] No se pudo obtener el canal con ID ${targetChannelId}:`, err.message);
+        return null;
+    });
+
+    if (!targetChannel) {
+        console.error(`❌ [ERROR CANAL] El bot no encuentra el canal ${targetChannelId}. Verifica permisos.`);
+        throw new Error(`No se pudo acceder al canal con ID ${targetChannelId}`);
+    }
+
+    const imgPngPath = path.join(__dirname, 'assets', 'denegado.png');
+    const imgGifPath = path.join(__dirname, 'assets', 'denegado.gif');
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const files = [];
+
+    if (fs.existsSync(logoPath)) {
+        files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+    }
+
+    const canalNormativas = `<#${process.env.CHANNEL_NORMATIVAS_ID || '1517530848658849996'}>`;
+    const canalTickets = `<#${process.env.CHANNEL_TICKETS_ID || '1518087100275097671'}>`;
+
+    const embedDenegado = new EmbedBuilder()
+        .setColor(0xE74C3C) // Rojo carmesí
+        .setAuthor({
+            name: 'SISTEMA DE WHITELIST | SPAIN RP \uD83C\uDDEA\uD83C\uDDF8',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setThumbnail('attachment://logo.png')
+        .setTitle('❌ ¡WHITELIST DENEGADA!')
+        .setDescription(
+            `\u200B\n` +
+            `⚠️ Hola **${userMention}**, lamentamos informarte que tu solicitud de Whitelist ha sido denegada por el equipo de Staff de **SPAIN RP** \uD83C\uDDEA\uD83C\uDDF8.\n\n` +
+            `📖 Te recomendamos repasar los conceptos de rol y la normativa antes de volver a postularte.\n\n` +
+            `📝 **| Puedes repasar la normativa en,**\n` +
+            `> ${canalNormativas} ❗\n\n` +
+            `📁 **| Si tienes alguna duda consulta en,**\n` +
+            `> ${canalTickets} ❗\n\n` +
+            `\uD83C\uDDEA\uD83C\uDDF8 **| SPAIN RP • Sistema de Whitelist |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
+            `👤 **Solicitante:** ${userMention}\n` +
+            `🛡️ **Decidido Por:** ${staffName}`
+        )
+        .setFooter({
+            text: 'SPAIN RP • Sistema de Whitelist',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    if (fs.existsSync(imgPngPath)) {
+        const attachment = new AttachmentBuilder(imgPngPath, { name: 'denegado.png' });
+        embedDenegado.setImage('attachment://denegado.png');
+        files.push(attachment);
+    } else if (fs.existsSync(imgGifPath)) {
+        const attachment = new AttachmentBuilder(imgGifPath, { name: 'denegado.gif' });
+        embedDenegado.setImage('attachment://denegado.gif');
+        files.push(attachment);
+    }
+
+    const sentMsg = await targetChannel.send({
+        content: `# ⚠️ ¡Atención ${userMention}!\n# Tu solicitud ha sido denegada.`,
+        embeds: [embedDenegado],
+        files: files
+    });
+
+    console.log(`[WL DENEGADA] Notificación enviada para ${userMention}`);
+    return { success: true, channelId: targetChannelId, messageId: sentMsg.id };
+}
+
+// ==========================================
+// 4. PROCESAMIENTO DE SOLICITUDES DEL BOT KING
 // ==========================================
 async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
     if (!message) return;
@@ -249,141 +400,13 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
         staffName = `<@${message.author.id}>`;
     }
 
-    // 4. Enviar contenedor (Embed) al canal oficial de resultados/aprobados
+    // 4. Enviar notificación usando la función reutilizable
     try {
-        const targetChannelId = (isAprobada ? CHANNEL_APROBADOS_ID : (CHANNEL_DENEGADOS_ID || CHANNEL_APROBADOS_ID)) || '1550880724930797610';
-        console.log(`📤 [INTENTO DE ENVÍO] Buscando canal de resultados con ID: ${targetChannelId}`);
-
-        const targetChannel = await client.channels.fetch(targetChannelId).catch(err => {
-            console.error(`❌ [ERROR FETCH CANAL] No se pudo obtener el canal con ID ${targetChannelId}:`, err.message);
-            return null;
-        });
-
-        if (!targetChannel) {
-            console.error(`❌ [ERROR CANAL] El bot no encuentra el canal ${targetChannelId}. Verifica que el bot tenga permiso para ver ese canal.`);
-            return;
-        }
-
-        console.log(`✅ [CANAL ENCONTRADO] Nombre: #${targetChannel.name} (Servidor: ${targetChannel.guild ? targetChannel.guild.name : 'N/A'})`);
-
         if (isAprobada) {
-            const imgPngPath = path.join(__dirname, 'assets', 'aprobado.png');
-            const imgGifPath = path.join(__dirname, 'assets', 'aprobado.gif');
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
-            const files = [];
-
-            if (fs.existsSync(logoPath)) {
-                files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-            }
-
-            // Canales oficiales interactivos (<#ID>)
-            const canalNormativas = `<#${process.env.CHANNEL_NORMATIVAS_ID || '1517530848658849996'}>`;
-            const canalTickets = `<#${process.env.CHANNEL_TICKETS_ID || '1517530849334136844'}>`;
-            const canalGeneral = `<#${process.env.CHANNEL_GENERAL_ID || '1517530849032016002'}>`;
-
-            const embedAprobado = new EmbedBuilder()
-                .setColor(0x2ECC71) // Verde esmeralda brillante
-                .setAuthor({
-                    name: 'SISTEMA DE WHITELIST | SPAIN RP \uD83C\uDDEA\uD83C\uDDF8',
-                    iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
-                })
-                .setThumbnail('attachment://logo.png') // LOGO FIJO EN LA ESQUINA DERECHA
-                .setTitle('🎉 ¡WHITELIST APROBADA!')
-                .setDescription(
-                    `\u200B\n` +
-                    `✨ ¡Enhorabuena **${userMention}**! Tu solicitud de Whitelist ha sido aprobada con éxito por el equipo de Staff.\n\n` +
-                    `🏙️ Ya puedes acceder al servidor y formar parte de la comunidad de **SPAIN RP** \uD83C\uDDEA\uD83C\uDDF8.\n\n` +
-                    `📝 **| Puedes consultar nuestras,**\n` +
-                    `> ${canalNormativas} ❗\n\n` +
-                    `📁 **| Si tienes dudas abre un,**\n` +
-                    `> ${canalTickets} ❗\n\n` +
-                    `🌍 **| 𝗗𝗶𝘀𝗳𝗿𝘂𝘁𝗮 𝘆 𝗱𝗶𝘃𝗶𝗲𝗿𝘁𝗲𝘁𝗲,**\n` +
-                    `> ${canalGeneral} ❗\n\n` +
-                    `\uD83C\uDDEA\uD83C\uDDF8 **| ¡Disfruta de SPAIN RP! |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
-                    `👤 **Solicitante:** ${userMention}\n` +
-                    `🛡️ **Decidido Por:** ${staffName}`
-                )
-                .setFooter({
-                    text: 'SPAIN RP • ¡Bienvenido a la ciudad!',
-                    iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
-                })
-                .setTimestamp();
-
-            if (fs.existsSync(imgPngPath)) {
-                const attachment = new AttachmentBuilder(imgPngPath, { name: 'aprobado.png' });
-                embedAprobado.setImage('attachment://aprobado.png');
-                files.push(attachment);
-            } else if (fs.existsSync(imgGifPath)) {
-                const attachment = new AttachmentBuilder(imgGifPath, { name: 'aprobado.gif' });
-                embedAprobado.setImage('attachment://aprobado.gif');
-                files.push(attachment);
-            }
-
-            await targetChannel.send({
-                content: `# 🎉 ¡Enhorabuena ${userMention}!\n# ¡Tu Whitelist ha sido aprobada!`,
-                embeds: [embedAprobado],
-                files: files
-            });
-
-            console.log(`[WL APROBADA] Notificación enviada para ${userMention}`);
+            await sendApprovedNotification({ userMention, staffName });
             processedMessages.add(cacheKey);
-
         } else if (isDenegada) {
-            const imgPngPath = path.join(__dirname, 'assets', 'denegado.png');
-            const imgGifPath = path.join(__dirname, 'assets', 'denegado.gif');
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
-            const files = [];
-
-            if (fs.existsSync(logoPath)) {
-                files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-            }
-
-            const canalNormativas = `<#${process.env.CHANNEL_NORMATIVAS_ID || '1517530848658849996'}>`;
-            const canalTickets = `<#${process.env.CHANNEL_TICKETS_ID || '1518087100275097671'}>`;
-
-            const embedDenegado = new EmbedBuilder()
-                .setColor(0xE74C3C) // Rojo carmesí
-                .setAuthor({
-                    name: 'SISTEMA DE WHITELIST | SPAIN RP \uD83C\uDDEA\uD83C\uDDF8',
-                    iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
-                })
-                .setThumbnail('attachment://logo.png') // LOGO FIJO EN LA ESQUINA DERECHA
-                .setTitle('❌ ¡WHITELIST DENEGADA!')
-                .setDescription(
-                    `\u200B\n` +
-                    `⚠️ Hola **${userMention}**, lamentamos informarte que tu solicitud de Whitelist ha sido denegada por el equipo de Staff de **SPAIN RP** \uD83C\uDDEA\uD83C\uDDF8.\n\n` +
-                    `📖 Te recomendamos repasar los conceptos de rol y la normativa antes de volver a postularte.\n\n` +
-                    `📝 **| Puedes repasar la normativa en,**\n` +
-                    `> ${canalNormativas} ❗\n\n` +
-                    `📁 **| Si tienes alguna duda consulta en,**\n` +
-                    `> ${canalTickets} ❗\n\n` +
-                    `\uD83C\uDDEA\uD83C\uDDF8 **| SPAIN RP • Sistema de Whitelist |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
-                    `👤 **Solicitante:** ${userMention}\n` +
-                    `🛡️ **Decidido Por:** ${staffName}`
-                )
-                .setFooter({
-                    text: 'SPAIN RP • Sistema de Whitelist',
-                    iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
-                })
-                .setTimestamp();
-
-            if (fs.existsSync(imgPngPath)) {
-                const attachment = new AttachmentBuilder(imgPngPath, { name: 'denegado.png' });
-                embedDenegado.setImage('attachment://denegado.png');
-                files.push(attachment);
-            } else if (fs.existsSync(imgGifPath)) {
-                const attachment = new AttachmentBuilder(imgGifPath, { name: 'denegado.gif' });
-                embedDenegado.setImage('attachment://denegado.gif');
-                files.push(attachment);
-            }
-
-            await targetChannel.send({
-                content: `# ⚠️ ¡Atención ${userMention}!\n# Tu solicitud ha sido denegada.`,
-                embeds: [embedDenegado],
-                files: files
-            });
-
-            console.log(`[WL DENEGADA] Notificación enviada para ${userMention}`);
+            await sendDeniedNotification({ userMention, staffName });
             processedMessages.add(cacheKey);
         }
     } catch (error) {
@@ -392,13 +415,120 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
 }
 
 // ==========================================
-// 4. EVENTOS DE MENSAJES Y COMANDOS DE PRUEBA
+// 5. EVENTOS DE MENSAJES Y COMANDOS MANUALES
 // ==========================================
 
 client.on('messageCreate', async (message) => {
     console.log(`📥 [MSG RECIBIDO] Canal: #${message.channel ? message.channel.name : 'N/A'} (${message.channel ? message.channel.id : 'N/A'}) | Autor: ${message.author ? message.author.tag : 'N/A'}`);
 
+    // Si el mensaje es enviado por un usuario real (Staff / Admin)
     if (!message.author.bot) {
+        const content = message.content.trim();
+        const args = content.split(/\s+/);
+        const command = args[0].toLowerCase();
+
+        // ----------------------------------------------------
+        // COMANDO MANUAL: !aprobar @usuario / !aprobado @usuario
+        // ----------------------------------------------------
+        if (['!aprobar', '!aprobado', '!wl-aprobar', '!wlaprobar'].includes(command)) {
+            let targetMention = null;
+
+            // 1. Buscar mención directa
+            const mentionedUser = message.mentions.users.find(u => u.id !== client.user.id);
+            if (mentionedUser) {
+                targetMention = `<@${mentionedUser.id}>`;
+            } else if (args[1]) {
+                // 2. Comprobar si se pasó una ID o texto
+                const idMatch = args[1].match(/^<@!?(\d{17,20})>$/) || args[1].match(/^(\d{17,20})$/);
+                if (idMatch) {
+                    targetMention = `<@${idMatch[1]}>`;
+                } else {
+                    targetMention = args.slice(1).join(' ');
+                }
+            }
+
+            if (!targetMention) {
+                return message.reply({
+                    content: `❌ **Uso incorrecto:** Debes mencionar a un usuario o poner su ID.\n📌 *Ejemplo:* \`!aprobar @usuario\` o \`!aprobar 123456789012345678\``
+                });
+            }
+
+            const staffMention = `<@${message.author.id}>`;
+
+            try {
+                const res = await sendApprovedNotification({
+                    userMention: targetMention,
+                    staffName: staffMention
+                });
+
+                await message.react('✅').catch(() => {});
+                return message.reply({
+                    content: `✅ **Whitelist APROBADA enviada con éxito** para ${targetMention} en el canal <#${res.channelId}>.`
+                });
+            } catch (err) {
+                return message.reply({
+                    content: `❌ **Error al enviar el anuncio:** ${err.message}`
+                });
+            }
+        }
+
+        // ----------------------------------------------------
+        // COMANDO MANUAL: !denegar @usuario / !denegado @usuario
+        // ----------------------------------------------------
+        if (['!denegar', '!denegado', '!wl-denegar', '!wldenegar'].includes(command)) {
+            let targetMention = null;
+
+            // 1. Buscar mención directa
+            const mentionedUser = message.mentions.users.find(u => u.id !== client.user.id);
+            if (mentionedUser) {
+                targetMention = `<@${mentionedUser.id}>`;
+            } else if (args[1]) {
+                // 2. Comprobar si se pasó una ID o texto
+                const idMatch = args[1].match(/^<@!?(\d{17,20})>$/) || args[1].match(/^(\d{17,20})$/);
+                if (idMatch) {
+                    targetMention = `<@${idMatch[1]}>`;
+                } else {
+                    targetMention = args.slice(1).join(' ');
+                }
+            }
+
+            if (!targetMention) {
+                return message.reply({
+                    content: `❌ **Uso incorrecto:** Debes mencionar a un usuario o poner su ID.\n📌 *Ejemplo:* \`!denegar @usuario\` o \`!denegar 123456789012345678\``
+                });
+            }
+
+            const staffMention = `<@${message.author.id}>`;
+
+            try {
+                const res = await sendDeniedNotification({
+                    userMention: targetMention,
+                    staffName: staffMention
+                });
+
+                await message.react('❌').catch(() => {});
+                return message.reply({
+                    content: `⚠️ **Whitelist DENEGADA enviada con éxito** para ${targetMention} en el canal <#${res.channelId}>.`
+                });
+            } catch (err) {
+                return message.reply({
+                    content: `❌ **Error al enviar el anuncio:** ${err.message}`
+                });
+            }
+        }
+
+        // ----------------------------------------------------
+        // COMANDO DE AYUDA: !wl-ayuda / !wl-comandos
+        // ----------------------------------------------------
+        if (['!wl-ayuda', '!wl-comandos', '!comandos-wl'].includes(command)) {
+            return message.reply({
+                content: `📖 **COMANDOS DEL BOT DE WHITELIST:**\n\n` +
+                    `✅ \`!aprobar @usuario\` o \`!aprobado @usuario\` → Envía el anuncio oficial de Whitelist Aprobada.\n` +
+                    `❌ \`!denegar @usuario\` o \`!denegado @usuario\` → Envía el anuncio oficial de Whitelist Denegada.\n` +
+                    `🧪 \`!simular @usuario\` → Crea un mensaje interactivo con botones de prueba.\n`
+            });
+        }
+
         // Comando interactivo para simular una solicitud PENDIENTE con botones reales
         if (message.content.startsWith('!simular-pendiente') || message.content.startsWith('!simular')) {
             const mentionedUser = message.mentions.users.first() || message.author;
