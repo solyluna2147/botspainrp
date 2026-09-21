@@ -57,6 +57,35 @@ const client = new Client({
 const CHANNEL_SOLICITUDES_ID = process.env.CHANNEL_SOLICITUDES_ID; // Canal donde llegan las solicitudes del bot de WL
 const CHANNEL_APROBADOS_ID = process.env.CHANNEL_APROBADOS_ID;     // Canal donde se anuncian las WL aprobadas
 const CHANNEL_DENEGADOS_ID = process.env.CHANNEL_DENEGADOS_ID;     // Opcional: Canal donde se anuncian las denegadas (si aplica)
+const ROLE_STAFF_ID = process.env.ROLE_STAFF_ID || '1538191116610838691'; // Rol de Staff autorizado
+
+// Helper para verificar si un miembro tiene permisos de Staff (independientemente de cuántos otros roles tenga)
+async function isStaffMember(member, guild = null, userId = null) {
+    if (!member && guild && userId) {
+        member = await guild.members.fetch(userId).catch(() => null);
+    }
+    if (!member) return false;
+
+    // Si tiene permisos de administrador en el servidor
+    if (member.permissions && member.permissions.has('Administrator')) {
+        return true;
+    }
+
+    // Comprobar si el ID del rol de Staff está presente en su lista de roles
+    if (member.roles && member.roles.cache) {
+        if (member.roles.cache.has(ROLE_STAFF_ID)) return true;
+    }
+
+    // Comprobación de respaldo en array raw de roles
+    if (member.roles && Array.isArray(member.roles) && member.roles.includes(ROLE_STAFF_ID)) {
+        return true;
+    }
+    if (member._roles && Array.isArray(member._roles) && member._roles.includes(ROLE_STAFF_ID)) {
+        return true;
+    }
+
+    return false;
+}
 
 // Set para evitar procesar dos veces el mismo mensaje
 const processedMessages = new Set();
@@ -427,6 +456,23 @@ client.on('messageCreate', async (message) => {
         const args = content.split(/\s+/);
         const command = args[0].toLowerCase();
 
+        const botCommands = [
+            '!aprobar', '!aprobado', '!wl-aprobar', '!wlaprobar',
+            '!denegar', '!denegado', '!wl-denegar', '!wldenegar',
+            '!borrar', '!delete', '!clear', '!purge',
+            '!wl-ayuda', '!wl-comandos', '!comandos-wl',
+            '!simular', '!simular-pendiente'
+        ];
+
+        if (botCommands.includes(command)) {
+            // Verificar si el usuario tiene el rol de Staff o permisos de Administrador
+            const hasStaffPermission = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaffPermission) {
+                console.log(`⛔ [ACCESO DENEGADO] ${message.author.tag} (${message.author.id}) intentó ejecutar '${command}' sin tener el rol de Staff (${ROLE_STAFF_ID}).`);
+                return; // Ignorar el comando de forma silenciosa para evitar spam de usuarios sin permisos
+            }
+        }
+
         // ----------------------------------------------------
         // COMANDO MANUAL: !aprobar @usuario / !aprobado @usuario
         // ----------------------------------------------------
@@ -615,6 +661,14 @@ client.on('interactionCreate', async (interaction) => {
 
     const [action, type, targetUserId] = interaction.customId.split('_');
     if (type !== 'wl') return;
+
+    const hasStaffPermission = await isStaffMember(interaction.member, interaction.guild, interaction.user.id);
+    if (!hasStaffPermission) {
+        return interaction.reply({
+            content: '❌ Solo los miembros con el rol de **Staff** pueden utilizar estos botones.',
+            ephemeral: true
+        });
+    }
 
     const targetUserMention = `<@${targetUserId}>`;
     const staffMention = `<@${interaction.user.id}>`;
