@@ -456,19 +456,17 @@ client.on('messageCreate', async (message) => {
             const staffMention = `<@${message.author.id}>`;
 
             try {
-                const res = await sendApprovedNotification({
+                await sendApprovedNotification({
                     userMention: targetMention,
                     staffName: staffMention
                 });
 
+                // Solo reaccionar para confirmar internamente sin enviar mensajes extra en el chat
                 await message.react('✅').catch(() => {});
-                return message.reply({
-                    content: `✅ **Whitelist APROBADA enviada con éxito** para ${targetMention} en el canal <#${res.channelId}>.`
-                });
+                return;
             } catch (err) {
-                return message.reply({
-                    content: `❌ **Error al enviar el anuncio:** ${err.message}`
-                });
+                console.error('Error al enviar la WL Aprobada manualmente:', err);
+                return;
             }
         }
 
@@ -493,27 +491,64 @@ client.on('messageCreate', async (message) => {
             }
 
             if (!targetMention) {
-                return message.reply({
-                    content: `❌ **Uso incorrecto:** Debes mencionar a un usuario o poner su ID.\n📌 *Ejemplo:* \`!denegar @usuario\` o \`!denegar 123456789012345678\``
-                });
+                return;
             }
 
             const staffMention = `<@${message.author.id}>`;
 
             try {
-                const res = await sendDeniedNotification({
+                await sendDeniedNotification({
                     userMention: targetMention,
                     staffName: staffMention
                 });
 
+                // Solo reaccionar para confirmar internamente sin enviar mensajes extra en el chat
                 await message.react('❌').catch(() => {});
-                return message.reply({
-                    content: `⚠️ **Whitelist DENEGADA enviada con éxito** para ${targetMention} en el canal <#${res.channelId}>.`
-                });
+                return;
             } catch (err) {
-                return message.reply({
-                    content: `❌ **Error al enviar el anuncio:** ${err.message}`
-                });
+                console.error('Error al enviar la WL Denegada manualmente:', err);
+                return;
+            }
+        }
+
+        // ----------------------------------------------------
+        // COMANDO: !borrar (Elimina mensajes o el mensaje respondido)
+        // ----------------------------------------------------
+        if (['!borrar', '!delete', '!clear', '!purge'].includes(command)) {
+            try {
+                // Caso 1: Si el usuario respondió a un mensaje específico con !borrar
+                if (message.reference && message.reference.messageId) {
+                    const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+                    if (repliedMsg) {
+                        await repliedMsg.delete().catch(() => {});
+                    }
+                    await message.delete().catch(() => {});
+                    return;
+                }
+
+                // Caso 2: Si pasa un número como argumento, ej: !borrar 3
+                const count = parseInt(args[1], 10);
+                if (!isNaN(count) && count > 0) {
+                    const deleteCount = Math.min(count + 1, 100);
+                    await message.channel.bulkDelete(deleteCount, true).catch(async () => {
+                        await message.delete().catch(() => {});
+                    });
+                    return;
+                }
+
+                // Caso 3: Solo escribió !borrar sin responder -> Busca y borra el último mensaje del bot en el canal
+                const fetchedMessages = await message.channel.messages.fetch({ limit: 15 }).catch(() => null);
+                if (fetchedMessages) {
+                    const lastBotMsg = fetchedMessages.find(m => m.id !== message.id && m.author.id === client.user.id);
+                    if (lastBotMsg) {
+                        await lastBotMsg.delete().catch(() => {});
+                    }
+                }
+                await message.delete().catch(() => {});
+                return;
+            } catch (err) {
+                console.error('Error al ejecutar comando !borrar:', err);
+                return;
             }
         }
 
@@ -525,6 +560,7 @@ client.on('messageCreate', async (message) => {
                 content: `📖 **COMANDOS DEL BOT DE WHITELIST:**\n\n` +
                     `✅ \`!aprobar @usuario\` o \`!aprobado @usuario\` → Envía el anuncio oficial de Whitelist Aprobada.\n` +
                     `❌ \`!denegar @usuario\` o \`!denegado @usuario\` → Envía el anuncio oficial de Whitelist Denegada.\n` +
+                    `🗑️ \`!borrar\` → Borra el mensaje anterior del bot (o responde a un mensaje con \`!borrar\` para borrarlo).\n` +
                     `🧪 \`!simular @usuario\` → Crea un mensaje interactivo con botones de prueba.\n`
             });
         }

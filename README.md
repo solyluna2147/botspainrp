@@ -36,6 +36,7 @@ Activa el **Modo Desarrollador** en Discord (*Ajustes de Discord -> Avanzado -> 
 
 - **`!aprobar @usuario`** *(o `!aprobado @usuario`, `!aprobar ID`)*: Envía el anuncio oficial de Whitelist Aprobada mencionando al usuario y mostrando qué Staff lo aprobó.
 - **`!denegar @usuario`** *(o `!denegado @usuario`, `!denegar ID`)*: Envía el anuncio oficial de Whitelist Denegada mencionando al usuario y mostrando qué Staff lo denegó.
+- **`!borrar`**: Elimina el último mensaje del bot (o responde a cualquier mensaje con `!borrar` para eliminar ese mensaje específico).
 - **`!simular @usuario`**: Crea una tarjeta de solicitud pendiente de prueba con botones interactivos de Aprobar y Denegar.
 - **`!wl-ayuda`**: Muestra la lista de comandos disponibles.
 
