@@ -987,15 +987,15 @@ client.on('messageCreate', async (message) => {
                     targetUser = message.author;
                 }
 
-                const urlArg = filteredArgs.find(arg => arg.startsWith('http') || arg.includes('twitch.tv') || arg.includes('kick.com') || arg.includes('youtube.com'));
+                let urlArg = filteredArgs.find(arg => arg.startsWith('http') || arg.includes('twitch.tv') || arg.includes('kick.com') || arg.includes('youtube.com') || arg.includes('tiktok.com'));
+                
+                // Si no pone URL, usamos una URL por defecto para pruebas
                 if (!urlArg) {
-                    return message.reply({
-                        content: `❌ **Uso incorrecto:** Debes proporcionar el enlace del stream.\n📌 *Ejemplo:* \`!stream @usuario https://twitch.tv/canal Título del Directo\` o \`!stream https://kick.com/canal\``
-                    });
+                    urlArg = 'https://twitch.tv/spainrp';
                 }
 
                 const titleArgs = filteredArgs.filter(arg => arg !== urlArg);
-                const streamTitle = titleArgs.length > 0 ? titleArgs.join(' ') : 'Roleplay en vivo en SPAIN RP \uD83C\uDDEA\uD83C\uDDF8';
+                const streamTitle = titleArgs.length > 0 ? titleArgs.join(' ') : '🔥 Patrullaje y Rol en Directo | SPAIN RP \uD83C\uDDEA\uD83C\uDDF8';
 
                 let platform = 'Twitch';
                 if (urlArg.includes('kick.com')) platform = 'Kick';
