@@ -1383,7 +1383,11 @@ function pcmToWavBuffer(pcmBuffer, sampleRate = 48000, numChannels = 1, bitDepth
 // Transcripción en streaming con Hugging Face Inference API (Modelo Whisper)
 async function transcribeAudioBufferWithHF(wavBuffer) {
     const hfToken = process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
-    if (!hfToken || !wavBuffer || wavBuffer.length < 2000) return '';
+    if (!hfToken) {
+        console.warn('⚠️ [HF WHISPER] No se ha configurado HUGGINGFACE_API_KEY en las variables de entorno de Render.');
+        return '';
+    }
+    if (!wavBuffer || wavBuffer.length < 2000) return '';
 
     const endpoints = [
         'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3',
@@ -1410,10 +1414,15 @@ async function transcribeAudioBufferWithHF(wavBuffer) {
             if (res.ok) {
                 const data = await res.json();
                 const text = (data.text || '').trim();
-                if (text) return text;
+                if (text) {
+                    console.log(`🎙️ [HF WHISPER ÉXITO (${url.split('/').pop()})]: "${text}"`);
+                    return text;
+                }
+            } else {
+                console.warn(`⚠️ [HF WHISPER HTTP ${res.status}] en ${url.split('/').pop()}: ${await res.text().catch(() => '')}`);
             }
         } catch (e) {
-            // Continúa con el siguiente modelo de fallback
+            console.warn(`⚠️ [HF WHISPER ERROR en ${url.split('/').pop()}]: ${e.message}`);
         }
     }
     return '';
@@ -3873,6 +3882,15 @@ client.on('messageCreate', async (message) => {
                 const player = createAudioPlayer();
                 connection.subscribe(player);
 
+                // Frame de silencio Opus para mantener activo el socket UDP bidireccional de Discord
+                class SilenceStream extends Readable {
+                    _read() {
+                        this.push(Buffer.from([0xF8, 0xFF, 0xFE]));
+                    }
+                }
+                const silenceResource = createAudioResource(new SilenceStream(), { inputType: StreamType.Opus });
+                player.play(silenceResource);
+
                 const chatSession = {
                     userId: message.author.id,
                     userName: message.author.username,
@@ -3913,6 +3931,7 @@ client.on('messageCreate', async (message) => {
                         activeStreams.delete(userId);
                         if (chunks.length === 0) return;
                         const pcm = Buffer.concat(chunks);
+                        console.log(`🎙️ [VOZ DETECTADA] Paquete PCM recibido de usuario ${userId}: ${pcm.length} bytes`);
 
                         // Mínimo 16000 bytes (~0.35s) para descartar clicks/tos/respiraciones
                         if (pcm.length > 16000) {
@@ -3921,6 +3940,7 @@ client.on('messageCreate', async (message) => {
 
                             if (userSaid && userSaid.trim().length > 3) {
                                 const cleanSaid = userSaid.trim();
+                                console.log(`🗣️ [VOZ TRANSCRITA] "${cleanSaid}"`);
                                 const lower = cleanSaid.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()?"']/g, '').trim();
 
                                 // Descartar alucinaciones de Whisper comunes producidas por ruido/silencio
