@@ -1389,10 +1389,13 @@ async function transcribeAudioBufferWithHF(wavBuffer) {
     }
     if (!wavBuffer || wavBuffer.length < 2000) return '';
 
+    // Modelos Whisper en Hugging Face (priorizando modelos abiertos y comunitarios sin bloqueo de cuota Pro)
     const endpoints = [
-        'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3',
         'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo',
-        'https://router.huggingface.co/hf-inference/models/openai/whisper-small'
+        'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3',
+        'https://router.huggingface.co/hf-inference/models/openai/whisper-medium',
+        'https://router.huggingface.co/hf-inference/models/openai/whisper-base',
+        'https://router.huggingface.co/hf-inference/models/Systran/faster-whisper-large-v3'
     ];
 
     for (const url of endpoints) {
@@ -1419,7 +1422,8 @@ async function transcribeAudioBufferWithHF(wavBuffer) {
                     return text;
                 }
             } else {
-                console.warn(`⚠️ [HF WHISPER HTTP ${res.status}] en ${url.split('/').pop()}: ${await res.text().catch(() => '')}`);
+                const errBody = await res.text().catch(() => '');
+                console.warn(`⚠️ [HF WHISPER HTTP ${res.status}] en ${url.split('/').pop()}: ${errBody.substring(0, 120)}`);
             }
         } catch (e) {
             console.warn(`⚠️ [HF WHISPER ERROR en ${url.split('/').pop()}]: ${e.message}`);
@@ -1761,9 +1765,22 @@ async function fetchYouTubeMetadata(target) {
     return new Promise((resolve) => {
         try {
             console.log(`🔎 [METADATOS YT] Obteniendo info de: "${target}"...`);
-            const pyCmd = process.platform === 'win32' ? 'python' : 'python3';
-            const proc = spawn(pyCmd, [
-                '-m', 'yt_dlp',
+            const localBinary = path.join(__dirname, 'yt-dlp');
+            let ytdlpBin = 'yt-dlp';
+            let ytdlpArgs = [];
+
+            if (fs.existsSync(localBinary)) {
+                ytdlpBin = localBinary;
+            } else if (process.platform === 'win32') {
+                ytdlpBin = 'python';
+                ytdlpArgs = ['-m', 'yt_dlp'];
+            } else {
+                ytdlpBin = 'python3';
+                ytdlpArgs = ['-m', 'yt_dlp'];
+            }
+
+            const proc = spawn(ytdlpBin, [
+                ...ytdlpArgs,
                 '--extractor-args', 'youtube:player_client=android,ios,web',
                 '--default-search', 'ytsearch1',
                 '--no-playlist',
@@ -1962,9 +1979,22 @@ async function playMusicInVoice(query, connection, player, guildId) {
             console.log(`🎵 [MÚSICA] Iniciando yt-dlp y FFmpeg para: "${cleanTarget}"...`);
 
             // Extraer el stream de audio directo mediante yt-dlp (Soporte 100% oficial y actualizado)
-            const pyCmd = process.platform === 'win32' ? 'python' : 'python3';
-            const ytdlpProcess = spawn(pyCmd, [
-                '-m', 'yt_dlp',
+            const localBinary = path.join(__dirname, 'yt-dlp');
+            let ytdlpBin = 'yt-dlp';
+            let ytdlpArgs = [];
+
+            if (fs.existsSync(localBinary)) {
+                ytdlpBin = localBinary;
+            } else if (process.platform === 'win32') {
+                ytdlpBin = 'python';
+                ytdlpArgs = ['-m', 'yt_dlp'];
+            } else {
+                ytdlpBin = 'python3';
+                ytdlpArgs = ['-m', 'yt_dlp'];
+            }
+
+            const ytdlpProcess = spawn(ytdlpBin, [
+                ...ytdlpArgs,
                 '--extractor-args', 'youtube:player_client=android,ios,web',
                 '--no-progress',
                 '-f', 'ba/b',
