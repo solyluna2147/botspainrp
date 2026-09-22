@@ -10,9 +10,52 @@ const {
     ActivityType,
     Partials
 } = require('discord.js');
+const {
+    joinVoiceChannel,
+    getVoiceConnection,
+    createAudioPlayer,
+    createAudioResource,
+    AudioPlayerStatus,
+    StreamType,
+    EndBehaviorType,
+    VoiceConnectionStatus,
+    entersState
+} = require('@discordjs/voice');
+const play = require('play-dl');
+const prism = require('prism-media');
+const { Readable } = require('stream');
+const { spawn } = require('child_process');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const googleTTS = require('google-tts-api');
+const ffmpegStatic = require('ffmpeg-static');
+process.env.FFMPEG_PATH = ffmpegStatic;
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('⚠️ [ERROR NO CAPTURADO / UNHANDLED REJECTION]:', reason);
+});
+
+process.on('uncaughtException', (err, origin) => {
+    console.error('🔥 [EXCEPCIÓN CRÍTICA / UNCAUGHT EXCEPTION]:', err);
+});
+
+// Función para purgar archivos temporales de audio sobrantes
+function purgeTempAudioFiles() {
+    try {
+        const files = fs.readdirSync(__dirname);
+        for (const file of files) {
+            if ((file.startsWith('tts_') || file.startsWith('test_')) && file.endsWith('.mp3')) {
+                const fullPath = path.join(__dirname, file);
+                try {
+                    fs.unlinkSync(fullPath);
+                } catch (e) {}
+            }
+        }
+    } catch (e) {}
+}
+purgeTempAudioFiles();
+setInterval(purgeTempAudioFiles, 30 * 60 * 1000); // Cada 30 minutos
 
 // ==========================================
 // 1. SERVIDOR EXPRESS PARA RENDER (24/7)
@@ -29,7 +72,7 @@ app.get('/health', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🌐 Servidor web de Render escuchando en el puerto ${PORT}`);
+    console.log(`🚀 [WEB] Servidor web 24/7 activo en el puerto ${PORT}`);
 });
 
 // ==========================================
@@ -43,6 +86,7 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessageReactions,
         GatewayIntentBits.GuildPresences, // Necesario para detectar cuando los streamers inician directo
+        GatewayIntentBits.GuildVoiceStates, // Necesario para entrevistas de voz en vivo
         GatewayIntentBits.DirectMessages,
     ],
     partials: [
@@ -65,9 +109,10 @@ function loadDynamicConfig() {
         CHANNEL_SOLICITUDES_ID: process.env.CHANNEL_SOLICITUDES_ID || '',
         CHANNEL_APROBADOS_ID: process.env.CHANNEL_APROBADOS_ID || '1550880724930797610',
         CHANNEL_DENEGADOS_ID: process.env.CHANNEL_DENEGADOS_ID || '',
+        CHANNEL_ENTREVISTAS_ID: process.env.CHANNEL_ENTREVISTAS_ID || '1551179786108280923',
         CHANNEL_STATUS_ID: process.env.CHANNEL_STATUS_ID || '',
-        CHANNEL_STREAM_PANEL_ID: process.env.CHANNEL_STREAM_PANEL_ID || '1551179786108280923',
-        CHANNEL_STREAMERS_ID: process.env.CHANNEL_STREAMERS_ID || '1551179646865772644',
+        CHANNEL_STREAM_PANEL_ID: process.env.CHANNEL_STREAM_PANEL_ID || '1551998229384536114',
+        CHANNEL_STREAMERS_ID: process.env.CHANNEL_STREAMERS_ID || '1517530849032016006',
         CHANNEL_NORMATIVAS_ID: process.env.CHANNEL_NORMATIVAS_ID || '1517530848658849996',
         CHANNEL_TICKETS_ID: process.env.CHANNEL_TICKETS_ID || '1517530849334136844',
         CHANNEL_GENERAL_ID: process.env.CHANNEL_GENERAL_ID || '1517530849032016002',
@@ -124,11 +169,67 @@ function getStreamersData() {
 
 function saveStreamer(userId, streamerObj) {
     const current = getStreamersData();
-    current[userId] = streamerObj;
+    const existing = current[userId] || {};
+
+    const updatedProfile = {
+        ...existing
+    };
+
+    if (streamerObj.twitchUrl) {
+        updatedProfile.twitchUrl = streamerObj.twitchUrl;
+        if (streamerObj.twitchTitle !== undefined) updatedProfile.twitchTitle = streamerObj.twitchTitle;
+    }
+
+    if (streamerObj.tiktokUrl) {
+        updatedProfile.tiktokUrl = streamerObj.tiktokUrl;
+        if (streamerObj.tiktokTitle !== undefined) updatedProfile.tiktokTitle = streamerObj.tiktokTitle;
+    }
+
+    if (streamerObj.url) {
+        const urlLower = streamerObj.url.toLowerCase();
+        if (urlLower.includes('tiktok.com')) {
+            updatedProfile.tiktokUrl = streamerObj.url;
+            if (streamerObj.title) updatedProfile.tiktokTitle = streamerObj.title;
+        } else if (urlLower.includes('twitch.tv')) {
+            updatedProfile.twitchUrl = streamerObj.url;
+            if (streamerObj.title) updatedProfile.twitchTitle = streamerObj.title;
+        } else {
+            updatedProfile.url = streamerObj.url;
+            updatedProfile.platform = streamerObj.platform || 'Twitch';
+        }
+    }
+
+    if (streamerObj.name) updatedProfile.name = streamerObj.name;
+
+    current[userId] = updatedProfile;
     try {
         fs.writeFileSync(STREAMERS_FILE, JSON.stringify(current, null, 2), 'utf8');
     } catch (e) {
         console.error('Error al guardar en streamers.json:', e);
+    }
+}
+
+function removeStreamer(userId) {
+    const current = getStreamersData();
+    if (current[userId]) {
+        delete current[userId];
+        try {
+            fs.writeFileSync(STREAMERS_FILE, JSON.stringify(current, null, 2), 'utf8');
+            return true;
+        } catch (e) {
+            console.error('Error al eliminar de streamers.json:', e);
+        }
+    }
+    return false;
+}
+
+function clearAllStreamers() {
+    try {
+        fs.writeFileSync(STREAMERS_FILE, JSON.stringify({}, null, 2), 'utf8');
+        return true;
+    } catch (e) {
+        console.error('Error al limpiar streamers.json:', e);
+        return false;
     }
 }
 
@@ -143,6 +244,9 @@ let liveServerState = {
 };
 
 let liveStatusMessageRef = null;
+
+// Set en memoria para evitar reprocesar mensajes duplicados de Whitelist
+const processedMessages = new Set();
 
 // ==========================================
 // SISTEMA DE RETROALIMENTACIÓN Y APRENDIZAJE CONTINUO DE IA (CONTRASTIVO & FORENSE)
@@ -529,9 +633,9 @@ async function updateChannelStatusPanel() {
 // Función para construir el Embed del Panel de Streamers (con Logo y Banner oficial)
 function buildStreamPanelEmbed() {
     const logoPath = path.join(__dirname, 'assets', 'logo.png');
-    const imgDirectoPath = path.join(__dirname, 'assets', 'directo.png');
+    const imgPanelPath = path.join(__dirname, 'assets', 'panel_directos.png');
 
-    const canalStreamers = `<#${botConfig.CHANNEL_STREAMERS_ID || '1551179646865772644'}>`;
+    const canalStreamers = `<#${botConfig.CHANNEL_STREAMERS_ID || '1517530849032016006'}>`;
     const canalTickets = `<#${botConfig.CHANNEL_TICKETS_ID || '1517530849334136844'}>`;
     const canalGeneral = `<#${botConfig.CHANNEL_GENERAL_ID || '1517530849032016002'}>`;
 
@@ -539,20 +643,21 @@ function buildStreamPanelEmbed() {
         .setColor(0x9B59B6) // Morado elegante SPAIN RP
         .setAuthor({
             name: 'SISTEMA DE CREADORES | SPAIN RP 🇪🇸',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user?.displayAvatarURL()
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
-        .setThumbnail('attachment://logo.png')
+        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
         .setTitle('🟣 ¡PANEL DE NOTIFICACIÓN DE DIRECTOS!')
         .setDescription(
             `\u200B\n` +
             `✨ ¡Bienvenido al **Panel Oficial de Creadores y Streamers** de **SPAIN RP** 🇪🇸!\n\n` +
-            `Si eres Creador de Contenido o Streamer oficial del servidor, puedes avisar a toda la comunidad cuando comiences directo en **Twitch, Kick o YouTube** con un solo clic.\n\n` +
+            `Si eres Creador de Contenido oficial del servidor, puedes avisar a toda la comunidad cuando comiences directo en **Twitch o TikTok** con un solo clic.\n\n` +
             `📢 **| ¿Cómo publicar tu directo?**\n` +
-            `> Haz clic en el botón inferior **\`🟣 Notificar Directo\`** ❗\n\n` +
+            `> Haz clic en el botón de tu plataforma:\n` +
+            `> • 🎥 **\`Notificar Twitch\`** (Botón Morado) para emisiones en Twitch.\n` +
+            `> • 🎥 **\`Notificar TikTok\`** (Botón Rosa) para emisiones en TikTok LIVE.\n\n` +
             `📍 **| Canal de publicación oficial:**\n` +
             `> ${canalStreamers} ❗\n\n` +
             `⚠️ **| Normativas de los Streamers:**\n` +
-            `> • Solo se permite **1 notificación por directo** *(Cooldown de 2 horas)*.\n` +
             `> • Debes estar transmitiendo contenido dentro de **SPAIN RP** 🇪🇸.\n\n` +
             `📁 **| ¿Quieres ser Streamer Oficial?**\n` +
             `> Abre un ticket de creadores en ${canalTickets} ❗\n\n` +
@@ -562,12 +667,12 @@ function buildStreamPanelEmbed() {
         )
         .setFooter({
             text: 'SPAIN RP • Creadores de Contenido Oficiales',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user?.displayAvatarURL()
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
 
-    if (fs.existsSync(imgDirectoPath)) {
-        embed.setImage('attachment://directo.png');
+    if (fs.existsSync(imgPanelPath)) {
+        embed.setImage('attachment://panel_directos.png');
     }
 
     return embed;
@@ -576,10 +681,15 @@ function buildStreamPanelEmbed() {
 function buildStreamPanelRow() {
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('btn_notificar_directo')
-            .setLabel('🟣 Notificar Directo')
+            .setCustomId('btn_notificar_twitch')
+            .setLabel('Notificar Twitch')
             .setStyle(ButtonStyle.Primary)
-            .setEmoji('📢')
+            .setEmoji('🎥'),
+        new ButtonBuilder()
+            .setCustomId('btn_notificar_tiktok')
+            .setLabel('Notificar TikTok')
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji('🎥')
     );
 }
 
@@ -597,10 +707,9 @@ async function ensureStreamPanel() {
         const files = [];
 
         const logoPath = path.join(__dirname, 'assets', 'logo.png');
-        const imgDirectoPath = path.join(__dirname, 'assets', 'directo.png');
-
+        const imgPanelPath = path.join(__dirname, 'assets', 'panel_directos.png');
         if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-        if (fs.existsSync(imgDirectoPath)) files.push(new AttachmentBuilder(imgDirectoPath, { name: 'directo.png' }));
+        if (fs.existsSync(imgPanelPath)) files.push(new AttachmentBuilder(imgPanelPath, { name: 'panel_directos.png' }));
 
         const fetched = await channel.messages.fetch({ limit: 10 }).catch(() => null);
         const prevMsg = fetched ? fetched.find(m => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0].title?.includes('PANEL DE NOTIFICACIÓN DE DIRECTOS')) : null;
@@ -615,6 +724,80 @@ async function ensureStreamPanel() {
         console.error('Error al asegurar el panel de streams:', e);
     }
 }
+
+// Función para obtener el título real del directo en vivo (desde Twitch/TikTok o presencia de Discord)
+async function fetchLiveStreamTitle(streamUrl, member = null, defaultTitle = null) {
+    // 1. Si el usuario tiene actividad de Streaming / Rich Presence en Discord
+    if (member && member.presence && member.presence.activities) {
+        const streamAct = member.presence.activities.find(act =>
+            act.type === ActivityType.Streaming ||
+            (act.details && act.details.trim()) ||
+            (act.state && act.state.trim())
+        );
+        if (streamAct) {
+            const titleFound = streamAct.details || streamAct.state || streamAct.name;
+            if (titleFound && titleFound.trim() && !titleFound.toLowerCase().includes('twitch.tv') && !titleFound.toLowerCase().includes('tiktok.com')) {
+                return titleFound.trim();
+            }
+        }
+    }
+
+    // 2. Si es Twitch, consultar la API pública / oEmbed de Twitch para obtener el título exacto actual
+    try {
+        if (streamUrl && streamUrl.includes('twitch.tv')) {
+            const match = streamUrl.match(/twitch\.tv\/([a-zA-Z0-9_]+)/i);
+            if (match && match[1]) {
+                const channelName = match[1];
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+                // Consulta rápida a oEmbed de Twitch para obtener el título del directo
+                const oembedRes = await fetch(`https://www.twitch.tv/${channelName}`, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+                    signal: controller.signal
+                }).catch(() => null);
+                clearTimeout(timeoutId);
+
+                if (oembedRes && oembedRes.ok) {
+                    const html = await oembedRes.text().catch(() => '');
+                    // Extraer meta og:description o twitter:title o title
+                    const descMatch = html.match(/<meta\s+property=["']og:description["']\s+content=["']([^"']+)["']/i) ||
+                                      html.match(/<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i);
+                    if (descMatch && descMatch[1] && !descMatch[1].toLowerCase().includes('twitch is the world\'s')) {
+                        return descMatch[1].trim();
+                    }
+
+                    const titleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
+                    if (titleMatch && titleMatch[1]) {
+                        const rawTitle = titleMatch[1].replace(/\s*-\s*Twitch$/i, '').trim();
+                        if (rawTitle && rawTitle.toLowerCase() !== channelName.toLowerCase()) {
+                            return rawTitle;
+                        }
+                    }
+                }
+                return `🔴 Directo de ${channelName} | SPAIN RP 🇪🇸`;
+            }
+        }
+    } catch (err) {}
+
+    // 3. Si es TikTok, extraer nombre del creador
+    try {
+        if (streamUrl && streamUrl.includes('tiktok.com')) {
+            const match = streamUrl.match(/@([a-zA-Z0-9_.]+)/i);
+            if (match && match[1]) {
+                const tiktokUser = match[1];
+                return `🔴 LIVE de @${tiktokUser} | SPAIN RP 🇪🇸`;
+            }
+        }
+    } catch (e) {}
+
+    if (defaultTitle && defaultTitle.trim() && !defaultTitle.includes('Roleplay en directo en SPAIN RP')) {
+        return defaultTitle.trim();
+    }
+
+    return '🔥 Roleplay en vivo en SPAIN RP 🇪🇸';
+}
+
 
 // ==========================================
 // MOTOR DE AUDITORÍA Y DETECCIÓN MULTI-CAPA DE IA & CLICHÉS
@@ -1159,39 +1342,731 @@ async function isStaffMember(member, guild = null, userId = null) {
     return false;
 }
 
-// Set para evitar procesar dos veces el mismo mensaje
-const processedMessages = new Set();
+// ==========================================
+// 8. SISTEMA INDEPENDIENTE: AUDITORÍA DE ENTREVISTAS POR VOZ (WHISPER AI)
+// ==========================================
+
+// Mapeo en memoria RAM de entrevistas de voz activas (100% efímero, 0 bytes en disco)
+// Clave: guildId -> { targetUserId, targetMention, staffMention, channelId, voiceChannelId, startTime, transcripts: [], connection }
+const activeVoiceInterviews = new Map();
+
+// Mapeo independiente para sesiones de charla interactiva con la IA en canal de voz
+// Clave: guildId -> { userId, userName, channelId, connection, player, isGenerating }
+const activeVoiceChats = new Map();
+
+// Helper para crear un Buffer WAV estándar en memoria RAM (44 bytes header) sin crear archivos en disco
+function pcmToWavBuffer(pcmBuffer, sampleRate = 48000, numChannels = 1, bitDepth = 16) {
+    const header = Buffer.alloc(44);
+    const byteRate = (sampleRate * numChannels * bitDepth) / 8;
+    const blockAlign = (numChannels * bitDepth) / 8;
+    const dataLength = pcmBuffer.length;
+
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + dataLength, 4);
+    header.write('WAVE', 8);
+
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(numChannels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitDepth, 34);
+
+    header.write('data', 36);
+    header.writeUInt32LE(dataLength, 40);
+
+    return Buffer.concat([header, pcmBuffer]);
+}
+
+// Transcripción en streaming con Hugging Face Inference API (Modelo Whisper)
+async function transcribeAudioBufferWithHF(wavBuffer) {
+    const hfToken = process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
+    if (!hfToken || !wavBuffer || wavBuffer.length < 2000) return '';
+
+    const endpoints = [
+        'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3',
+        'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo',
+        'https://router.huggingface.co/hf-inference/models/openai/whisper-small'
+    ];
+
+    for (const url of endpoints) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${hfToken.trim()}`,
+                    'Content-Type': 'audio/wav'
+                },
+                body: wavBuffer,
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            if (res.ok) {
+                const data = await res.json();
+                const text = (data.text || '').trim();
+                if (text) return text;
+            }
+        } catch (e) {
+            // Continúa con el siguiente modelo de fallback
+        }
+    }
+    return '';
+}
+
+// Generar respuesta 100% autónoma, contextual y fluida por IA para voz humana
+async function generateAiVoiceChatResponse(userPrompt, history = []) {
+    const geminiKey = process.env.GEMINI_API_KEY;
+    const now = new Date();
+    const timeString = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const dateString = now.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+
+    const cleanInput = (userPrompt || '').replace(/^(bot|oye bot|hola bot|mira bot|dime bot|escucha bot)[\s,:]*/i, '').trim();
+    const lower = (userPrompt || '').toLowerCase();
+
+    // 1. DICCIONARIO COMPLETO, EXTENSO Y VARIADO DE DEFINICIONES DE ROLEPLAY (Entonación 100% Humana de España)
+    const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+    // Concepto: VALORAR VIDA
+    if (/\b(valorar|valoracion|valoro)\s*(la)?\s*vida\b/i.test(lower) || /\b(vida)\b/i.test(lower) && /\b(qu[eé]\s+es|explica|dime)\b/i.test(lower)) {
+        return pickRandom([
+            `¡Hombre, valorar vida es el pilar sagrado de todo el servidor! Significa que debes interpretar que tu personaje siente un miedo real a morir o sufrir daños graves. Por ejemplo, si vas por la calle y alguien te saca un arma o te encañona entre tres personas, no puedes ir de valiente, vacilarles ni intentar sacar tú una pipa, sino que tienes que cooperar, levantar las manos y hacer lo que te digan para salvar el pellejo.`,
+            `Pues mira, valorar vida básicamente consiste en poner la integridad física de tu personaje por encima de cualquier orgullo o dinero. En la vida real nadie se arriesga a recibir un tiro por no entregar una cartera, pues en el rol igual: si estás en clara desventaja o bajo amenaza directa de muerte, debes acatar las órdenes y temer por tu vida porque solo tienes una.`,
+            `¡Claro crack! Valorar vida es no hacerte el héroe de película. Si te están apuntando por la espalda o estás acorralado, tu instinto natural debe ser sobrevivir. No puedes sacar un arma de la nada cuando ya te tienen encañonado ni saltar de un coche a doscientos por hora porque tu personaje no es inmortal.`
+        ]);
+    }
+
+    // Concepto: POWERGAMING (PG)
+    if (/\b(pg|powergaming|power gaming|power-gaming)\b/i.test(lower)) {
+        return pickRandom([
+            `¡El Powergaming tiene dos vertientes muy claras! La primera es hacer cosas que serían físicamente imposibles en la vida real, como tirarte de un tercer piso y salir corriendo como si nada. Y la segunda es forzar el rol de otro jugador sin darle posibilidad de reaccionar, por ejemplo poner en un comando que le quitas la cartera de un puñetazo sin que la otra persona pueda defenderse.`,
+            `Pues mira, Powergaming es cuando rompes las leyes de la física o abusas de las mecánicas del juego para tener ventaja. Si sufres un accidente frontal a ciento cincuenta kilómetros por hora contra un muro, tienes la obligación de rolear el choque y los dolores, no puedes seguir conduciendo como si tu coche fuera un tanque.`,
+            `¡Básicamente crack, Powergaming es cualquier acción que no tenga coherencia humana real! Desde llevar cinco fusiles de asalto escondidos en el bolsillo hasta obligar a otro usuario a aceptar una acción tuya sin que pueda resistirse ni rolear su parte.`
+        ]);
+    }
+
+    // Concepto: METAGAMING (MG)
+    if (/\b(mg|metagaming|meta gaming|meta-gaming)\b/i.test(lower)) {
+        return pickRandom([
+            `¡Metagaming es uno de los fallos más sancionados en el servidor! Consiste en utilizar cualquier tipo de información que has obtenido fuera del juego, ya sea por canales de Discord, streams de Twitch o mensajes privados, para beneficiar a tu personaje dentro del juego cuando él realmente no tiene cómo saberlo.`,
+            `Pues mira crack, si un amigo te dice por WhatsApp que la policía está haciendo una redada en el barrio y tú vas para allá preparado, estás cometiendo Metagaming porque tu personaje en el juego no ha recibido ninguna llamada ni mensaje dentro del rol. Toda información debe transmitirse exclusivamente mediante medios IC.`,
+            `¡Exacto fenómeno! Metagaming es mezclar lo OOC con lo IC. Por ejemplo, ver el nombre que un jugador tiene arriba de su cabeza y llamarle por su nombre real sin haberle conocido antes en persona dentro del servidor.`
+        ]);
+    }
+
+    // Concepto: VDM (Vehicle Deathmatch)
+    if (/\b(vdm|vehicle deathmatch|atropellar|carkill|car kill)\b/i.test(lower)) {
+        return pickRandom([
+            `¡El VDM es utilizar cualquier vehículo, ya sea coche, moto o camión, como si fuera un arma letal para atropellar o embestir a otros jugadores o a sus vehículos sin un motivo de peso ni un rol previo que lo justifique!`,
+            `Pues mira, el coche sirve para desplazarte por la ciudad, no para ir por las aceras llevándote a la gente por delante. Atropellar a alguien de forma intencionada para matarlo o quitarle ventaja en un tiroteo está totalmente prohibido en Spain RP.`,
+            `¡Claro crack! El Vehicle Deathmatch es emplear tu vehículo de forma antideportiva para chocar, golpear o arrollar a otros usuarios. Los coches sufren averías y atropellar a alguien en la vida real tiene consecuencias penales gravísimas.`
+        ]);
+    }
+
+    // Concepto: RDM (Random Deathmatch)
+    if (/\b(rdm|random deathmatch|matar sin rol|deathmatch)\b/i.test(lower)) {
+        return pickRandom([
+            `¡El RDM consiste en agredir, disparar o matar a otro usuario de forma totalmente aleatoria, sin haber mediado palabra ni haber iniciado previamente una interacción de rol que justifique ese acto de violencia!`,
+            `Pues mira, Spain RP no es un juego de disparos por equipos. No puedes llegar a una zona, sacar un arma y liarte a tiros con el primero que pase. Para llegar a la agresión física o armada debe existir un trasfondo, una discusión o un conflicto previo bien desarrollado.`,
+            `¡Totalmente crack! RDM es asesinar sin motivo de rol. Todo tiroteo o agresión debe tener un motivo coherente dentro de la historia de tu personaje y una advertencia o diálogo que lo preceda.`
+        ]);
+    }
+
+    // Concepto: PK (Player Kill)
+    if (/\b(pk|player kill|playerkill)\b/i.test(lower) && !/\b(ck)\b/i.test(lower)) {
+        return pickRandom([
+            `¡El Player Kill o PK es la pérdida de memoria de los acontecimientos recientes cuando tu personaje queda inconsciente en un rol y es reanimado en el hospital! Tu personaje sigue vivo, pero olvida todo lo relacionado con esa escena, quién le disparó o por qué estaba allí.`,
+            `Pues mira, existen dos tipos: el PK parcial, donde olvidas únicamente el tiroteo o situación concreta que te llevó al hospital; y el PK total, donde olvidas por completo a una banda, trabajo o grupo con el que tenías relación para desvincularte de ellos definitivamente.`,
+            `¡Exacto crack! Al recibir un PK no pierdes tu personaje ni tu dinero, simplemente limpias la memoria de los hechos que provocaron tu muerte temporal para evitar rencores y venganzas sin sentido.`
+        ]);
+    }
+
+    // Concepto: CK (Character Kill)
+    if (/\b(ck|character kill|characterkill|muerte definitiva)\b/i.test(lower)) {
+        return pickRandom([
+            `¡El Character Kill o CK es la muerte absoluta, definitiva e irreversible de tu personaje! Su historia se cierra por completo, pierde todas sus propiedades y relaciones, y estás obligado a crearte un personaje nuevo desde cero con otra identidad.`,
+            `Pues mira, un CK puede ser solicitado voluntariamente por ti cuando quieres terminar la historia de tu personaje, o puede ser solicitado por una facción oficial o la policía mediante un trámite administrativo con el Staff si existen motivos de peso suficientes.`,
+            `¡Hombre, el CK es lo más drástico en el roleplay! Significa que tu personaje deja de existir para siempre en la ciudad de Spain RP y no puedes volver a utilizar ni su nombre ni su trasfondo.`
+        ]);
+    }
+
+    // Concepto: IC / OOC
+    if (/\b(ic|ooc|in character|out of character)\b/i.test(lower)) {
+        return pickRandom([
+            `¡Pues mira, IC significa "In Character", es decir, todo lo que tu personaje siente, dice y experimenta dentro del juego. Y OOC es "Out of Character", cuando hablas tú como persona real a través de los canales de texto habilitados fuera del rol!`,
+            `¡La distinción es fundamental crack! Nunca debes mezclar lo que te pasa a ti en la vida real con lo que le pasa a tu personaje en el servidor. Si alguien te insulta dentro del rol es a tu personaje, no a ti de forma personal.`
+        ]);
+    }
+
+    // Concepto: ROL DE ENTORNO
+    if (/\b(entorno|rol de entorno|ambiente|npc|ciudad)\b/i.test(lower)) {
+        return pickRandom([
+            `¡El Rol de Entorno es la ambientación de la ciudad! Debes tener en cuenta que Los Santos es una metrópoli con millones de habitantes, cámaras de seguridad, tráfico constante y comisarías cerca, aunque en tu pantalla no veas a otros jugadores en ese momento.`,
+            `Pues mira crack, cometer un secuestro o un tiroteo en plena Gran Vía o enfrente del banco central no es realista a menos que rolees la llamada a la policía o la presencia de testigos que alertarían a las autoridades de inmediato.`
+        ]);
+    }
+
+    // Concepto: EVASIÓN DE ROL
+    if (/\b(evasion|evadir|evasion de rol|desconexion|tirar de cable)\b/i.test(lower)) {
+        return pickRandom([
+            `¡Evasión de rol es desconectarte del juego, forzar un error, suicidarte o huir deliberadamente de una situación que no te favorece para evitar ser arrestado, robado o sancionado! Está castigado severamente por el Staff.`,
+            `¡Totalmente crack! Aunque la situación en el rol sea desfavorable para ti, debes continuar el rol hasta el final con deportividad y respeto hacia los demás compañeros.`
+        ]);
+    }
+
+    // Concepto: ZONA SEGURA / SAFEZONE
+    if (/\b(safezone|safe zone|zona segura|hospital|comisaria)\b/i.test(lower)) {
+        return pickRandom([
+            `¡Una Zona Segura es un punto neurálgico del mapa, como los hospitales, las comisarías de policía o los garajes centrales, donde está estrictamente prohibido cometer cualquier acto delictivo, sacar armas, secuestrar o iniciar altercados!`,
+            `Pues mira, si alguien está escapando de un tiroteo o persecución, no puede refugiarse en una Zona Segura para evitar que le atrapen, ya que eso se considera evasión de rol.`
+        ]);
+    }
+
+    // Concepto: NULA VALORACIÓN DE VIDA (NVV)
+    if (/\b(nvv|nula valoracion|nula vida)\b/i.test(lower)) {
+        return pickRandom([
+            `¡Nula valoración de vida es pasar olímpicamente del peligro cuando estás encañonado por varias personas armadas, vacilar a tus agresores, o negarte a levantar las manos actuando como si fueras de hierro!`,
+            `¡Exacto fenómeno! Todo personaje debe comportarse con sensatez humana ante una situación de riesgo mortal evidente.`
+        ]);
+    }
+
+    // Concepto: QUÉ ES EL ROLEPLAY / QUÉ ES EL ROL
+    if (/\b(qu[eé]\s+es\s+(el\s+)?rol|qu[eé]\s+es\s+(el\s+)?roleplay)\b/i.test(lower)) {
+        return pickRandom([
+            `¡El Roleplay es el arte de crear un personaje con su propia psicología, historia de vida, virtudes y defectos, e interpretarlo dentro de un mundo virtual interactuando con los demás como si fuera una película interactiva en vivo!`,
+            `Pues mira, no se trata de ganar o acumular dinero, sino de generar historias apasionantes, respetar las normativas y convivir con la comunidad de forma inmersiva y divertida.`
+        ]);
+    }
+
+    // Concepto: QUÉ ES SPAIN RP
+    if (/\b(spain rp|servidor|este server)\b/i.test(lower)) {
+        return `¡Spain RP es una comunidad española de FiveM dedicada al rol serio y de calidad, con sistemas avanzados, economía equilibrada y un equipo de Staff comprometido con la mejor experiencia para todos!`;
+    }
+
+    // Preguntas de HORA o FECHA
+    if (/\b(hora|qu[eé]\s+hora|tiempo)\b/i.test(lower)) {
+        return `¡Pues mira, ahora mismo son exactamente las ${timeString} de la noche!`;
+    }
+    if (/\b(d[ií]a|fecha|hoy)\b/i.test(lower)) {
+        return `¡Hoy estamos a ${dateString}!`;
+    }
+
+    // SALUDOS / ESTADO DE ÁNIMO
+    if (/\b(c[oó]mo\s+est[aá]s|qu[eé]\s+tal|c[oó]mo\s+andas|c[oó]mo\s+te\s+va)\b/i.test(lower)) {
+        return pickRandom([
+            `¡De lujo crack! Aquí al pie del cañón en el Discord de Spain RP, ¿tú qué tal llevas el día por la ciudad?`,
+            `¡Todo genial amigo! Listo para resolver cualquier duda de rol o normativa que tengas, dime qué necesitas.`,
+            `¡Muy bien hombre! Con ganas de buen rol y de ayudar a la comunidad, ¿qué te cuentas?`
+        ]);
+    }
+
+    if (/\b(hola|buenas|hey|qu[eé]\s+pasa|saludos)\b/i.test(lower)) {
+        return pickRandom([
+            `¡Muy buenas crack! ¿Qué duda tienes sobre las normativas de rol?`,
+            `¡Hola amigo! Dime qué concepto necesitas repasar y te lo explico al detalle.`,
+            `¡Qué pasa fenómeno! Te escucho alto y claro, cuéntame qué tienes en mente.`
+        ]);
+    }
+
+    // DESPEDIDAS
+    if (/\b(adi[oó]s|hasta luego|chao|me voy|buenas noches|nos vemos)\b/i.test(lower)) {
+        return `¡Venga crack, un placer charlar contigo! ¡Que pases muy buena noche y disfruta mucho del rol en Spain RP!`;
+    }
+
+    // AGRADECIMIENTOS
+    if (/\b(gracias|muchas gracias|te lo agradezco|crack|genio|m[aá]quina)\b/i.test(lower)) {
+        return `¡De nada hombre, para eso estamos! ¡A darle duro a la ciudad y a disfrutar!`;
+    }
+
+    // 2. MOTOR LLM COMPLEMENTARIO (Google Gemini Flash) para preguntas abiertas
+    if (geminiKey) {
+        const geminiModels = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+        for (const model of geminiModels) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+                const systemPrompt = `Eres el asistente de voz de SPAIN RP en Discord. Hablas en español de España de forma 100% natural, coloquial, amigable y fluida (usa ¡!, expresiones como "¡Hombre!", "Pues mira,", "Básicamente...").
+Hora actual: ${timeString}.
+Responde de forma clara y hablada en 2 o 3 frases explicativas con ritmo humano.`;
+
+                const contents = [
+                    { role: 'user', parts: [{ text: `Instrucción: ${systemPrompt}` }] },
+                    { role: 'model', parts: [{ text: '¡Entendido! Responderé de forma 100% humana y hablada en español de España con explicaciones ricas.' }] }
+                ];
+
+                if (history && history.length > 0) {
+                    for (const h of history.slice(-4)) {
+                        contents.push({
+                            role: h.role === 'assistant' ? 'model' : 'user',
+                            parts: [{ text: h.content }]
+                        });
+                    }
+                }
+
+                contents.push({ role: 'user', parts: [{ text: userPrompt }] });
+
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents,
+                        generationConfig: {
+                            maxOutputTokens: 220,
+                            temperature: 0.85
+                        }
+                    }),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (res.ok) {
+                    const data = await res.json();
+                    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text && text.trim().length > 0) {
+                        return text.trim();
+                    }
+                }
+            } catch (e) {}
+        }
+    }
+
+    // Respuesta inteligente contextual
+    if (cleanInput.length > 5) {
+        return `¡Entendido crack! Pues sobre "${cleanInput.substring(0, 35)}", la clave en Spain RP es mantener siempre la máxima inmersión y respetar el rol de todos los compañeros en la ciudad. ¡Dime si quieres que profundicemos en algún concepto en particular!`;
+    }
+
+    return `¡Te escucho perfectamente crack! Pregúntame sobre cualquier normativa como valorar vida, PG, MG o VDM y te lo explico con todo detalle.`;
+}
+
+// Reproducir audio TTS de alta fidelidad y velocidad natural directamente en el canal de voz
+function playTtsResponseInVoice(text, connection, player) {
+    return new Promise(async (resolve) => {
+        if (!text || !connection || !player) return resolve();
+        try {
+            const cleanText = text.replace(/[*_~`#"]/g, '').trim().substring(0, 1000);
+            if (!cleanText) return resolve();
+
+            // 1. Voz Neuronal de Microsoft (Álvaro - Hombre Español natural con entonación humana y velocidad perfecta)
+            try {
+                const { EdgeTTS } = require('node-edge-tts');
+                const tempFile = path.join(__dirname, `tts_${Date.now()}_${Math.floor(Math.random()*1000)}.mp3`);
+                const tts = new EdgeTTS({
+                    voice: 'es-ES-AlvaroNeural',
+                    rate: '+15%', // Velocidad humana óptima (ágil, dinámica y sin lentitud)
+                    pitch: '+1Hz', // Matiz tonal más cercano y expresivo
+                    volume: '+0%'
+                });
+
+                await tts.ttsPromise(cleanText, tempFile);
+
+                if (fs.existsSync(tempFile)) {
+                    const resource = createAudioResource(fs.createReadStream(tempFile), {
+                        inputType: StreamType.Arbitrary
+                    });
+
+                    let resolved = false;
+                    const cleanupTempFile = () => {
+                        try {
+                            if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+                        } catch (e) {}
+                    };
+
+                    const onIdle = () => {
+                        if (!resolved) {
+                            resolved = true;
+                            player.off(AudioPlayerStatus.Idle, onIdle);
+                            setTimeout(cleanupTempFile, 1500);
+                            resolve();
+                        }
+                    };
+
+                    player.on(AudioPlayerStatus.Idle, onIdle);
+                    player.play(resource);
+                    console.log(`🔊 [VOZ NEURONAL ÁLVARO] Reproduciendo (${cleanText.substring(0, 60)}...)...`);
+
+                    // Seguridad por si el evento Idle no salta
+                    setTimeout(() => {
+                        if (!resolved) {
+                            resolved = true;
+                            player.off(AudioPlayerStatus.Idle, onIdle);
+                            cleanupTempFile();
+                            resolve();
+                        }
+                    }, 35000);
+                    return;
+                }
+            } catch (edgeErr) {
+                console.error('Edge TTS error, usando fallback:', edgeErr.message);
+            }
+
+            // 2. Fallback con Google TTS
+            const base64Audio = await googleTTS.getAudioBase64(cleanText.substring(0, 200), {
+                lang: 'es',
+                slow: false,
+                timeout: 6000
+            });
+
+            const audioBuffer = Buffer.from(base64Audio, 'base64');
+            const audioStream = Readable.from(audioBuffer);
+            const resource = createAudioResource(audioStream, {
+                inputType: StreamType.Arbitrary
+            });
+
+            player.play(resource);
+            console.log(`🔊 [VOZ TTS] Reproduciendo respuesta de voz...`);
+            setTimeout(resolve, 8000);
+        } catch (err) {
+            console.error('Error al reproducir TTS:', err.message);
+            resolve();
+        }
+    });
+}
+
+// Control de procesos de música en streaming y colas activas
+const activeMusicStreams = new Map();
+const activeMusicQueues = new Map();
+
+// Obtener o crear cola para un servidor
+function getMusicQueue(guildId) {
+    if (!activeMusicQueues.has(guildId)) {
+        activeMusicQueues.set(guildId, {
+            songs: [],
+            isPlaying: false,
+            textChannel: null,
+            player: null,
+            connection: null,
+            lastNowPlayingMsg: null
+        });
+    }
+    return activeMusicQueues.get(guildId);
+}
+
+// Función helper para obtener título y metadatos reales de YouTube
+async function fetchYouTubeMetadata(target) {
+    return new Promise((resolve) => {
+        try {
+            console.log(`🔎 [METADATOS YT] Obteniendo info de: "${target}"...`);
+            const proc = spawn('python', [
+                '-m', 'yt_dlp',
+                '--extractor-args', 'youtube:player_client=android,ios,web',
+                '--default-search', 'ytsearch1',
+                '--no-playlist',
+                '--print', '%(title)s|||%(duration_string)s|||%(uploader)s|||%(thumbnail)s|||%(webpage_url)s',
+                target
+            ]);
+            let out = '';
+            proc.stdout.on('data', d => out += d);
+            proc.stderr.on('data', d => {
+                const errStr = d.toString().trim();
+                if (errStr && !errStr.includes('WARNING')) {
+                    console.log(`⚠️ [YT-DLP INFO] ${errStr.substring(0, 100)}`);
+                }
+            });
+            proc.on('close', (code) => {
+                const parts = out.trim().split('|||');
+                if (parts.length >= 2 && parts[0].trim()) {
+                    const metaObj = {
+                        title: parts[0].trim(),
+                        duration: parts[1] ? parts[1].trim() : 'En directo',
+                        uploader: parts[2] ? parts[2].trim() : 'YouTube',
+                        thumbnail: parts[3] ? parts[3].trim() : null,
+                        url: parts[4] ? parts[4].trim() : null
+                    };
+                    console.log(`✅ [METADATOS YT] Título: "${metaObj.title}" | Duración: ${metaObj.duration} | Canal: ${metaObj.uploader}`);
+                    resolve(metaObj);
+                } else {
+                    console.log(`ℹ️ [METADATOS YT] Fallback a título directo: "${target}"`);
+                    resolve({ title: target, duration: 'N/A', uploader: 'YouTube', thumbnail: null, url: null });
+                }
+            });
+            setTimeout(() => {
+                console.log(`⏱️ [METADATOS YT] Timeout superado, usando título directo.`);
+                resolve({ title: target, duration: 'N/A', uploader: 'YouTube', thumbnail: null, url: null });
+            }, 6000);
+        } catch (e) {
+            console.error('❌ [ERROR METADATOS YT]:', e.message);
+            resolve({ title: target, duration: 'N/A', uploader: 'YouTube', thumbnail: null, url: null });
+        }
+    });
+}
+
+// Reproducir la siguiente canción en la cola
+async function playNextInQueue(guildId) {
+    const queue = activeMusicQueues.get(guildId);
+    if (!queue || queue.songs.length === 0) {
+        if (queue) {
+            queue.isPlaying = false;
+            if (queue.lastNowPlayingMsg) {
+                queue.lastNowPlayingMsg.delete().catch(() => {});
+                queue.lastNowPlayingMsg = null;
+            }
+        }
+        console.log(`⏹️ [COLA MÚSICA] Cola vacía en servidor: ${guildId}`);
+        return;
+    }
+
+    const currentSong = queue.songs[0];
+    queue.isPlaying = true;
+
+    console.log(`📋 [COLA MÚSICA] Reproduciendo siguiente tema: "${currentSong.query}" (Restantes en cola: ${queue.songs.length - 1})`);
+
+    // Obtener metadatos reales de YouTube para el Embed
+    let meta = currentSong.meta;
+    if (!meta) {
+        meta = await fetchYouTubeMetadata(currentSong.cleanTarget || currentSong.query);
+        currentSong.meta = meta;
+    }
+
+    const res = await playMusicInVoice(currentSong.cleanTarget || currentSong.query, queue.connection, queue.player, guildId);
+    if (res && res.success) {
+        if (queue.textChannel) {
+            // Eliminar contenedor de la canción anterior si existía para mantener el chat limpio
+            if (queue.lastNowPlayingMsg) {
+                queue.lastNowPlayingMsg.delete().catch(() => {});
+                queue.lastNowPlayingMsg = null;
+            }
+
+            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const files = [];
+            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+
+            const musicEmbed = new EmbedBuilder()
+                .setColor(0x8A2BE2) // Morado / Violeta Eléctrico Premium
+                .setAuthor({
+                    name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                    iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                })
+                .setTitle(`🎶 ${meta.title || currentSong.query}`)
+                .setDescription(
+                    `👤 **Pedida por:** ${currentSong.requester}\n` +
+                    `⏱️ **Duración:** \`${meta.duration}\`\n` +
+                    `📺 **Canal:** \`${meta.uploader}\`\n` +
+                    `📑 **En Cola:** \`${queue.songs.length - 1} canciones restantes\``
+                )
+                .setFooter({ text: 'SPAIN RP Music • Usa !skip para saltar | !stop para detener' })
+                .setTimestamp();
+
+            if (meta.url) {
+                musicEmbed.setURL(meta.url);
+            }
+            if (meta.thumbnail) {
+                musicEmbed.setThumbnail(meta.thumbnail);
+            }
+
+            queue.lastNowPlayingMsg = await queue.textChannel.send({ embeds: [musicEmbed], files }).catch((err) => {
+                console.error('❌ [ERROR ENVIAR EMBED REPRODUCCIÓN]:', err.message);
+                return null;
+            });
+            console.log(`✅ [EMBED ENVIADO] Contenedor de reproducción publicado en canal.`);
+        }
+    } else {
+        console.error(`❌ [FALLO REPRODUCCIÓN]: No se pudo reproducir "${currentSong.query}". Mensaje: ${res?.message}`);
+        if (queue.textChannel) {
+            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const files = [];
+            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+
+            const errEmbed = new EmbedBuilder()
+                .setColor(0xE74C3C)
+                .setAuthor({
+                    name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                    iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                })
+                .setDescription(`❌ **No se pudo reproducir:** \`${currentSong.query}\`\n⏭️ *Saltando al siguiente tema en cola...*`);
+
+            queue.textChannel.send({ embeds: [errEmbed], files })
+                .then(m => setTimeout(() => m.delete().catch(() => {}), 3500))
+                .catch(() => {});
+        }
+        queue.songs.shift();
+        playNextInQueue(guildId);
+    }
+}
+
+// Actualizar dinámicamente el Embed de la canción en reproducción (contador de cola en tiempo real)
+async function updateNowPlayingEmbed(guildId) {
+    const queue = activeMusicQueues.get(guildId);
+    if (!queue || !queue.lastNowPlayingMsg || queue.songs.length === 0) return;
+
+    const currentSong = queue.songs[0];
+    const meta = currentSong.meta || { title: currentSong.query, duration: 'N/A', uploader: 'YouTube' };
+    const remainingCount = Math.max(0, queue.songs.length - 1);
+
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+
+    const musicEmbed = new EmbedBuilder()
+        .setColor(0x8A2BE2) // Morado / Violeta Eléctrico Premium
+        .setAuthor({
+            name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTitle(`🎶 ${meta.title || currentSong.query}`)
+        .setDescription(
+            `👤 **Pedida por:** ${currentSong.requester}\n` +
+            `⏱️ **Duración:** \`${meta.duration}\`\n` +
+            `📺 **Canal:** \`${meta.uploader}\`\n` +
+            `📑 **En Cola:** \`${remainingCount} canciones restantes\``
+        )
+        .setFooter({ text: 'SPAIN RP Music • Usa !skip para saltar | !stop para detener' })
+        .setTimestamp();
+
+    if (meta.url) musicEmbed.setURL(meta.url);
+    if (meta.thumbnail) musicEmbed.setThumbnail(meta.thumbnail);
+
+    await queue.lastNowPlayingMsg.edit({ embeds: [musicEmbed] }).catch((e) => {
+        console.error('⚠️ [ERROR EDITAR EMBED EN COLA]:', e.message);
+    });
+    console.log(`📝 [EMBED EDITADO] Contenedor actualizado: ${remainingCount} canciones en cola`);
+}
+
+// Reproducir música o canciones en streaming en el canal de voz usando yt-dlp & FFmpeg
+async function playMusicInVoice(query, connection, player, guildId) {
+    return new Promise(async (resolve) => {
+        try {
+            // Detener cualquier proceso de música anterior en este servidor
+            if (guildId && activeMusicStreams.has(guildId)) {
+                const prev = activeMusicStreams.get(guildId);
+                try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) {}
+                try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) {}
+                activeMusicStreams.delete(guildId);
+            }
+
+            let cleanTarget = query.trim();
+            const isUrl = cleanTarget.startsWith('http://') || cleanTarget.startsWith('https://');
+
+            if (isUrl) {
+                // Si es un enlace de YouTube, quitar parámetros de listas de reproducción para reproducir el vídeo individual
+                if (cleanTarget.includes('youtube.com/watch') || cleanTarget.includes('youtu.be/')) {
+                    cleanTarget = cleanTarget.split('&')[0];
+                }
+            } else {
+                cleanTarget = cleanTarget.replace(/[.,/#!$%^&*;:{}=\-_`~()?"']/g, ' ').trim();
+            }
+
+            console.log(`🎵 [MÚSICA] Iniciando yt-dlp y FFmpeg para: "${cleanTarget}"...`);
+
+            // Extraer el stream de audio directo mediante yt-dlp (Soporte 100% oficial y actualizado)
+            const ytdlpProcess = spawn('python', [
+                '-m', 'yt_dlp',
+                '--extractor-args', 'youtube:player_client=android,ios,web',
+                '--no-progress',
+                '-f', 'ba/b',
+                '--default-search', 'ytsearch1',
+                '--no-playlist',
+                '-o', '-',
+                cleanTarget
+            ]);
+
+            const ffmpegProcess = spawn(ffmpegStatic, [
+                '-i', 'pipe:0',
+                '-analyzeduration', '0',
+                '-loglevel', '0',
+                '-f', 's16le',
+                '-ar', '48000',
+                '-ac', '2',
+                'pipe:1'
+            ]);
+
+            if (guildId) {
+                activeMusicStreams.set(guildId, { ytdlp: ytdlpProcess, ffmpeg: ffmpegProcess });
+            }
+
+            ytdlpProcess.stdout.pipe(ffmpegProcess.stdin);
+
+            ffmpegProcess.stdin.on('error', () => {});
+            ytdlpProcess.stdin.on('error', () => {});
+            ytdlpProcess.stderr.on('data', (d) => {
+                const msg = d.toString().trim();
+                // Ocultar mensajes normales de porcentaje y avisos internos de YouTube
+                if (msg && !msg.includes('WARNING') && !msg.includes('[download]') && !msg.includes('[youtube]') && !msg.includes('[info]')) {
+                    console.log(`⚠️ [YT-DLP]: ${msg.substring(0, 100)}`);
+                }
+            });
+
+            let streamStarted = false;
+            ffmpegProcess.stdout.once('data', () => {
+                streamStarted = true;
+                const resource = createAudioResource(ffmpegProcess.stdout, {
+                    inputType: StreamType.Raw
+                });
+                player.play(resource);
+                console.log(`▶️ [MÚSICA REPRODUCIENDO] Stream de audio iniciado correctamente: "${cleanTarget}"`);
+                resolve({ success: true, title: cleanTarget });
+            });
+
+            setTimeout(() => {
+                if (!streamStarted) {
+                    try { ytdlpProcess.kill(); } catch (e) {}
+                    try { ffmpegProcess.kill(); } catch (e) {}
+                    console.error(`⏱️ [MÚSICA TIMEOUT] No se recibió audio de YouTube tras 12s para: "${cleanTarget}"`);
+                    resolve({ success: false, message: 'No se pudo cargar la canción en este momento.' });
+                }
+            }, 12000);
+
+            ytdlpProcess.on('error', (err) => {
+                console.error('❌ [ERROR PROCESO YT-DLP]:', err.message);
+                if (!streamStarted) resolve({ success: false, message: 'Hubo un error al buscar la canción en YouTube.' });
+            });
+        } catch (err) {
+            console.error('❌ [ERROR GENERAL STREAM MÚSICA]:', err);
+            resolve({ success: false, message: 'Hubo un error al procesar el audio de YouTube.' });
+        }
+    });
+}
+
+// Evaluación de Calidad de Respuestas Orales
+function evaluateVoiceInterviewContent(transcripts) {
+    const fullText = transcripts.join(' ');
+    const lower = fullText.toLowerCase();
+    const words = fullText.split(/\s+/).filter(w => w.length > 0);
+
+    // Detección de conceptos clave de rol y FiveM en la entrevista oral
+    const conceptsFound = [];
+    if (/\b(valorar|valoracion|valoro|vida|arma|apuntan|miedo)\b/i.test(lower)) conceptsFound.push('Valoración de Vida');
+    if (/\b(ic|ooc|in character|out of character)\b/i.test(lower)) conceptsFound.push('Canales IC / OOC');
+    if (/\b(entorno|llamar|policia|madero|denunciar|testigo)\b/i.test(lower)) conceptsFound.push('Rol de Entorno');
+    if (/\b(pk|ck|muerte|memoria|olvidar|perdida)\b/i.test(lower)) conceptsFound.push('Concepto PK / CK');
+    if (/\b(pg|powergaming|vdm|rdm|failrp)\b/i.test(lower)) conceptsFound.push('Normativa Anti-Rol');
+    if (/\b(taller|mecanico|curro|repartidor|policia|banda|mafia)\b/i.test(lower)) conceptsFound.push('Historia / Oficio');
+
+    let fluidezRating = '🟢 Fluida y Natural';
+    if (words.length < 15) {
+        fluidezRating = '🔴 Muy Escasa / Silenciosa';
+    } else if (words.length < 40) {
+        fluidezRating = '🟡 Breve / Respuestas cortas';
+    }
+
+    let recomendacion = '✅ Apto para ingresar (Respuestas coherentes)';
+    if (conceptsFound.length < 2 && words.length < 30) {
+        recomendacion = '⚠️ Dudoso / Se recomienda profundizar en preguntas';
+    }
+
+    return {
+        wordCount: words.length,
+        conceptsFound,
+        fluidezRating,
+        recomendacion,
+        summaryText: fullText.length > 400 ? fullText.substring(0, 400) + '...' : fullText
+    };
+}
 
 client.once('ready', async () => {
-    console.log(`✅ Bot conectado exitosamente como: ${client.user.tag}`);
-    console.log(`👑 Creador / Owner ID: ${OWNER_ID}`);
-    console.log(`📌 Canal de Solicitudes (Whitelist): ${botConfig.CHANNEL_SOLICITUDES_ID || 'Todos los canales'}`);
-    console.log(`📌 Canal de Resultados (Aprobados): ${botConfig.CHANNEL_APROBADOS_ID || 'No configurado'}`);
-    console.log(`📌 Canal de Estado FiveM: ${botConfig.CHANNEL_STATUS_ID || 'No configurado'}`);
-    console.log(`📌 Canal Botón Stream: ${botConfig.CHANNEL_STREAM_PANEL_ID}`);
-    console.log(`📌 Canal Avisos Stream: ${botConfig.CHANNEL_STREAMERS_ID}`);
-    console.log(`🎮 Servidor FiveM IP: ${botConfig.FIVEM_SERVER_IP} (Código: ${botConfig.FIVEM_CFX_CODE})`);
-
-    // Comprobación de acceso a los canales en el servidor
-    try {
-        const guilds = client.guilds.cache;
-        guilds.forEach(guild => {
-            console.log(`🏰 Servidor conectado: ${guild.name} (${guild.id})`);
-            const chSolicitudes = guild.channels.cache.get(botConfig.CHANNEL_SOLICITUDES_ID);
-            const chAprobados = guild.channels.cache.get(botConfig.CHANNEL_APROBADOS_ID);
-            const chStatus = guild.channels.cache.get(botConfig.CHANNEL_STATUS_ID);
-            const chStreamPanel = guild.channels.cache.get(botConfig.CHANNEL_STREAM_PANEL_ID);
-            const chStreamAviso = guild.channels.cache.get(botConfig.CHANNEL_STREAMERS_ID);
-
-            console.log(`   -> Canal Solicitudes: ${chSolicitudes ? `✅ #${chSolicitudes.name}` : '❌ NO ENCONTRADO O SIN PERMISO'}`);
-            console.log(`   -> Canal Aprobados: ${chAprobados ? `✅ #${chAprobados.name}` : '❌ NO ENCONTRADO O SIN PERMISO'}`);
-            if (botConfig.CHANNEL_STATUS_ID) console.log(`   -> Canal Estado: ${chStatus ? `✅ #${chStatus.name}` : '❌ NO ENCONTRADO'}`);
-            console.log(`   -> Canal Botón Stream: ${chStreamPanel ? `✅ #${chStreamPanel.name}` : '❌ NO ENCONTRADO'}`);
-            console.log(`   -> Canal Avisos Stream: ${chStreamAviso ? `✅ #${chStreamAviso.name}` : '❌ NO ENCONTRADO'}`);
-        });
-    } catch (e) {
-        console.error('Error al listar canales del servidor:', e);
-    }
+    console.log(`\n==================================================`);
+    console.log(`🤖  SPAIN RP - SISTEMA DE WHITELIST Y AUDITORÍA  🤖`);
+    console.log(`==================================================`);
+    console.log(`🟢 [ESTADO]      Bot conectado como: ${client.user.tag}`);
+    console.log(`👑 [CREADOR]     ID: ${OWNER_ID}`);
+    console.log(`📥 [SOLICITUDES] ${botConfig.CHANNEL_SOLICITUDES_ID ? `<#${botConfig.CHANNEL_SOLICITUDES_ID}>` : 'Todos los canales'}`);
+    console.log(`✅ [APROBADOS]   ${botConfig.CHANNEL_APROBADOS_ID ? `<#${botConfig.CHANNEL_APROBADOS_ID}>` : 'No configurado'}`);
+    console.log(`🎙️ [ENTREVISTAS] ${botConfig.CHANNEL_ENTREVISTAS_ID ? `<#${botConfig.CHANNEL_ENTREVISTAS_ID}>` : 'No configurado'}`);
+    console.log(`🎮 [FIVEM]       IP: ${botConfig.FIVEM_SERVER_IP} (CFX: ${botConfig.FIVEM_CFX_CODE})`);
+    console.log(`==================================================\n`);
 
     // Función para actualizar la presencia del bot exclusivamente con los jugadores en tiempo real
     const updateBotPresence = async () => {
@@ -1308,15 +2183,12 @@ async function autoBootstrapChannelHistory() {
 
 async function sendApprovedNotification({ userMention, staffName = 'Equipo de Staff' }) {
     const targetChannelId = botConfig.CHANNEL_APROBADOS_ID || '1550880724930797610';
-    console.log(`📤 [INTENTO DE ENVÍO APROBADO] Buscando canal de resultados con ID: ${targetChannelId}`);
-
     const targetChannel = await client.channels.fetch(targetChannelId).catch(err => {
-        console.error(`❌ [ERROR FETCH CANAL] No se pudo obtener el canal con ID ${targetChannelId}:`, err.message);
+        console.error(`❌ [ERROR CANAL] No se pudo obtener el canal con ID ${targetChannelId}:`, err.message);
         return null;
     });
 
     if (!targetChannel) {
-        console.error(`❌ [ERROR CANAL] El bot no encuentra el canal ${targetChannelId}. Verifica permisos.`);
         throw new Error(`No se pudo acceder al canal con ID ${targetChannelId}`);
     }
 
@@ -1383,15 +2255,12 @@ async function sendApprovedNotification({ userMention, staffName = 'Equipo de St
 
 async function sendDeniedNotification({ userMention, staffName = 'Equipo de Staff' }) {
     const targetChannelId = (botConfig.CHANNEL_DENEGADOS_ID || botConfig.CHANNEL_APROBADOS_ID) || '1550880724930797610';
-    console.log(`📤 [INTENTO DE ENVÍO DENEGADO] Buscando canal de resultados con ID: ${targetChannelId}`);
-
     const targetChannel = await client.channels.fetch(targetChannelId).catch(err => {
-        console.error(`❌ [ERROR FETCH CANAL] No se pudo obtener el canal con ID ${targetChannelId}:`, err.message);
+        console.error(`❌ [ERROR CANAL] No se pudo obtener el canal con ID ${targetChannelId}:`, err.message);
         return null;
     });
 
     if (!targetChannel) {
-        console.error(`❌ [ERROR CANAL] El bot no encuentra el canal ${targetChannelId}. Verifica permisos.`);
         throw new Error(`No se pudo acceder al canal con ID ${targetChannelId}`);
     }
 
@@ -1469,57 +2338,80 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
 
     const logoPath = path.join(__dirname, 'assets', 'logo.png');
     const imgDirectoPath = path.join(__dirname, 'assets', 'directo.png');
+    const imgTiktokPath = path.join(__dirname, 'assets', 'tiktok.png');
+    const imgTwitchPath = path.join(__dirname, 'assets', 'stream.png');
     const files = [];
 
     if (fs.existsSync(logoPath)) {
         files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
     }
 
-    if (fs.existsSync(imgDirectoPath)) {
+    const isTikTok = platform.toLowerCase().includes('tiktok');
+    const isTwitch = platform.toLowerCase().includes('twitch');
+
+    // Adjuntar banner según plataforma (Twitch: stream.png morado | TikTok: tiktok.png rosa | General: directo.png)
+    if (isTikTok && fs.existsSync(imgTiktokPath)) {
+        files.push(new AttachmentBuilder(imgTiktokPath, { name: 'tiktok.png' }));
+    } else if (isTwitch && fs.existsSync(imgTwitchPath)) {
+        files.push(new AttachmentBuilder(imgTwitchPath, { name: 'twitch.png' }));
+    } else if (fs.existsSync(imgDirectoPath)) {
         files.push(new AttachmentBuilder(imgDirectoPath, { name: 'directo.png' }));
     }
 
-    const cleanTitle = streamTitle && streamTitle.trim() ? streamTitle.trim() : 'Roleplay en vivo en SPAIN RP \uD83C\uDDEA\uD83C\uDDF8';
+    // Configuración visual por plataforma (Twitch: Morado | TikTok: Rosa Fucsia)
+    const platformColor = isTikTok ? 0xFE2C55 : (isTwitch ? 0x9146FF : 0x00E785);
+    const platformEmoji = isTikTok ? '🌸' : (isTwitch ? '🟣' : '🟢');
+    const platformName = isTikTok ? 'TikTok LIVE' : (isTwitch ? 'Twitch' : platform);
+    const platformButtonLabel = isTikTok ? '🌸 Ver TikTok LIVE' : (isTwitch ? '🟣 Ver Directo en Twitch' : '▶️ Ver Directo en Vivo');
+    const notificationHeadline = isTikTok
+        ? `# 🌸 ¡${userMention} ESTÁ EN DIRECTO EN TIKTOK!\n# ¡Entra al LIVE y apoya el stream en SPAIN RP!`
+        : `# 🟣 ¡${userMention} ESTÁ EN DIRECTO EN TWITCH!\n# ¡Entra a apoyar el stream en SPAIN RP!`;
+
+    const cleanTitle = streamTitle && streamTitle.trim() ? streamTitle.trim() : `Roleplay en vivo en SPAIN RP 🇪🇸 (${platformName})`;
     const validStreamUrl = streamUrl.startsWith('http') ? streamUrl : `https://${streamUrl}`;
 
     // Canales oficiales interactivos (<#ID>)
     const canalGeneral = `<#${process.env.CHANNEL_GENERAL_ID || '1517530849032016002'}>`;
 
     const embedStream = new EmbedBuilder()
-        .setColor(0x9146FF) // Morado Twitch brillante
+        .setColor(platformColor)
         .setAuthor({
-            name: 'SISTEMA DE DIRECTOS | SPAIN RP \uD83C\uDDEA\uD83C\uDDF8',
+            name: `SISTEMA DE DIRECTOS | SPAIN RP 🇪🇸 • ${platformName}`,
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail(avatarUrl || (fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()))
-        .setTitle('🟣 ¡CREADOR EN DIRECTO!')
+        .setTitle(`${platformEmoji} ¡CREADOR EN DIRECTO EN ${platformName.toUpperCase()}!`)
         .setDescription(
             `\u200B\n` +
-            `✨ ¡El creador de contenido **${userMention}** acaba de iniciar transmisión en vivo en **SPAIN RP** \uD83C\uDDEA\uD83C\uDDF8!\n\n` +
+            `✨ ¡El creador de contenido **${userMention}** acaba de iniciar transmisión en vivo en **SPAIN RP** 🇪🇸!\n\n` +
             `🎮 **Título de la Transmisión:**\n` +
             `> 💬 *"${cleanTitle}"*\n\n` +
-            `📺 **Plataforma:** \`${platform}\`\n` +
-            `🏙️ **Servidor:** **SPAIN RP** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
+            `📺 **Plataforma:** \`${platformName}\`\n` +
+            `🏙️ **Servidor:** **SPAIN RP** 🇪🇸\n\n` +
             `🔗 **| Entra al directo a dejar tu apoyo y follow:**\n` +
             `> ${validStreamUrl} ❗\n\n` +
             `🌍 **| Comenta el directo en la comunidad:**\n` +
             `> ${canalGeneral} ❗\n\n` +
-            `\uD83C\uDDEA\uD83C\uDDF8 **| ¡Disfruta del mejor Roleplay en SPAIN RP! |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
+            `🇪🇸 **| ¡Disfruta del mejor Roleplay en SPAIN RP! |** 🇪🇸\n\n` +
             `👤 **Streamer:** ${userMention}`
         )
         .setFooter({
-            text: 'SPAIN RP • Creadores de Contenido Oficiales',
+            text: `SPAIN RP • Creadores de Contenido Oficiales (${platformName})`,
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
 
-    if (fs.existsSync(imgDirectoPath)) {
+    if (isTikTok && fs.existsSync(imgTiktokPath)) {
+        embedStream.setImage('attachment://tiktok.png');
+    } else if (isTwitch && fs.existsSync(imgTwitchPath)) {
+        embedStream.setImage('attachment://twitch.png');
+    } else if (fs.existsSync(imgDirectoPath)) {
         embedStream.setImage('attachment://directo.png');
     }
 
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setLabel('🟣 Ver Directo en Vivo')
+            .setLabel(platformButtonLabel)
             .setStyle(ButtonStyle.Link)
             .setURL(validStreamUrl),
         new ButtonBuilder()
@@ -1528,15 +2420,23 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
             .setURL(`https://cfx.re/join/${botConfig.FIVEM_CFX_CODE}`)
     );
 
-    const sentMsg = await targetChannel.send({
-        content: `# 🟣 ¡${userMention} ESTÁ EN DIRECTO!\n# ¡Entra a apoyar el stream en SPAIN RP!`,
-        embeds: [embedStream],
-        components: [row],
-        files: files
-    });
+    try {
+        const sentMsg = await targetChannel.send({
+            content: notificationHeadline,
+            embeds: [embedStream],
+            components: [row],
+            files: files
+        });
 
-    console.log(`[DIRECTO NOTIFICADO] Stream publicado para ${userMention} en canal ${targetChannelId}`);
-    return { success: true, channelId: targetChannelId, messageId: sentMsg.id };
+        console.log(`[DIRECTO NOTIFICADO] Stream en ${platformName} publicado para ${userMention} en canal #${targetChannel.name} (${targetChannelId})`);
+        return { success: true, channelId: targetChannelId, messageId: sentMsg.id };
+    } catch (sendErr) {
+        console.error(`❌ [ERROR PERMISOS EN CANAL DIRECTOS #${targetChannel.name}]:`, sendErr.message);
+        if (sendErr.code === 50013) {
+            console.error(`⚠️ El bot carece de permisos de "Enviar Mensajes", "Insertar Enlaces" o "Adjuntar Archivos" en el canal #${targetChannel.name} (${targetChannelId}). Revisa los permisos de rol del bot en Discord.`);
+        }
+        return { success: false, error: sendErr.message };
+    }
 }
 
 // ==========================================
@@ -1558,23 +2458,6 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
     // Si el mensaje viene del propio bot, ignorar
     if (message.author && message.author.id === client.user.id) return;
 
-    console.log(`\n==============================================`);
-    console.log(`📡 [DEBUG EVENTO] Origen: ${source}`);
-    console.log(`📌 Canal ID: ${message.channel ? message.channel.id : 'N/A'} (#${message.channel ? message.channel.name : 'N/A'})`);
-    console.log(`👤 Autor: ${message.author ? `${message.author.tag} (${message.author.id}) [Bot: ${message.author.bot}]` : 'N/A'}`);
-    console.log(`💬 Contenido de texto: "${message.content || ''}"`);
-    console.log(`📦 Cantidad de Embeds: ${message.embeds ? message.embeds.length : 0}`);
-
-    if (message.embeds && message.embeds.length > 0) {
-        message.embeds.forEach((emb, i) => {
-            console.log(`   [Embed #${i + 1}] Título: "${emb.title || ''}"`);
-            console.log(`   [Embed #${i + 1}] Descripción: "${emb.description || ''}"`);
-            if (emb.fields && emb.fields.length > 0) {
-                emb.fields.forEach(f => console.log(`      -> Campo [${f.name}]: "${f.value}"`));
-            }
-        });
-    }
-
     // Obtener todo el contenido (texto + todos los embeds y sus campos)
     let fullText = `${message.content || ''}\n`;
 
@@ -1592,11 +2475,7 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
         }
     }
 
-    if (!fullText.trim()) {
-        console.log(`❌ [DEBUG] Mensaje vacío, ignorando.`);
-        console.log(`==============================================\n`);
-        return;
-    }
+    if (!fullText.trim()) return;
 
     // 1. Detectar si es una NUEVA SOLICITUD PENDIENTE (para auditarla con IA)
     const isPendiente = /Nueva Solicitud de (?:📋 )?Whitelist/i.test(fullText) ||
@@ -1855,8 +2734,6 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
 // ==========================================
 
 client.on('messageCreate', async (message) => {
-    console.log(`📥 [MSG RECIBIDO] Canal: #${message.channel ? message.channel.name : 'N/A'} (${message.channel ? message.channel.id : 'N/A'}) | Autor: ${message.author ? message.author.tag : 'N/A'}`);
-
     // Si el mensaje es enviado por un usuario real (Staff / Admin)
     if (!message.author.bot) {
         const content = message.content.trim();
@@ -1875,7 +2752,10 @@ client.on('messageCreate', async (message) => {
             '!wl-ayuda', '!wl-comandos', '!comandos-wl',
             '!test-ia', '!analizar-ia', '!check-ia', '!auditoria-ia',
             '!simular', '!simular-pendiente',
-            '!scan-historial', '!escanear-historial', '!ia-stats', '!reset-ia'
+            '!scan-historial', '!escanear-historial', '!ia-stats', '!reset-ia',
+            '!entrevista', '!entrevistar', '!iniciar-entrevista', '!fin-entrevista', '!terminar-entrevista',
+            '!hablar', '!conversar', '!ia-voz', '!charlar', '!callar', '!salir-voz', '!desconectar-voz',
+            '!play', '!p', '!reproducir', '!stop', '!parar', '!detener', '!skip', '!next', '!saltar', '!siguiente', '!queue', '!cola', '!playlist'
         ];
 
         if (botCommands.includes(command)) {
@@ -2145,39 +3025,7 @@ client.on('messageCreate', async (message) => {
             });
         }
 
-        // ----------------------------------------------------
-        // COMANDO: !notificarstream / !panel-stream / !panelstream (Publica el panel con el botón manualmente)
-        // ----------------------------------------------------
-        if (['!notificarstream', '!notificar-stream', '!panel-stream', '!panelstream', '!panel-directos', '!stream-panel'].includes(command)) {
-            try {
-                await message.delete().catch(() => {});
 
-                // Si se menciona un canal como argumento, enviarlo allí; sino, en el canal actual
-                const targetChannel = message.mentions.channels.first() || message.channel;
-
-                const embed = buildStreamPanelEmbed();
-                const row = buildStreamPanelRow();
-                const files = [];
-
-                const logoPath = path.join(__dirname, 'assets', 'logo.png');
-                const imgDirectoPath = path.join(__dirname, 'assets', 'directo.png');
-
-                if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-                if (fs.existsSync(imgDirectoPath)) files.push(new AttachmentBuilder(imgDirectoPath, { name: 'directo.png' }));
-
-                await targetChannel.send({
-                    content: `# 🟣 ¡PANEL OFICIAL DE DIRECTOS!\n# ¡Avisa a toda la comunidad de tu transmisión!`,
-                    embeds: [embed],
-                    components: [row],
-                    files
-                });
-                console.log(`📌 [PANEL DIRECTOS] Panel enviado manualmente en canal #${targetChannel.name}`);
-                return;
-            } catch (err) {
-                console.error('Error al enviar panel de directos:', err);
-                return;
-            }
-        }
 
         // ----------------------------------------------------
         // COMANDO DE AYUDA: !wl-ayuda / !wl-comandos
@@ -2192,7 +3040,13 @@ client.on('messageCreate', async (message) => {
                     `➕ \`!addstreamer @usuario <link>\` → Registra un streamer oficial para el botón de notificar.\n` +
                     `🟣 \`!stream @usuario <link> [título]\` → Publica el anuncio oficial de streamer en directo.\n` +
                     `🌐 \`!estado\` o \`!status\` → Muestra el estado en tiempo real, jugadores y ping de FiveM.\n` +
-                    `📌 \`!fijar-estado\` → Publica el panel de estado en vivo que se auto-actualiza cada 60s.\n` +
+                    `🎵 \`!play <canción o URL>\` → Reproduce música de YouTube o la añade a la cola.\n` +
+                    `⏹️ \`!stop\` → Detiene la música y vacía la cola de canciones.\n` +
+                    `⏭️ \`!skip\` → Salta a la siguiente canción de la cola.\n` +
+                    `📜 \`!queue\` o \`!cola\` → Muestra la lista de canciones en espera.\n` +
+                    `🎙️ \`!hablar\` o \`!ia-voz\` → Conecta al bot al canal de voz para mantener conversación por voz con la IA en vivo.\n` +
+                    `🎙️ \`!entrevista @usuario\` → Inicia la auditoría de WL Oral con transcripción y ficha de evaluación.\n` +
+                    `🛑 \`!callar\` o \`!salir-voz\` → Desconecta al bot del canal de voz.\n` +
                     `🤖 \`!test-ia <texto>\` → Audita cualquier texto o responde a un mensaje para medir la probabilidad de IA / ChatGPT.\n` +
                     `🧪 \`!simular @usuario [ia|humano]\` → Crea una solicitud interactiva de prueba con auditoría de IA en vivo.\n` +
                     `🧠 \`!ia-stats\` → Muestra los patrones aprendidos y estadísticas de retroalimentación de IA.\n` +
@@ -2239,10 +3093,11 @@ client.on('messageCreate', async (message) => {
                 .setTitle('👑 Panel de Configuración de Canales y Servidor')
                 .setDescription(
                     `Hola <@${authorId}>, desde aquí puedes ver y gestionar cualquier canal, rol o IP del bot.\n\n` +
-                    `📋 **CANALES DE WHITELIST:**\n` +
+                    `📋 **CANALES DE WHITELIST & ENTREVISTAS:**\n` +
                     `> 📥 **Solicitudes:** ${formatChannel(botConfig.CHANNEL_SOLICITUDES_ID)}\n` +
                     `> ✅ **Aprobados:** ${formatChannel(botConfig.CHANNEL_APROBADOS_ID)}\n` +
-                    `> ❌ **Denegados:** ${formatChannel(botConfig.CHANNEL_DENEGADOS_ID)}\n\n` +
+                    `> ❌ **Denegados:** ${formatChannel(botConfig.CHANNEL_DENEGADOS_ID)}\n` +
+                    `> 🎙️ **Fichas Entrevistas:** ${formatChannel(botConfig.CHANNEL_ENTREVISTAS_ID)}\n\n` +
                     `🟣 **CANALES DE STREAMERS:**\n` +
                     `> 🔘 **Panel Botón Directo:** ${formatChannel(botConfig.CHANNEL_STREAM_PANEL_ID)}\n` +
                     `> 📢 **Canal de Avisos Stream:** ${formatChannel(botConfig.CHANNEL_STREAMERS_ID)}\n\n` +
@@ -2262,6 +3117,7 @@ client.on('messageCreate', async (message) => {
                     `• \`!setcanal solicitudes <#canal o ID>\`\n` +
                     `• \`!setcanal aprobados <#canal o ID>\`\n` +
                     `• \`!setcanal denegados <#canal o ID>\`\n` +
+                    `• \`!setcanal entrevistas <#canal o ID>\` *(Fichas de voz)*\n` +
                     `• \`!setcanal streampanel <#canal o ID>\` *(Donde va el botón)*\n` +
                     `• \`!setcanal streamaviso <#canal o ID>\` *(Donde se publica el directo)*\n` +
                     `• \`!setcanal status <#canal o ID>\` *(Panel de jugadores)*\n` +
@@ -2310,8 +3166,8 @@ client.on('messageCreate', async (message) => {
             if (!tipo || !rawTarget) {
                 return message.reply({
                     content: `❌ **Uso:** \`!setcanal <tipo> <#canal o ID>\`\n` +
-                        `📌 **Tipos disponibles:** \`solicitudes\`, \`aprobados\`, \`denegados\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\`\n` +
-                        `*Ejemplo:* \`!setcanal aprobados #wl-aprobados\``
+                        `📌 **Tipos disponibles:** \`solicitudes\`, \`aprobados\`, \`denegados\`, \`entrevistas\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\`\n` +
+                        `*Ejemplo:* \`!setcanal entrevistas #fichas-entrevistas\``
                 });
             }
 
@@ -2329,6 +3185,11 @@ client.on('messageCreate', async (message) => {
                 'aprobado': 'CHANNEL_APROBADOS_ID',
                 'denegados': 'CHANNEL_DENEGADOS_ID',
                 'denegado': 'CHANNEL_DENEGADOS_ID',
+                'entrevistas': 'CHANNEL_ENTREVISTAS_ID',
+                'entrevista': 'CHANNEL_ENTREVISTAS_ID',
+                'fichas': 'CHANNEL_ENTREVISTAS_ID',
+                'fichas-voz': 'CHANNEL_ENTREVISTAS_ID',
+                'voz': 'CHANNEL_ENTREVISTAS_ID',
                 'streampanel': 'CHANNEL_STREAM_PANEL_ID',
                 'panelstream': 'CHANNEL_STREAM_PANEL_ID',
                 'panel-stream': 'CHANNEL_STREAM_PANEL_ID',
@@ -2347,7 +3208,7 @@ client.on('messageCreate', async (message) => {
             const configKey = channelKeyMap[tipo];
             if (!configKey) {
                 return message.reply({
-                    content: `❌ Tipo de canal no válido: \`${tipo}\`.\nOpciones: \`solicitudes\`, \`aprobados\`, \`denegados\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\``
+                    content: `❌ Tipo de canal no válido: \`${tipo}\`.\nOpciones: \`solicitudes\`, \`aprobados\`, \`denegados\`, \`entrevistas\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\``
                 });
             }
 
@@ -2720,6 +3581,1210 @@ client.on('messageCreate', async (message) => {
 
             return message.reply({ content: '🧹 **Memoria de aprendizaje de IA reiniciada a valores base de fábrica.**' });
         }
+
+        // ----------------------------------------------------
+        // COMANDOS DE ENTREVISTAS DE VOZ POR IA: !entrevista / !fin-entrevista / !cancelar-entrevista
+        // ----------------------------------------------------
+        if (['!entrevista', '!entrevistar', '!iniciar-entrevista', '!audit-voz'].includes(command)) {
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) {
+                return message.reply({ content: '❌ Solo los miembros de **Staff** o el **Creador** pueden iniciar entrevistas de voz.' });
+            }
+
+            const targetUser = message.mentions.users.first();
+            if (!targetUser) {
+                return message.reply({
+                    content: `🎙️ **Uso:** \`!entrevista @usuario\`\n*Debes estar dentro de un canal de voz con el postulante.*`
+                });
+            }
+
+            const voiceChannel = message.member?.voice?.channel;
+            if (!voiceChannel) {
+                return message.reply({
+                    content: '❌ **Debes estar conectado a un canal de voz** para iniciar la auditoría de la entrevista.'
+                });
+            }
+
+            if (activeVoiceInterviews.has(message.guild.id)) {
+                return message.reply({
+                    content: '⚠️ **Ya hay una entrevista de voz activa en este servidor.**\nUsa `!fin-entrevista` para finalizarla antes de iniciar otra.'
+                });
+            }
+
+            try {
+                const connection = joinVoiceChannel({
+                    channelId: voiceChannel.id,
+                    guildId: voiceChannel.guild.id,
+                    adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+                    selfDeaf: false,
+                    selfMute: false
+                });
+
+                // Truco oficial de Discord Voice Gateway:
+                // Para que Discord envíe los paquetes UDP entrantes de audio de los usuarios,
+                // el bot debe enviar al menos 1 frame de silencio Opus periódicamente.
+                const silencePlayer = createAudioPlayer();
+                class SilenceStream extends Readable {
+                    _read() {
+                        this.push(Buffer.from([0xF8, 0xFF, 0xFE]));
+                    }
+                }
+                const silenceResource = createAudioResource(new SilenceStream(), { inputType: StreamType.Opus });
+                silencePlayer.play(silenceResource);
+                connection.subscribe(silencePlayer);
+
+                const session = {
+                    targetUserId: targetUser.id,
+                    targetMention: `<@${targetUser.id}>`,
+                    targetTag: targetUser.tag || targetUser.username,
+                    staffId: message.author.id,
+                    staffMention: `<@${message.author.id}>`,
+                    channelId: message.channel.id,
+                    voiceChannelId: voiceChannel.id,
+                    startTime: Date.now(),
+                    transcripts: [],
+                    connection,
+                    silencePlayer
+                };
+
+                activeVoiceInterviews.set(message.guild.id, session);
+
+                // Suscripción al stream de voz del usuario entrevistado
+                const receiver = connection.receiver;
+                // Control de streams activos por usuario para no duplicar suscripciones de voz
+                const activeUserStreams = new Set();
+
+                const handleUserSpeaking = (userId) => {
+                    // Si habla el bot, ignorar
+                    if (userId === client.user.id) return;
+
+                    // Si se especificó el postulante, escuchar solo al postulante
+                    if (userId !== targetUser.id && userId === message.author.id) {
+                        return; // Ignora al entrevistador
+                    }
+
+                    // Evitar duplicar listeners sobre el mismo usuario si ya está emitiendo
+                    if (activeUserStreams.has(userId)) return;
+                    activeUserStreams.add(userId);
+
+                    const opusStream = receiver.subscribe(userId, {
+                        end: {
+                            behavior: EndBehaviorType.AfterSilence,
+                            duration: 1200
+                        }
+                    });
+
+                    const decoder = new prism.opus.Decoder({ rate: 48000, channels: 1, frameSize: 960 });
+                    const pcmChunks = [];
+
+                    opusStream.pipe(decoder);
+
+                    decoder.on('data', (chunk) => {
+                        pcmChunks.push(chunk);
+                    });
+
+                    decoder.on('end', async () => {
+                        activeUserStreams.delete(userId);
+                        if (pcmChunks.length === 0) return;
+                        const pcmBuffer = Buffer.concat(pcmChunks);
+
+                        // Filtrar ruidos cortos o respiraciones (< 8000 bytes ~ 0.2s)
+                        if (pcmBuffer.length > 8000) {
+                            const wavBuffer = pcmToWavBuffer(pcmBuffer, 48000, 1);
+                            const text = await transcribeAudioBufferWithHF(wavBuffer);
+                            if (text && text.trim().length > 1) {
+                                const cleanText = text.trim();
+                                console.log(`🎙️ [VOZ AUDITORÍA] "${cleanText}"`);
+                                const active = activeVoiceInterviews.get(message.guild.id);
+                                if (active && active.targetUserId === targetUser.id) {
+                                    // Evitar insertar la misma frase duplicada si Whisper la capturó en cola
+                                    if (active.transcripts.length === 0 || active.transcripts[active.transcripts.length - 1] !== cleanText) {
+                                        active.transcripts.push(cleanText);
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    decoder.on('error', () => {
+                        activeUserStreams.delete(userId);
+                    });
+                    opusStream.on('error', () => {
+                        activeUserStreams.delete(userId);
+                    });
+                };
+
+                receiver.speaking.on('start', handleUserSpeaking);
+
+                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const files = [];
+                if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+
+                const startEmbed = new EmbedBuilder()
+                    .setColor(0x3498DB) // Azul informativo
+                    .setAuthor({
+                        name: 'AUDITORÍA DE ENTREVISTAS POR VOZ • SPAIN RP',
+                        iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                    })
+                    .setTitle('🎙️ Auditoría de Voz Iniciada en Tiempo Real')
+                    .setDescription(
+                        `👤 **Postulante:** <@${targetUser.id}>\n` +
+                        `🛡️ **Entrevistador:** <@${message.author.id}>\n` +
+                        `🔊 **Canal de Voz:** <#${voiceChannel.id}>\n\n` +
+                        `⚡ *El bot está escuchando las respuestas del postulante en streaming en memoria RAM (0 MB guardados en disco).*`
+                    )
+                    .addFields(
+                        {
+                            name: '📋 ¿Cómo finalizar?',
+                            value: 'Escribe **`!fin-entrevista`** cuando termines para recibir la tarjeta con la transcripción y el análisis de fluidez.'
+                        },
+                        {
+                            name: '❌ ¿Cómo cancelar?',
+                            value: 'Escribe **`!cancelar-entrevista`** o **`!salir-voz`** para salir del canal sin generar ficha.'
+                        }
+                    )
+                    .setFooter({ text: 'SPAIN RP • Speech-to-Text Whisper AI 100% Gratuito' })
+                    .setTimestamp();
+
+                return message.reply({ embeds: [startEmbed], files });
+            } catch (vErr) {
+                console.error('Error al conectar a voz:', vErr);
+                activeVoiceInterviews.delete(message.guild.id);
+                return message.reply({ content: `❌ Error al conectar al canal de voz: ${vErr.message}` });
+            }
+        }
+
+        // Finalizar entrevista y generar tarjeta con transcripción y análisis
+        if (['!fin-entrevista', '!terminar-entrevista', '!stop-entrevista'].includes(command)) {
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) {
+                return message.reply({ content: '❌ Solo los miembros de **Staff** o el **Creador** pueden finalizar entrevistas.' });
+            }
+
+            const session = activeVoiceInterviews.get(message.guild.id);
+            if (!session) {
+                return message.reply({ content: '❌ **No hay ninguna entrevista de voz activa en este momento.**' });
+            }
+
+            // Desconectar al bot de voz
+            try {
+                if (session.connection) session.connection.destroy();
+            } catch (e) {}
+
+            const durationSec = Math.round((Date.now() - session.startTime) / 1000);
+            const durationMin = Math.floor(durationSec / 60);
+            const durationRemainSec = durationSec % 60;
+            const durationStr = `${durationMin}m ${durationRemainSec}s`;
+
+            const evaluation = evaluateVoiceInterviewContent(session.transcripts);
+            activeVoiceInterviews.delete(message.guild.id);
+
+            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const files = [];
+            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+
+            const resultEmbed = new EmbedBuilder()
+                .setColor(0x2ECC71) // Verde
+                .setAuthor({
+                    name: 'FICHA DE AUDITORÍA ORAL • SPAIN RP',
+                    iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                })
+                .setTitle('🎙️ Resumen de Entrevista de Voz Completada')
+                .setDescription(
+                    `👤 **Postulante:** ${session.targetMention}\n` +
+                    `🛡️ **Entrevistador:** <@${message.author.id}>\n` +
+                    `⏱️ **Duración:** \`${durationStr}\`\n` +
+                    `📊 **Fluidez Oral:** ${evaluation.fluidezRating}\n` +
+                    `💡 **Veredicto Sugerido:** \`${evaluation.recomendacion}\``
+                )
+                .addFields(
+                    {
+                        name: '🔍 Conceptos de Rol Identificados en Voz',
+                        value: evaluation.conceptsFound.length > 0 ? evaluation.conceptsFound.map(c => `• \`${c}\``).join('\n') : '`Ninguno detectado con claridad`',
+                        inline: false
+                    },
+                    {
+                        name: '📝 Transcripción de Respuestas Orales',
+                        value: evaluation.summaryText && evaluation.summaryText.trim().length > 0
+                            ? `>>> *"${evaluation.summaryText}"*`
+                            : '*No se capturaron frases audibles suficientes o el micrófono del usuario estaba silenciado.*',
+                        inline: false
+                    }
+                )
+                .setFooter({ text: 'SPAIN RP • Ficha de auditoría 100% efímera (0 MB en disco)' })
+                .setTimestamp();
+
+            const targetFichasChannelId = botConfig.CHANNEL_ENTREVISTAS_ID;
+            let targetChannel = message.channel;
+
+            if (targetFichasChannelId) {
+                const fetchedChan = await client.channels.fetch(targetFichasChannelId).catch(() => null);
+                if (fetchedChan) {
+                    targetChannel = fetchedChan;
+                }
+            }
+
+            // Enviar el contenedor oficial con la ficha de auditoría oral
+            const sentMsg = await targetChannel.send({
+                content: `# 🎙️ ¡FICHA DE AUDITORÍA ORAL REGISTRADA!\n# Entrevista realizada a ${session.targetMention}`,
+                embeds: [resultEmbed],
+                files: files
+            });
+
+            // Si se envió a un canal de fichas diferente al chat actual, avisar al entrevistador
+            if (targetFichasChannelId && targetFichasChannelId !== message.channel.id) {
+                return message.reply({
+                    content: `✅ **Entrevista de voz finalizada con éxito.**\n📋 La **Ficha de Auditoría Oral** ha sido registrada en el canal contenedor <#${targetFichasChannelId}>.`
+                });
+            }
+
+            return;
+        }
+
+        // ----------------------------------------------------
+        // SISTEMA INDEPENDIENTE: CONVERSACIÓN POR VOZ CON IA (!hablar, !conversar, !ia-voz)
+        // ----------------------------------------------------
+        if (['!hablar', '!conversar', '!ia-voz', '!charlar'].includes(command)) {
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) {
+                return message.reply({ content: '❌ Solo los miembros de **Staff** o el **Creador** pueden iniciar conversaciones de voz con la IA.' });
+            }
+
+            const voiceChannel = message.member?.voice?.channel;
+            if (!voiceChannel) {
+                return message.reply({ content: '❌ **Debes estar conectado a un canal de voz** para hablar con la IA.' });
+            }
+
+            if (activeVoiceChats.has(message.guild.id) || activeVoiceInterviews.has(message.guild.id)) {
+                return message.reply({ content: '⚠️ **El bot ya está ocupado en un canal de voz.** Usa `!callar` o `!salir-voz` para terminar la sesión actual.' });
+            }
+
+            try {
+                const connection = joinVoiceChannel({
+                    channelId: voiceChannel.id,
+                    guildId: voiceChannel.guild.id,
+                    adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+                    selfDeaf: false,
+                    selfMute: false
+                });
+
+                const player = createAudioPlayer();
+                connection.subscribe(player);
+
+                const chatSession = {
+                    userId: message.author.id,
+                    userName: message.author.username,
+                    channelId: message.channel.id,
+                    connection,
+                    player,
+                    isResponding: false,
+                    lastInteraction: 0, // Control de ventana de conversación activa
+                    history: []
+                };
+
+                activeVoiceChats.set(message.guild.id, chatSession);
+
+                const receiver = connection.receiver;
+                const activeStreams = new Set();
+
+                const handleVoiceChat = (userId) => {
+                    if (userId === client.user.id) return;
+                    if (chatSession.isResponding) return; // Si la IA está hablando, ignorar para no interrumpirse
+                    if (activeStreams.has(userId)) return;
+                    activeStreams.add(userId);
+
+                    // Detección ultrarrápida: 550 ms de silencio para responder de inmediato al callarte
+                    const opusStream = receiver.subscribe(userId, {
+                        end: {
+                            behavior: EndBehaviorType.AfterSilence,
+                            duration: 550
+                        }
+                    });
+
+                    const decoder = new prism.opus.Decoder({ rate: 48000, channels: 1, frameSize: 960 });
+                    const chunks = [];
+
+                    opusStream.pipe(decoder);
+                    decoder.on('data', (c) => chunks.push(c));
+
+                    decoder.on('end', async () => {
+                        activeStreams.delete(userId);
+                        if (chunks.length === 0) return;
+                        const pcm = Buffer.concat(chunks);
+
+                        // Mínimo 16000 bytes (~0.35s) para descartar clicks/tos/respiraciones
+                        if (pcm.length > 16000) {
+                            const wav = pcmToWavBuffer(pcm, 48000, 1);
+                            const userSaid = await transcribeAudioBufferWithHF(wav);
+
+                            if (userSaid && userSaid.trim().length > 3) {
+                                const cleanSaid = userSaid.trim();
+                                const lower = cleanSaid.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()?"']/g, '').trim();
+
+                                // Descartar alucinaciones de Whisper comunes producidas por ruido/silencio
+                                const noisePhrases = [
+                                    'you', 'thank you', 'bye', 'bye bye', 'yeah', 'yes', 'no', 'subtitles by', 'amara.org',
+                                    'silence', 'laughter', 'cough', 'music', 'unintelligible', 'thanks for watching',
+                                    'subscribe', 'hola', 'goodbye', 'okay', 'ok'
+                                ];
+                                if (noisePhrases.includes(lower) || lower.length < 4) {
+                                    return;
+                                }
+
+                                // Debe dirigirse directamente al Bot (ej: "Bot, qué es...", "Oye Bot...", "Bot dime...")
+                                const hasBotTrigger = /\b(bot|boc|boot|botsito)\b/i.test(lower);
+                                if (!hasBotTrigger) {
+                                    return; // Silencio absoluto si no le preguntan a él directamente
+                                }
+
+                                // Obtener el nombre del usuario real que habló en la llamada
+                                let speakerName = 'Usuario';
+                                try {
+                                    const member = await message.guild.members.fetch(userId).catch(() => null);
+                                    if (member) speakerName = member.displayName || member.user.username;
+                                } catch (e) {}
+
+                                chatSession.isResponding = true;
+
+                                // 1. DETECCIÓN DE COMANDOS DE MÚSICA POR VOZ (Parar / Play)
+                                const isMusicStop = /\b(para|parar|para la musica|quita la musica|apaga la musica|silencio|stop|callate|mute|pausa|pausar|quita eso|ya|basta)\b/i.test(lower);
+                                const isMusicPlay = !isMusicStop && /\b(pon|ponme|reproduce|reproducir|toca|musica de|cancion de|tema de|cancion|musica)\b/i.test(lower);
+
+                                if (isMusicStop) {
+                                    player.stop();
+                                    const queue = activeMusicQueues.get(message.guild.id);
+                                    if (queue) {
+                                        queue.songs = [];
+                                        queue.isPlaying = false;
+                                        if (queue.lastNowPlayingMsg) {
+                                            queue.lastNowPlayingMsg.delete().catch(() => {});
+                                            queue.lastNowPlayingMsg = null;
+                                        }
+                                    }
+
+                                    if (activeMusicStreams.has(message.guild.id)) {
+                                        const prev = activeMusicStreams.get(message.guild.id);
+                                        try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) {}
+                                        try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) {}
+                                        activeMusicStreams.delete(message.guild.id);
+                                    }
+                                    const confirmText = '¡Oído cocina! Paro la música ahora mismo crack.';
+                                    console.log(`🤖 [VOZ IA RESPUESTA] "${confirmText}"`);
+                                    await playTtsResponseInVoice(confirmText, connection, player);
+                                    chatSession.isResponding = false;
+                                    return;
+                                }
+
+                                if (isMusicPlay) {
+                                    let songQuery = cleanSaid
+                                        .replace(/^(bot|oye bot|hola bot|mira bot|dime bot|escucha bot)[\s,:]*/i, '')
+                                        .replace(/^(ponme|pon|reproduce|reproducir|toca|cancion|musica de|cancion de|tema de|en youtube)[\s,:]*/i, '')
+                                        .replace(/\b(en youtube|por favor|porfa|crack)\b/ig, '')
+                                        .trim();
+
+                                    if (songQuery.length > 2) {
+                                        const confirmText = `¡Marchando! Te busco y pongo "${songQuery}" en un momento.`;
+                                        console.log(`🤖 [VOZ IA RESPUESTA] "${confirmText}"`);
+                                        await playTtsResponseInVoice(confirmText, connection, player);
+
+                                        let cleanTarget = songQuery.trim();
+                                        if (cleanTarget.startsWith('http://') || cleanTarget.startsWith('https://')) {
+                                            if (cleanTarget.includes('youtube.com/watch') || cleanTarget.includes('youtu.be/')) {
+                                                cleanTarget = cleanTarget.split('&')[0];
+                                            }
+                                        }
+
+                                        const queue = getMusicQueue(message.guild.id);
+                                        queue.textChannel = message.channel;
+                                        queue.connection = connection;
+                                        queue.player = player;
+
+                                        const songItem = {
+                                            query: songQuery,
+                                            cleanTarget,
+                                            requester: speakerName ? `🎙️ **${speakerName}** (Voz)` : `<@${userId}>`,
+                                            title: null,
+                                            meta: null
+                                        };
+
+                                        if (queue.isPlaying) {
+                                            const meta = await fetchYouTubeMetadata(cleanTarget);
+                                            songItem.meta = meta;
+                                            songItem.title = meta.title;
+                                            queue.songs.push(songItem);
+
+                                            // Actualizar el contenedor en reproducción con el nuevo conteo de canciones restantes
+                                            await updateNowPlayingEmbed(message.guild.id);
+
+                                            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                                            const files = [];
+                                            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+
+                                            const queueAddEmbed = new EmbedBuilder()
+                                                .setColor(0x3498DB)
+                                                .setAuthor({
+                                                    name: 'COLA DE MÚSICA • SPAIN RP',
+                                                    iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                                                })
+                                                .setTitle(`📥 Añadida a la Cola (Posición #${queue.songs.length})`)
+                                                .setDescription(`🎶 **Título:** \`${meta.title}\`\n⏱️ **Duración:** \`${meta.duration}\`\n👤 **Pedida por:** ${songItem.requester}`)
+                                                .setTimestamp();
+                                            if (meta.thumbnail) queueAddEmbed.setThumbnail(meta.thumbnail);
+
+                                            if (queue.textChannel) {
+                                                queue.textChannel.send({ embeds: [queueAddEmbed], files })
+                                                    .then(m => setTimeout(() => m.delete().catch(() => {}), 4000))
+                                                    .catch(() => {});
+                                            }
+                                        } else {
+                                            queue.songs = [songItem];
+                                            await playNextInQueue(message.guild.id);
+                                        }
+
+                                        chatSession.isResponding = false;
+                                        return;
+                                    }
+                                }
+
+                                // 2. CONVERSACIÓN GENERAL / ROLEPLAY POR VOZ
+                                const aiReply = await generateAiVoiceChatResponse(cleanSaid, chatSession.history);
+                                console.log(`🤖 [VOZ IA RESPUESTA] "${aiReply}"`);
+
+                                chatSession.history.push({ role: 'user', content: cleanSaid });
+                                chatSession.history.push({ role: 'assistant', content: aiReply });
+                                if (chatSession.history.length > 8) chatSession.history = chatSession.history.slice(-8);
+
+                                try {
+                                    await playTtsResponseInVoice(aiReply, connection, player);
+                                } finally {
+                                    chatSession.isResponding = false;
+                                }
+                            }
+                        }
+                    });
+
+                    decoder.on('error', () => activeStreams.delete(userId));
+                    opusStream.on('error', () => activeStreams.delete(userId));
+                };
+
+                receiver.speaking.on('start', handleVoiceChat);
+
+                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const files = [];
+                if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+
+                const chatEmbed = new EmbedBuilder()
+                    .setColor(0x9B59B6)
+                    .setAuthor({
+                        name: 'CONVERSACIÓN DE VOZ CON IA • SPAIN RP',
+                        iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                    })
+                    .setTitle('🎙️ Chat de Voz con IA Activado')
+                    .setDescription(
+                        `👤 **Usuario:** <@${message.author.id}>\n` +
+                        `🔊 **Canal de Voz:** <#${voiceChannel.id}>\n\n` +
+                        `💬 *Dile "Hola Bot..." para iniciar la conversación y a partir de ahí te responderá fluidamente en directo.*\n\n` +
+                        `🛑 **Para finalizar:** Escribe **\`!callar\`** o **\`!salir-voz\`**.`
+                    )
+                    .setFooter({ text: 'SPAIN RP • Conversación Fluida con Microsoft Neural TTS & Gemini Flash' })
+                    .setTimestamp();
+
+                return message.reply({ embeds: [chatEmbed], files });
+            } catch (err) {
+                console.error('Error al iniciar conversación de voz:', err);
+                activeVoiceChats.delete(message.guild.id);
+                return message.reply({ content: `❌ Error al conectar al canal de voz: ${err.message}` });
+            }
+        }
+
+        // ----------------------------------------------------
+        // ----------------------------------------------------
+        // COMANDOS DE MÚSICA DE TEXTO: !play, !stop, !skip, !queue
+        // ----------------------------------------------------
+        if (['!play', '!p', '!reproducir'].includes(command)) {
+            console.log(`\n🎵 [COMANDO MÚSICA !play] Ejecutado por ${message.author.tag} (${message.author.id}) en #${message.channel.name}`);
+            console.log(`📥 [INPUT CANCIÓN]: "${args.slice(1).join(' ')}"`);
+
+            // 1. Eliminar el mensaje del usuario inmediatamente y reintentar por si Discord estaba resolviendo el preview
+            message.delete().then(() => {
+                console.log(`🗑️ [BORRADO EXITOSO] Mensaje de !play del usuario eliminado.`);
+            }).catch((err) => {
+                console.log(`⚠️ [BORRADO PENDIENTE/ERROR]: ${err.message}`);
+            });
+            setTimeout(() => message.delete().catch(() => {}), 800);
+
+            // 2. Barrer y limpiar cualquier comando !play / !stop / !skip previo que haya quedado arriba
+            try {
+                message.channel.messages.fetch({ limit: 10 }).then(recentMsgs => {
+                    if (recentMsgs) {
+                        for (const [, rMsg] of recentMsgs) {
+                            if (!rMsg.author.bot && (
+                                rMsg.content.trim().startsWith('!play') ||
+                                rMsg.content.trim().startsWith('!p ') ||
+                                rMsg.content.trim().startsWith('!reproducir') ||
+                                rMsg.content.trim().startsWith('!stop') ||
+                                rMsg.content.trim().startsWith('!parar') ||
+                                rMsg.content.trim().startsWith('!skip')
+                            )) {
+                                rMsg.delete().then(() => console.log(`🧹 [BARRIDO] Comando anterior eliminado: "${rMsg.content}"`)).catch(() => {});
+                            }
+                        }
+                    }
+                }).catch((err) => console.log('⚠️ [ERROR BARRIDO]:', err.message));
+            } catch (e) {}
+
+            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const files = [];
+            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+
+            const voiceChannel = message.member?.voice?.channel;
+            if (!voiceChannel) {
+                const noVoiceEmbed = new EmbedBuilder()
+                    .setColor(0xE74C3C)
+                    .setAuthor({
+                        name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                        iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                    })
+                    .setDescription(`❌ <@${message.author.id}>, **debes estar conectado a un canal de voz** para reproducir música.`);
+
+                return message.channel.send({ embeds: [noVoiceEmbed], files })
+                    .then(m => setTimeout(() => m.delete().catch(() => {}), 3500))
+                    .catch(() => {});
+            }
+
+            const query = args.slice(1).join(' ').trim();
+            if (!query) {
+                const noQueryEmbed = new EmbedBuilder()
+                    .setColor(0x3498DB)
+                    .setAuthor({
+                        name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                        iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                    })
+                    .setTitle('🎵 Uso del Comando de Música')
+                    .setDescription('📌 **Uso:** `!play <canción o enlace de YouTube>`\n*Ejemplo:* `!play JC Reyes Messi`');
+
+                return message.channel.send({ embeds: [noQueryEmbed], files })
+                    .then(m => setTimeout(() => m.delete().catch(() => {}), 5000))
+                    .catch(() => {});
+            }
+
+            let connection = getVoiceConnection(message.guild.id);
+            let player;
+
+            const chatSession = activeVoiceChats.get(message.guild.id);
+            if (chatSession) {
+                connection = chatSession.connection;
+                player = chatSession.player;
+            }
+
+            if (!connection) {
+                try {
+                    connection = joinVoiceChannel({
+                        channelId: voiceChannel.id,
+                        guildId: voiceChannel.guild.id,
+                        adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+                        selfDeaf: false,
+                        selfMute: false
+                    });
+                    player = createAudioPlayer();
+                    connection.subscribe(player);
+
+                    activeVoiceChats.set(message.guild.id, {
+                        userId: message.author.id,
+                        userName: message.author.username,
+                        channelId: message.channel.id,
+                        connection,
+                        player,
+                        isResponding: false,
+                        lastInteraction: 0,
+                        history: []
+                    });
+                } catch (e) {
+                    const connErr = new EmbedBuilder()
+                        .setColor(0xE74C3C)
+                        .setDescription(`❌ Error al conectar al canal de voz: ${e.message}`);
+                    return message.channel.send({ embeds: [connErr] }).then(m => setTimeout(() => m.delete().catch(() => {}), 3000)).catch(() => {});
+                }
+            } else if (!player) {
+                player = createAudioPlayer();
+                connection.subscribe(player);
+            }
+
+            const queue = getMusicQueue(message.guild.id);
+            queue.textChannel = message.channel;
+            queue.connection = connection;
+            queue.player = player;
+
+            // Manejar evento de finalización para avanzar en la cola
+            player.removeAllListeners(AudioPlayerStatus.Idle);
+            player.on(AudioPlayerStatus.Idle, () => {
+                if (queue.isManualSkip) {
+                    queue.isManualSkip = false;
+                    console.log(`ℹ️ [IDLE CONTROLADO] Salto manual gestionado por comando.`);
+                    return;
+                }
+
+                console.log(`🎵 [CANCIÓN TERMINADA] Avanzando cola de forma natural...`);
+                if (queue.songs.length > 0) {
+                    queue.songs.shift(); // Eliminar la que acaba de terminar
+                    if (queue.songs.length > 0) {
+                        playNextInQueue(message.guild.id);
+                    } else {
+                        queue.isPlaying = false;
+                        if (queue.lastNowPlayingMsg) {
+                            queue.lastNowPlayingMsg.delete().catch(() => {});
+                            queue.lastNowPlayingMsg = null;
+                        }
+                    }
+                }
+            });
+
+            // Limpiar URL si viene de YouTube
+            let cleanTarget = query.trim();
+            if (cleanTarget.startsWith('http://') || cleanTarget.startsWith('https://')) {
+                if (cleanTarget.includes('youtube.com/watch') || cleanTarget.includes('youtu.be/')) {
+                    cleanTarget = cleanTarget.split('&')[0];
+                }
+            }
+
+            const songItem = {
+                query,
+                cleanTarget,
+                requester: `<@${message.author.id}>`,
+                title: null,
+                meta: null
+            };
+
+            if (queue.isPlaying) {
+                // Obtener metadatos para la cola
+                const meta = await fetchYouTubeMetadata(cleanTarget);
+                songItem.meta = meta;
+                songItem.title = meta.title;
+                queue.songs.push(songItem);
+
+                // Actualizar el contenedor en reproducción con el nuevo conteo de canciones restantes
+                await updateNowPlayingEmbed(message.guild.id);
+
+                const queueAddEmbed = new EmbedBuilder()
+                    .setColor(0x3498DB) // Azul cola
+                    .setAuthor({
+                        name: 'COLA DE MÚSICA • SPAIN RP',
+                        iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                    })
+                    .setTitle(`📥 Añadida a la Cola (Posición #${queue.songs.length})`)
+                    .setDescription(`🎶 **Título:** \`${meta.title}\`\n⏱️ **Duración:** \`${meta.duration}\`\n👤 **Pedida por:** <@${message.author.id}>`)
+                    .setTimestamp();
+
+                if (meta.thumbnail) queueAddEmbed.setThumbnail(meta.thumbnail);
+
+                const sentAdd = await message.channel.send({ embeds: [queueAddEmbed], files }).catch(() => null);
+                if (sentAdd) {
+                    setTimeout(() => sentAdd.delete().catch(() => {}), 4000);
+                }
+                return;
+            } else {
+                queue.songs = [songItem];
+                const searchEmbed = new EmbedBuilder()
+                    .setColor(0xF1C40F) // Amarillo Buscando
+                    .setAuthor({
+                        name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                        iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                    })
+                    .setDescription(`🔎 **Buscando y preparando canción:** \`${cleanTarget.substring(0, 70)}\`...`);
+
+                const searchMsg = await message.channel.send({ embeds: [searchEmbed], files }).catch(() => null);
+                if (searchMsg) {
+                    setTimeout(() => searchMsg.delete().catch(() => {}), 3000);
+                }
+
+                await playNextInQueue(message.guild.id);
+                return;
+            }
+        }
+
+        // COMANDO: !stop (Detiene la música y limpia la cola)
+        if (['!stop', '!parar', '!detener'].includes(command)) {
+            console.log(`\n⏹️ [COMANDO !stop] Ejecutado por ${message.author.tag} en #${message.channel.name}`);
+            message.delete().then(() => console.log('🗑️ [BORRADO EXITOSO] Mensaje de !stop eliminado.')).catch(() => {});
+            setTimeout(() => message.delete().catch(() => {}), 800);
+
+            const queue = activeMusicQueues.get(message.guild.id);
+            if (queue) {
+                queue.isManualSkip = true;
+                queue.songs = [];
+                queue.isPlaying = false;
+                if (queue.player) queue.player.stop();
+                if (queue.lastNowPlayingMsg) {
+                    queue.lastNowPlayingMsg.delete().catch(() => {});
+                    queue.lastNowPlayingMsg = null;
+                }
+            }
+
+            if (activeMusicStreams.has(message.guild.id)) {
+                const prev = activeMusicStreams.get(message.guild.id);
+                try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) {}
+                try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) {}
+                activeMusicStreams.delete(message.guild.id);
+            }
+
+            const chatSession = activeVoiceChats.get(message.guild.id);
+            if (chatSession && chatSession.player) {
+                chatSession.player.stop();
+            }
+
+            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const files = [];
+            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+
+            const stopEmbed = new EmbedBuilder()
+                .setColor(0xE74C3C) // Rojo stop
+                .setAuthor({
+                    name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                    iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                })
+                .setDescription('⏹️ **Música detenida y cola de reproducción vaciada.**');
+
+            const stopMsg = await message.channel.send({ embeds: [stopEmbed], files }).catch(() => null);
+            if (stopMsg) {
+                setTimeout(() => stopMsg.delete().catch(() => {}), 3000);
+            }
+            console.log('✅ [MÚSICA DETENIDA] Audio parado y cola vaciada.');
+            return;
+        }
+
+        // COMANDO: !skip / !next (Salta a la siguiente canción)
+        if (['!skip', '!next', '!saltar', '!siguiente'].includes(command)) {
+            console.log(`\n⏭️ [COMANDO !skip] Ejecutado por ${message.author.tag} en #${message.channel.name}`);
+            message.delete().then(() => console.log('🗑️ [BORRADO EXITOSO] Mensaje de !skip eliminado.')).catch(() => {});
+            setTimeout(() => message.delete().catch(() => {}), 800);
+
+            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const files = [];
+            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+
+            const queue = activeMusicQueues.get(message.guild.id);
+            if (!queue || queue.songs.length === 0 || !queue.isPlaying) {
+                const noPlayEmbed = new EmbedBuilder()
+                    .setColor(0xE74C3C)
+                    .setAuthor({
+                        name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                        iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                    })
+                    .setDescription('❌ **No hay ninguna canción reproduciéndose actualmente.**');
+
+                return message.channel.send({ embeds: [noPlayEmbed], files })
+                    .then(m => setTimeout(() => m.delete().catch(() => {}), 3000))
+                    .catch(() => {});
+            }
+
+            queue.isManualSkip = true;
+            const skippedSong = queue.songs.shift(); // Quitar la que estaba sonando
+            console.log(`⏭️ [CANCIÓN SALTADA]: "${skippedSong.title || skippedSong.query}" | Restantes en cola: ${queue.songs.length}`);
+
+            if (activeMusicStreams.has(message.guild.id)) {
+                const prev = activeMusicStreams.get(message.guild.id);
+                try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) {}
+                try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) {}
+                activeMusicStreams.delete(message.guild.id);
+            }
+            if (queue.player) queue.player.stop();
+
+            if (queue.songs.length > 0) {
+                const skipEmbed = new EmbedBuilder()
+                    .setColor(0x2ECC71) // Verde skip
+                    .setAuthor({
+                        name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                        iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                    })
+                    .setDescription(`⏭️ **Canción saltada:** \`${skippedSong.title || skippedSong.query}\`\n▶️ *Cargando siguiente tema (${queue.songs.length} restantes)...*`);
+
+                const sentSkip = await message.channel.send({ embeds: [skipEmbed], files }).catch(() => null);
+                if (sentSkip) {
+                    setTimeout(() => sentSkip.delete().catch(() => {}), 3000);
+                }
+                await playNextInQueue(message.guild.id);
+            } else {
+                queue.isPlaying = false;
+                if (queue.lastNowPlayingMsg) {
+                    queue.lastNowPlayingMsg.delete().catch(() => {});
+                    queue.lastNowPlayingMsg = null;
+                }
+
+                const skipEndEmbed = new EmbedBuilder()
+                    .setColor(0x95A5A6) // Gris
+                    .setAuthor({
+                        name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                        iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                    })
+                    .setDescription(`⏭️ **Canción saltada:** \`${skippedSong.title || skippedSong.query}\`\n⏹️ *No quedan más canciones en la cola.*`);
+
+                const sentSkipEnd = await message.channel.send({ embeds: [skipEndEmbed], files }).catch(() => null);
+                if (sentSkipEnd) {
+                    setTimeout(() => sentSkipEnd.delete().catch(() => {}), 3000);
+                }
+            }
+            return;
+        }
+
+        // COMANDO: !queue / !cola (Muestra las canciones en espera)
+        if (['!queue', '!cola', '!playlist'].includes(command)) {
+            await message.delete().catch(() => {});
+
+            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const files = [];
+            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+
+            const queue = activeMusicQueues.get(message.guild.id);
+            if (!queue || queue.songs.length === 0) {
+                const emptyEmbed = new EmbedBuilder()
+                    .setColor(0x95A5A6)
+                    .setAuthor({
+                        name: 'COLA DE MÚSICA • SPAIN RP',
+                        iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                    })
+                    .setDescription('📭 **La cola de música está vacía.** Usa `!play <canción>` para añadir temas.');
+
+                return message.channel.send({ embeds: [emptyEmbed], files })
+                    .then(m => setTimeout(() => m.delete().catch(() => {}), 4000))
+                    .catch(() => {});
+            }
+
+            let queueDesc = '';
+            queue.songs.slice(0, 10).forEach((s, idx) => {
+                const songTitle = s.meta ? s.meta.title : (s.title || s.query);
+                const songDuration = s.meta ? `\`(${s.meta.duration})\`` : '';
+                queueDesc += `${idx === 0 ? '▶️ **[Sonando Ahora]**' : `\`#${idx + 1}\``} **${songTitle}** ${songDuration}\n> Pedida por: ${s.requester}\n\n`;
+            });
+
+            if (queue.songs.length > 10) {
+                queueDesc += `*... y ${queue.songs.length - 10} canciones más en espera.*`;
+            }
+
+            const queueEmbed = new EmbedBuilder()
+                .setColor(0x8A2BE2) // Violeta
+                .setAuthor({
+                    name: 'COLA DE REPRODUCCIÓN • SPAIN RP',
+                    iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                })
+                .setTitle(`🎶 Lista de Espera (${queue.songs.length} temas)`)
+                .setDescription(queueDesc)
+                .setFooter({ text: 'Usa !skip para saltar al siguiente tema' })
+                .setTimestamp();
+
+            const sentQueue = await message.channel.send({ embeds: [queueEmbed], files }).catch(() => null);
+            if (sentQueue) {
+                setTimeout(() => sentQueue.delete().catch(() => {}), 12000);
+            }
+            return;
+        }
+
+        // COMANDO: !callar / !salir-voz (Desconecta al bot de voz)
+        if (['!cancelar-entrevista', '!salir-voz', '!kick-voz', '!callar', '!desconectar-voz', '!leave'].includes(command)) {
+            await message.delete().catch(() => {});
+
+            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const files = [];
+            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+
+            const queue = activeMusicQueues.get(message.guild.id);
+            if (queue) {
+                queue.songs = [];
+                queue.isPlaying = false;
+                if (queue.player) queue.player.stop();
+                if (queue.lastNowPlayingMsg) {
+                    queue.lastNowPlayingMsg.delete().catch(() => {});
+                    queue.lastNowPlayingMsg = null;
+                }
+                activeMusicQueues.delete(message.guild.id);
+            }
+
+            if (activeMusicStreams.has(message.guild.id)) {
+                const prev = activeMusicStreams.get(message.guild.id);
+                try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) {}
+                try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) {}
+                activeMusicStreams.delete(message.guild.id);
+            }
+
+            const chatSession = activeVoiceChats.get(message.guild.id);
+            if (chatSession) {
+                try { if (chatSession.connection) chatSession.connection.destroy(); } catch (e) {}
+                activeVoiceChats.delete(message.guild.id);
+
+                const leaveEmbed = new EmbedBuilder()
+                    .setColor(0xE74C3C)
+                    .setAuthor({
+                        name: 'SISTEMA DE VOZ • SPAIN RP',
+                        iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                    })
+                    .setDescription('👋 **Sesión de voz y música finalizada. Bot desconectado.**');
+
+                return message.channel.send({ embeds: [leaveEmbed], files }).then(m => setTimeout(() => m.delete().catch(() => {}), 3000)).catch(() => {});
+            }
+
+            const session = activeVoiceInterviews.get(message.guild.id);
+            if (session) {
+                try { if (session.connection) session.connection.destroy(); } catch (e) {}
+                activeVoiceInterviews.delete(message.guild.id);
+
+                const interviewCancelEmbed = new EmbedBuilder()
+                    .setColor(0xE74C3C)
+                    .setAuthor({
+                        name: 'SISTEMA DE VOZ • SPAIN RP',
+                        iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                    })
+                    .setDescription('🛑 **Entrevista de voz cancelada y bot desconectado del canal.**');
+
+                return message.channel.send({ embeds: [interviewCancelEmbed], files }).then(m => setTimeout(() => m.delete().catch(() => {}), 3000)).catch(() => {});
+            } else {
+                const connection = getVoiceConnection(message.guild.id);
+                if (connection) {
+                    connection.destroy();
+                    const discEmbed = new EmbedBuilder()
+                        .setColor(0xE74C3C)
+                        .setAuthor({
+                            name: 'SISTEMA DE VOZ • SPAIN RP',
+                            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                        })
+                        .setDescription('👋 **Bot desconectado del canal de voz.**');
+
+                    return message.channel.send({ embeds: [discEmbed], files }).then(m => setTimeout(() => m.delete().catch(() => {}), 3000)).catch(() => {});
+                }
+
+                const notConnEmbed = new EmbedBuilder()
+                    .setColor(0x95A5A6)
+                    .setDescription('ℹ️ El bot no está conectado a ningún canal de voz.');
+                return message.channel.send({ embeds: [notConnEmbed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 3000)).catch(() => {});
+            }
+        }
+
+        // COMANDO: !notificarstream / !panelstream (Publica el Panel de Directos Oficial)
+        if (['!notificarstream', '!panelstream', '!paneldirectos', '!streampanel'].includes(command)) {
+            await message.delete().catch(() => {});
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) {
+                const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden usar este comando.').catch(() => null);
+                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => {}), 4000);
+                return;
+            }
+
+            const embed = buildStreamPanelEmbed();
+            const row = buildStreamPanelRow();
+            const files = [];
+            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const imgPanelPath = path.join(__dirname, 'assets', 'panel_directos.png');
+            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+            if (fs.existsSync(imgPanelPath)) files.push(new AttachmentBuilder(imgPanelPath, { name: 'panel_directos.png' }));
+
+            await message.channel.send({
+                embeds: [embed],
+                components: [row],
+                files
+            });
+            console.log(`🟣 [PANEL DIRECTOS] Panel enviado por ${message.author.tag} en #${message.channel.name}`);
+            return;
+        }
+
+        // ==========================================
+        // COMANDOS DE STREAMERS: !addtwitch / !addtiktok / !addstreamer
+        // ==========================================
+        if (['!addtwitch', '!agregartwitch', '!nuevotwitch', '!settwitch'].includes(command)) {
+            await message.delete().catch(() => {});
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) {
+                const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden registrar streamers.').catch(() => null);
+                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => {}), 4000);
+                return;
+            }
+
+            const targetUser = message.mentions.users.first();
+            // Los argumentos después de la mención
+            const remainingArgs = args.filter(a => !a.startsWith('<@'));
+
+            if (!targetUser || remainingArgs.length === 0) {
+                const helpMsg = await message.channel.send({
+                    content: '🟣 **Uso correcto:** `!addtwitch @usuario <enlace_o_usuario_twitch> [título opcional]`\n*Ejemplo:* `!addtwitch @Alvin https://twitch.tv/alvin_0803`'
+                }).catch(() => null);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => {}), 6000);
+                return;
+            }
+
+            const rawInput = remainingArgs[0];
+            let fullUrl = rawInput.startsWith('http') ? rawInput : `https://twitch.tv/${rawInput.replace(/^@/, '')}`;
+            const customTitle = remainingArgs.slice(1).join(' ').trim();
+
+            saveStreamer(targetUser.id, {
+                twitchUrl: fullUrl,
+                twitchTitle: customTitle || null,
+                name: targetUser.username
+            });
+
+            const successMsg = await message.channel.send({
+                content: `🟣 **Canal de Twitch Registrado con Éxito:**\n👤 **Streamer:** <@${targetUser.id}>\n📺 **Plataforma:** \`Twitch\`\n🔗 **Canal:** <${fullUrl}>${customTitle ? `\n🏷️ **Título asignado:** *"${customTitle}"*` : ''}\n\n*Al pulsar "Notificar Twitch" se publicará este canal.*`
+            }).catch(() => null);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => {}), 8000);
+            return;
+        }
+
+        if (['!addtiktok', '!agregartiktok', '!nuevotiktok', '!settiktok'].includes(command)) {
+            await message.delete().catch(() => {});
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) {
+                const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden registrar streamers.').catch(() => null);
+                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => {}), 4000);
+                return;
+            }
+
+            const targetUser = message.mentions.users.first();
+            const remainingArgs = args.filter(a => !a.startsWith('<@'));
+
+            if (!targetUser || remainingArgs.length === 0) {
+                const helpMsg = await message.channel.send({
+                    content: '🌸 **Uso correcto:** `!addtiktok @usuario <enlace_o_usuario_tiktok> [título opcional]`\n*Ejemplo:* `!addtiktok @Alvin https://www.tiktok.com/@alvin_armys`'
+                }).catch(() => null);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => {}), 6000);
+                return;
+            }
+
+            const rawInput = remainingArgs[0];
+            let fullUrl = rawInput.startsWith('http') ? rawInput : `https://www.tiktok.com/@${rawInput.replace(/^@/, '')}`;
+            const customTitle = remainingArgs.slice(1).join(' ').trim();
+
+            saveStreamer(targetUser.id, {
+                tiktokUrl: fullUrl,
+                tiktokTitle: customTitle || null,
+                name: targetUser.username
+            });
+
+            const successMsg = await message.channel.send({
+                content: `🌸 **Canal de TikTok Registrado con Éxito:**\n👤 **Streamer:** <@${targetUser.id}>\n📺 **Plataforma:** \`TikTok LIVE\`\n🔗 **Canal:** <${fullUrl}>${customTitle ? `\n🏷️ **Título asignado:** *"${customTitle}"*` : ''}\n\n*Al pulsar "Notificar TikTok" se publicará este canal.*`
+            }).catch(() => null);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => {}), 8000);
+            return;
+        }
+
+        // COMANDO GENERAL: !addstreamer @usuario <url_canal>
+        if (['!addstreamer', '!agregarstreamer', '!nuevostreamer'].includes(command)) {
+            await message.delete().catch(() => {});
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) {
+                const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden registrar streamers.').catch(() => null);
+                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => {}), 4000);
+                return;
+            }
+
+            const targetUser = message.mentions.users.first();
+            const remainingArgs = args.filter(a => !a.startsWith('<@'));
+
+            if (!targetUser || remainingArgs.length === 0) {
+                const helpMsg = await message.channel.send({
+                    content: '⚠️ **Uso:**\n• `!addtwitch @usuario <url_twitch>` (Para Twitch)\n• `!addtiktok @usuario <url_tiktok>` (Para TikTok)\n• `!addstreamer @usuario <url>` (Detecta automáticamente)'
+                }).catch(() => null);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => {}), 6000);
+                return;
+            }
+
+            const rawInput = remainingArgs[0];
+            let fullUrl = rawInput.startsWith('http') ? rawInput : (rawInput.includes('tiktok') ? `https://www.tiktok.com/@${rawInput.replace(/^@/, '')}` : `https://twitch.tv/${rawInput.replace(/^@/, '')}`);
+            let isTikTok = fullUrl.includes('tiktok.com');
+            let isTwitch = fullUrl.includes('twitch.tv') || !isTikTok;
+            let platform = isTikTok ? 'TikTok' : 'Twitch';
+
+            saveStreamer(targetUser.id, {
+                tiktokUrl: isTikTok ? fullUrl : undefined,
+                twitchUrl: isTwitch ? fullUrl : undefined,
+                name: targetUser.username
+            });
+
+            const successMsg = await message.channel.send({
+                content: `✅ **Streamer registrado:** <@${targetUser.id}> en \`${platform}\` -> <${fullUrl}>`
+            }).catch(() => null);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => {}), 6000);
+            return;
+        }
+
+        // COMANDO: !delstreamer @usuario [twitch/tiktok/todo]
+        if (['!delstreamer', '!eliminarstreamer', '!quitarstreamer'].includes(command)) {
+            await message.delete().catch(() => {});
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) {
+                const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden eliminar streamers.').catch(() => null);
+                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => {}), 4000);
+                return;
+            }
+
+            const targetUser = message.mentions.users.first() || { id: args[0]?.replace(/[<@!>]/g, '') };
+            if (!targetUser || !targetUser.id) {
+                const helpMsg = await message.channel.send('⚠️ **Uso:** `!delstreamer @usuario`').catch(() => null);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => {}), 5000);
+                return;
+            }
+
+            const removed = removeStreamer(targetUser.id);
+            const msg = removed
+                ? `🗑️ Streamer <@${targetUser.id}> eliminado de la base de datos de directos.`
+                : `⚠️ El usuario <@${targetUser.id}> no estaba registrado.`;
+
+            const resMsg = await message.channel.send(msg).catch(() => null);
+            if (resMsg) setTimeout(() => resMsg.delete().catch(() => {}), 5000);
+            return;
+        }
+
+        // COMANDO: !streamers (Lista de streamers registrados)
+        if (['!streamers', '!listastreamers'].includes(command)) {
+            await message.delete().catch(() => {});
+            const streamers = getStreamersData();
+            const keys = Object.keys(streamers);
+
+            if (keys.length === 0) {
+                const emptyMsg = await message.channel.send('ℹ️ No hay streamers registrados manualmente aún. Usa `!addtwitch @usuario <url>` o `!addtiktok @usuario <url>`').catch(() => null);
+                if (emptyMsg) setTimeout(() => emptyMsg.delete().catch(() => {}), 6000);
+                return;
+            }
+
+            let desc = '';
+            for (const uid of keys) {
+                const st = streamers[uid];
+                let platformsText = [];
+                if (st.twitchUrl) platformsText.push(`🟣 **Twitch:** [Ver Canal](${st.twitchUrl})`);
+                if (st.tiktokUrl) platformsText.push(`🌸 **TikTok:** [Ver LIVE](${st.tiktokUrl})`);
+                if (platformsText.length === 0 && st.url) platformsText.push(`🔗 [${st.platform || 'Canal'}](${st.url})`);
+
+                desc += `> 👤 <@${uid}>\n> ${platformsText.join('\n> ')}\n\n`;
+            }
+
+            const listEmbed = new EmbedBuilder()
+                .setColor(0x9B59B6)
+                .setTitle('🟣 Base de Datos de Creadores y Streamers (SPAIN RP)')
+                .setDescription(desc)
+                .setFooter({ text: 'SPAIN RP • Usa !addtwitch o !addtiktok para registrar plataformas' })
+                .setTimestamp();
+
+            const listMsg = await message.channel.send({ embeds: [listEmbed] }).catch(() => null);
+            if (listMsg) setTimeout(() => listMsg.delete().catch(() => {}), 20000);
+            return;
+        }
+
+        // COMANDO: !limpiarstreamers / !limiarstreamers (Elimina todos los streamers registrados en el bot)
+        if (['!limpiarstreamers', '!limiarstreamers', '!clearstreamers', '!borrarstreamers', '!vaciarstreamers'].includes(command)) {
+            await message.delete().catch(() => {});
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) {
+                const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden usar este comando.').catch(() => null);
+                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => {}), 4000);
+                return;
+            }
+
+            const prevData = getStreamersData();
+            const count = Object.keys(prevData).length;
+            clearAllStreamers();
+
+            const clearMsg = await message.channel.send({
+                content: `🧹 **Lista de streamers vaciada con éxito:** Se han eliminado los **${count}** streamer(s) registrados en el bot.`
+            }).catch(() => null);
+            if (clearMsg) setTimeout(() => clearMsg.delete().catch(() => {}), 6000);
+            console.log(`🧹 [STREAMERS] Lista de streamers vaciada por ${message.author.tag} (${count} eliminados).`);
+            return;
+        }
     }
 
     if (message.author.id === client.user.id) return;
@@ -2763,12 +4828,11 @@ client.on('interactionCreate', async (interaction) => {
             const row = buildStreamPanelRow();
             const files = [];
             const logoPath = path.join(__dirname, 'assets', 'logo.png');
-            const imgDirectoPath = path.join(__dirname, 'assets', 'directo.png');
+            const imgPanelPath = path.join(__dirname, 'assets', 'panel_directos.png');
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-            if (fs.existsSync(imgDirectoPath)) files.push(new AttachmentBuilder(imgDirectoPath, { name: 'directo.png' }));
+            if (fs.existsSync(imgPanelPath)) files.push(new AttachmentBuilder(imgPanelPath, { name: 'panel_directos.png' }));
 
             await interaction.channel.send({
-                content: `# 🟣 ¡PANEL OFICIAL DE DIRECTOS!\n# ¡Avisa a toda la comunidad de tu transmisión!`,
                 embeds: [embed],
                 components: [row],
                 files
@@ -2810,73 +4874,78 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ----------------------------------------------------
-    // BOTÓN: NOTIFICAR DIRECTO
+    // BOTONES: NOTIFICAR DIRECTO (TWITCH / TIKTOK / GENERAL)
     // ----------------------------------------------------
-    if (interaction.customId === 'btn_notificar_directo') {
+    if (['btn_notificar_directo', 'btn_notificar_twitch', 'btn_notificar_tiktok'].includes(interaction.customId)) {
         const userId = interaction.user.id;
+        const requestedPlatform = interaction.customId === 'btn_notificar_tiktok' ? 'TikTok' : (interaction.customId === 'btn_notificar_twitch' ? 'Twitch' : null);
         const streamersData = getStreamersData();
-        let streamerInfo = streamersData[userId];
+        let streamerInfo = streamersData[userId] || {};
 
-        // Si no está registrado por ID, verificar si tiene actividad de stream activa en Discord
-        if (!streamerInfo) {
+        let targetStreamUrl = null;
+        let activePlatform = requestedPlatform || 'Twitch';
+
+        // 1. Buscar en perfil guardado según la plataforma solicitada
+        if (requestedPlatform === 'TikTok') {
+            targetStreamUrl = streamerInfo.tiktokUrl || (streamerInfo.url && streamerInfo.url.includes('tiktok.com') ? streamerInfo.url : null);
+        } else if (requestedPlatform === 'Twitch') {
+            targetStreamUrl = streamerInfo.twitchUrl || (streamerInfo.url && (streamerInfo.url.includes('twitch.tv') || !streamerInfo.url.includes('tiktok.com')) ? streamerInfo.url : null);
+        } else {
+            targetStreamUrl = streamerInfo.url || streamerInfo.twitchUrl || streamerInfo.tiktokUrl;
+            activePlatform = streamerInfo.platform || 'Twitch';
+        }
+
+        // 2. Si no tiene URL específica para la plataforma pulsada, comprobar su presencia activa en Discord
+        if (!targetStreamUrl) {
             const streamingActivity = interaction.member?.presence?.activities?.find(act =>
                 act.type === ActivityType.Streaming ||
                 (act.url && (act.url.includes('twitch.tv') || act.url.includes('kick.com') || act.url.includes('youtube.com') || act.url.includes('tiktok.com')))
             );
 
             if (streamingActivity && streamingActivity.url) {
-                let platform = 'Twitch';
-                if (streamingActivity.url.includes('kick.com')) platform = 'Kick';
-                else if (streamingActivity.url.includes('youtube.com')) platform = 'YouTube';
-                else if (streamingActivity.url.includes('tiktok.com')) platform = 'TikTok';
-
-                streamerInfo = {
-                    url: streamingActivity.url,
-                    platform: platform,
-                    title: streamingActivity.details || streamingActivity.name || 'Roleplay en directo en SPAIN RP 🇪🇸'
-                };
+                if (requestedPlatform === 'TikTok' && streamingActivity.url.includes('tiktok.com')) {
+                    targetStreamUrl = streamingActivity.url;
+                } else if (requestedPlatform === 'Twitch' && (streamingActivity.url.includes('twitch.tv') || !streamingActivity.url.includes('tiktok.com'))) {
+                    targetStreamUrl = streamingActivity.url;
+                } else if (!requestedPlatform) {
+                    targetStreamUrl = streamingActivity.url;
+                    if (streamingActivity.url.includes('tiktok.com')) activePlatform = 'TikTok';
+                }
             }
         }
 
-        if (!streamerInfo) {
+        // 3. Si sigue sin tener canal específico para esa plataforma pero tiene nombre de usuario
+        if (!targetStreamUrl) {
+            // Si tiene registrado otro canal, avisar claramente
+            const platMsg = requestedPlatform ? ` de **${requestedPlatform}**` : '';
             return interaction.reply({
-                content: `❌ **No tienes un canal de Streamer registrado en el bot.**\n\n📌 Para usar este botón, un Administrador debe añadir tu canal con \`!addstreamer @usuario <enlace>\` o debes tener tu stream activo en tu estado de Discord.\n💬 *Si eres streamer oficial, contacta con Administración.*`,
-                ephemeral: true
-            });
-        }
-
-        // Cooldown anti-spam de 2 horas por streamer
-        const lastNotified = streamerCooldowns.get(userId);
-        const cooldownTime = 2 * 60 * 60 * 1000;
-        if (lastNotified && (Date.now() - lastNotified < cooldownTime)) {
-            const remainingMs = cooldownTime - (Date.now() - lastNotified);
-            const remainingMinutes = Math.ceil(remainingMs / 60000);
-            return interaction.reply({
-                content: `⏳ **Ya has notificado tu directo recientemente.**\nPor favor, espera **${remainingMinutes} minutos** antes de volver a enviar otro aviso a la comunidad.`,
+                content: `❌ **No tienes un canal${platMsg} registrado en el bot.**\n\n📌 Para poder notificar en **${requestedPlatform || 'esta plataforma'}**, un Administrador debe añadir tu canal con:\n\`!addstreamer @${interaction.user.username} <enlace_${(requestedPlatform || 'twitch').toLowerCase()}>\`\n💬 *Si eres streamer oficial, contacta con Administración.*`,
                 ephemeral: true
             });
         }
 
         await interaction.deferReply({ ephemeral: true });
 
-        // Obtener el título en tiempo real desde la plataforma (Twitch/Kick/YouTube/Discord)
-        const liveTitle = await fetchLiveStreamTitle(streamerInfo.url, interaction.member, streamerInfo.title);
+        // Obtener el título en tiempo real desde la plataforma (Twitch/TikTok/Discord) o título guardado
+        const defaultPlatformTitle = requestedPlatform === 'TikTok' ? streamerInfo.tiktokTitle : (requestedPlatform === 'Twitch' ? streamerInfo.twitchTitle : streamerInfo.title);
+        const liveTitle = await fetchLiveStreamTitle(targetStreamUrl, interaction.member, defaultPlatformTitle || streamerInfo.title);
 
-        // Enviar notificación al canal oficial de streams
+        // Enviar notificación personalizada al canal oficial de streams
         const result = await sendStreamerNotification({
             userMention: `<@${userId}>`,
-            streamUrl: streamerInfo.url,
+            streamUrl: targetStreamUrl,
             streamTitle: liveTitle,
-            platform: streamerInfo.platform || (streamerInfo.url.includes('kick.com') ? 'Kick' : 'Twitch'),
+            platform: activePlatform,
             avatarUrl: interaction.user.displayAvatarURL({ dynamic: true })
         });
 
-        const targetChannelId = botConfig.CHANNEL_STREAMERS_ID || '1551179646865772644';
+        const targetChannelId = botConfig.CHANNEL_STREAMERS_ID || '1517530849032016006';
 
         if (result && result.success) {
             streamerCooldowns.set(userId, Date.now());
+            const platEmoji = activePlatform.toLowerCase().includes('tiktok') ? '⚫' : '🟣';
             return interaction.editReply({
-                content: `✅ **¡Tu directo ha sido anunciado con éxito en <#${targetChannelId}>!**\n🏷️ **Título detectado:** \`"${liveTitle}"\`\n¡Mucho éxito en tu transmisión! 🚀`
+                content: `✅ **¡Tu directo de ${activePlatform} ${platEmoji} ha sido anunciado con éxito en <#${targetChannelId}>!**\n🏷️ **Título:** \`"${liveTitle}"\`\n🔗 **Canal:** <${targetStreamUrl}>\n¡Mucho éxito en tu transmisión! 🚀`
             });
         } else {
             return interaction.editReply({
@@ -3106,14 +5175,37 @@ if (process.stdin.isTTY || process.env.NODE_ENV !== 'production') {
             return;
         }
 
+        // Estado de entrevistas de voz activas
+        if (['entrevistas', 'voz', 'voice'].includes(input)) {
+            console.log(`\n🎙️ [CMD VOZ] Entrevistas de voz activas: ${activeVoiceInterviews.size}`);
+            activeVoiceInterviews.forEach((session, guildId) => {
+                const dur = Math.round((Date.now() - session.startTime) / 1000);
+                console.log(`  -> Guild ${guildId} | Postulante: ${session.targetTag} (${session.targetUserId}) | Duración: ${dur}s | Frases capturadas: ${session.transcripts.length}`);
+            });
+            console.log('');
+            return;
+        }
+
+        // Desconectar forzosamente al bot de canales de voz
+        if (['salir-voz', 'desconectar-voz', 'kick-voz'].includes(input)) {
+            activeVoiceInterviews.forEach((session, gId) => {
+                try { if (session.connection) session.connection.destroy(); } catch (e) {}
+            });
+            activeVoiceInterviews.clear();
+            console.log('👋 [CMD] Bot desconectado de todos los canales de voz.\n');
+            return;
+        }
+
         // Ayuda
         if (['ayuda', 'help', '?'].includes(input)) {
             console.log('\n📋 [COMANDOS DISPONIBLES EN LA TERMINAL / CMD]:');
-            console.log('  • limpiar      -> Borra todos los mensajes que el bot envió en el canal de solicitudes');
-            console.log('  • limpiar-todo -> Borra mensajes del bot en solicitudes y aprobados');
-            console.log('  • scan         -> Vuelve a escanear el historial para calibrar la IA');
-            console.log('  • stats        -> Muestra las estadísticas de aprendizaje del bot');
-            console.log('  • salir        -> Apaga el bot de forma segura\n');
+            console.log('  • limpiar        -> Borra todos los mensajes que el bot envió en el canal de solicitudes');
+            console.log('  • limpiar-todo   -> Borra mensajes del bot en solicitudes y aprobados');
+            console.log('  • scan           -> Vuelve a escanear el historial para calibrar la IA');
+            console.log('  • stats          -> Muestra las estadísticas de aprendizaje del bot');
+            console.log('  • entrevistas    -> Muestra si hay entrevistas de voz activas');
+            console.log('  • salir-voz      -> Desconecta al bot de cualquier canal de voz');
+            console.log('  • salir          -> Apaga el bot de forma segura\n');
             return;
         }
 

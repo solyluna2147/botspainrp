@@ -1,15 +1,15 @@
 {
-  "totalSamples": 2,
-  "approvedSamples": 0,
-  "deniedSamples": 2,
+  "totalSamples": 4,
+  "approvedSamples": 1,
+  "deniedSamples": 3,
   "learnedClichés": {
     "significa valorar la": {
       "count": 2,
       "weight": 10
     },
     "valorar la vida": {
-      "count": 2,
-      "weight": 10
+      "count": 5,
+      "weight": 14
     },
     "personaje por encima": {
       "count": 2,
@@ -59,18 +59,6 @@
       "count": 2,
       "weight": 10
     },
-    "vida única muerte": {
-      "count": 4,
-      "weight": 14
-    },
-    "única muerte permanente": {
-      "count": 4,
-      "weight": 14
-    },
-    "muerte permanente pkt": {
-      "count": 4,
-      "weight": 14
-    },
     "permanente pkt sí": {
       "count": 2,
       "weight": 10
@@ -114,18 +102,6 @@
     "ap historia de": {
       "count": 3,
       "weight": 12
-    },
-    "historia de tu": {
-      "count": 5,
-      "weight": 14
-    },
-    "de tu personaje": {
-      "count": 5,
-      "weight": 14
-    },
-    "tu personaje obligatorio": {
-      "count": 5,
-      "weight": 14
     },
     "personaje obligatorio alejandro": {
       "count": 3,
@@ -291,18 +267,6 @@
       "count": 3,
       "weight": 12
     },
-    "datos ooc del": {
-      "count": 6,
-      "weight": 14
-    },
-    "ooc del jugador": {
-      "count": 6,
-      "weight": 14
-    },
-    "del jugador obligatorio": {
-      "count": 6,
-      "weight": 14
-    },
     "jugador obligatorio dani": {
       "count": 3,
       "weight": 12
@@ -395,14 +359,6 @@
       "count": 2,
       "weight": 10
     },
-    "vida única muerte permanente": {
-      "count": 4,
-      "weight": 14
-    },
-    "única muerte permanente pkt": {
-      "count": 4,
-      "weight": 14
-    },
     "muerte permanente pkt sí": {
       "count": 2,
       "weight": 10
@@ -470,14 +426,6 @@
     "ap historia de tu": {
       "count": 3,
       "weight": 12
-    },
-    "historia de tu personaje": {
-      "count": 5,
-      "weight": 14
-    },
-    "de tu personaje obligatorio": {
-      "count": 5,
-      "weight": 14
     },
     "tu personaje obligatorio alejandro": {
       "count": 3,
@@ -731,14 +679,6 @@
       "count": 3,
       "weight": 12
     },
-    "datos ooc del jugador": {
-      "count": 6,
-      "weight": 14
-    },
-    "ooc del jugador obligatorio": {
-      "count": 6,
-      "weight": 14
-    },
     "del jugador obligatorio dani": {
       "count": 3,
       "weight": 12
@@ -754,10 +694,6 @@
     "dani 22 años españa": {
       "count": 3,
       "weight": 12
-    },
-    "valoración de vida": {
-      "count": 2,
-      "weight": 10
     },
     "comprende la preservación": {
       "count": 2,
@@ -1124,8 +1060,8 @@
       "weight": 12
     },
     "de nuevas oportunidades": {
-      "count": 3,
-      "weight": 12
+      "count": 4,
+      "weight": 14
     },
     "nuevas oportunidades que": {
       "count": 3,
@@ -1702,9 +1638,606 @@
     "marco 25 años españa": {
       "count": 3,
       "weight": 12
+    },
+    "respetando las normas": {
+      "count": 2,
+      "weight": 10
+    },
+    "normas del servidor": {
+      "count": 2,
+      "weight": 10
+    },
+    "del servidor valoración": {
+      "count": 2,
+      "weight": 10
+    },
+    "servidor valoración de": {
+      "count": 2,
+      "weight": 10
+    },
+    "vida valorar la": {
+      "count": 2,
+      "weight": 10
+    },
+    "la vida significa": {
+      "count": 3,
+      "weight": 12
+    },
+    "vida significa actuar": {
+      "count": 3,
+      "weight": 12
+    },
+    "significa actuar de": {
+      "count": 3,
+      "weight": 12
+    },
+    "actuar de forma": {
+      "count": 3,
+      "weight": 12
+    },
+    "forma que tu": {
+      "count": 3,
+      "weight": 12
+    },
+    "que tu personaje": {
+      "count": 3,
+      "weight": 12
+    },
+    "tu personaje proteja": {
+      "count": 3,
+      "weight": 12
+    },
+    "personaje proteja su": {
+      "count": 3,
+      "weight": 12
+    },
+    "proteja su vida": {
+      "count": 3,
+      "weight": 12
+    },
+    "se exponga innecesariamente": {
+      "count": 3,
+      "weight": 12
+    },
+    "exponga innecesariamente situaciones": {
+      "count": 3,
+      "weight": 12
+    },
+    "innecesariamente situaciones peligrosas": {
+      "count": 3,
+      "weight": 12
+    },
+    "situaciones peligrosas como": {
+      "count": 3,
+      "weight": 12
+    },
+    "si realmente estuviera": {
+      "count": 3,
+      "weight": 12
+    },
+    "realmente estuviera en": {
+      "count": 3,
+      "weight": 12
+    },
+    "estuviera en riesgo": {
+      "count": 3,
+      "weight": 12
+    },
+    "en riesgo vida": {
+      "count": 3,
+      "weight": 12
+    },
+    "riesgo vida única": {
+      "count": 3,
+      "weight": 12
+    },
+    "respetando las normas del": {
+      "count": 2,
+      "weight": 10
+    },
+    "las normas del servidor": {
+      "count": 2,
+      "weight": 10
+    },
+    "normas del servidor valoración": {
+      "count": 2,
+      "weight": 10
+    },
+    "del servidor valoración de": {
+      "count": 2,
+      "weight": 10
+    },
+    "servidor valoración de vida": {
+      "count": 2,
+      "weight": 10
+    },
+    "de vida valorar la": {
+      "count": 2,
+      "weight": 10
+    },
+    "vida valorar la vida": {
+      "count": 2,
+      "weight": 10
+    },
+    "valorar la vida significa": {
+      "count": 3,
+      "weight": 12
+    },
+    "la vida significa actuar": {
+      "count": 3,
+      "weight": 12
+    },
+    "vida significa actuar de": {
+      "count": 3,
+      "weight": 12
+    },
+    "significa actuar de forma": {
+      "count": 3,
+      "weight": 12
+    },
+    "actuar de forma que": {
+      "count": 3,
+      "weight": 12
+    },
+    "de forma que tu": {
+      "count": 3,
+      "weight": 12
+    },
+    "forma que tu personaje": {
+      "count": 3,
+      "weight": 12
+    },
+    "que tu personaje proteja": {
+      "count": 3,
+      "weight": 12
+    },
+    "tu personaje proteja su": {
+      "count": 3,
+      "weight": 12
+    },
+    "personaje proteja su vida": {
+      "count": 3,
+      "weight": 12
+    },
+    "proteja su vida no": {
+      "count": 3,
+      "weight": 12
+    },
+    "vida no se exponga": {
+      "count": 3,
+      "weight": 12
+    },
+    "no se exponga innecesariamente": {
+      "count": 3,
+      "weight": 12
+    },
+    "se exponga innecesariamente situaciones": {
+      "count": 3,
+      "weight": 12
+    },
+    "exponga innecesariamente situaciones peligrosas": {
+      "count": 3,
+      "weight": 12
+    },
+    "innecesariamente situaciones peligrosas como": {
+      "count": 3,
+      "weight": 12
+    },
+    "situaciones peligrosas como si": {
+      "count": 3,
+      "weight": 12
+    },
+    "peligrosas como si realmente": {
+      "count": 3,
+      "weight": 12
+    },
+    "como si realmente estuviera": {
+      "count": 3,
+      "weight": 12
+    },
+    "si realmente estuviera en": {
+      "count": 3,
+      "weight": 12
+    },
+    "realmente estuviera en riesgo": {
+      "count": 3,
+      "weight": 12
+    },
+    "estuviera en riesgo vida": {
+      "count": 3,
+      "weight": 12
+    },
+    "en riesgo vida única": {
+      "count": 3,
+      "weight": 12
+    },
+    "riesgo vida única muerte": {
+      "count": 3,
+      "weight": 12
     }
   },
-  "learnedHumanPatterns": {},
+  "learnedHumanPatterns": {
+    "valorar tu vida": {
+      "count": 2,
+      "weight": 8
+    },
+    "tu vida es": {
+      "count": 2,
+      "weight": 8
+    },
+    "edificio para llegar": {
+      "count": 2,
+      "weight": 8
+    },
+    "bajando las escaleras": {
+      "count": 2,
+      "weight": 8
+    },
+    "la policias te": {
+      "count": 2,
+      "weight": 8
+    },
+    "policias te va": {
+      "count": 2,
+      "weight": 8
+    },
+    "te va detener": {
+      "count": 2,
+      "weight": 8
+    },
+    "va detener respetarlo": {
+      "count": 2,
+      "weight": 8
+    },
+    "detener respetarlo vida": {
+      "count": 2,
+      "weight": 8
+    },
+    "respetarlo vida única": {
+      "count": 2,
+      "weight": 8
+    },
+    "vida única muerte": {
+      "count": 2,
+      "weight": 8
+    },
+    "única muerte permanente": {
+      "count": 2,
+      "weight": 8
+    },
+    "muerte permanente pkt": {
+      "count": 2,
+      "weight": 8
+    },
+    "permanente pkt no": {
+      "count": 2,
+      "weight": 8
+    },
+    "pkt no recorrdar": {
+      "count": 2,
+      "weight": 8
+    },
+    "que as muerto": {
+      "count": 2,
+      "weight": 8
+    },
+    "as muerto historia": {
+      "count": 2,
+      "weight": 8
+    },
+    "muerto historia de": {
+      "count": 2,
+      "weight": 8
+    },
+    "historia de tu": {
+      "count": 2,
+      "weight": 8
+    },
+    "de tu personaje": {
+      "count": 2,
+      "weight": 8
+    },
+    "tu personaje obligatorio": {
+      "count": 2,
+      "weight": 8
+    },
+    "personaje obligatorio estuve": {
+      "count": 2,
+      "weight": 8
+    },
+    "obligatorio estuve en": {
+      "count": 3,
+      "weight": 10
+    },
+    "la antigua ciudad": {
+      "count": 3,
+      "weight": 10
+    },
+    "antigua ciudad de": {
+      "count": 3,
+      "weight": 10
+    },
+    "ciudad de anubis": {
+      "count": 3,
+      "weight": 10
+    },
+    "anubis me encantaria": {
+      "count": 3,
+      "weight": 10
+    },
+    "me encantaria disfrutar": {
+      "count": 3,
+      "weight": 10
+    },
+    "encantaria disfrutar de": {
+      "count": 3,
+      "weight": 10
+    },
+    "esta datos ooc": {
+      "count": 3,
+      "weight": 10
+    },
+    "datos ooc del": {
+      "count": 3,
+      "weight": 10
+    },
+    "ooc del jugador": {
+      "count": 3,
+      "weight": 10
+    },
+    "del jugador obligatorio": {
+      "count": 3,
+      "weight": 10
+    },
+    "jugador obligatorio adrian": {
+      "count": 3,
+      "weight": 10
+    },
+    "obligatorio adrian edad": {
+      "count": 3,
+      "weight": 10
+    },
+    "adrian edad 25": {
+      "count": 3,
+      "weight": 10
+    },
+    "edad 25 ciudad": {
+      "count": 3,
+      "weight": 10
+    },
+    "25 ciudad madrid": {
+      "count": 3,
+      "weight": 10
+    },
+    "ciudad madrid pais": {
+      "count": 3,
+      "weight": 10
+    },
+    "madrid pais españa": {
+      "count": 3,
+      "weight": 10
+    },
+    "valorar tu vida es": {
+      "count": 2,
+      "weight": 8
+    },
+    "tu vida es no": {
+      "count": 2,
+      "weight": 8
+    },
+    "vida es no tirarse": {
+      "count": 2,
+      "weight": 8
+    },
+    "tirarse de un edificio": {
+      "count": 2,
+      "weight": 8
+    },
+    "un edificio para llegar": {
+      "count": 2,
+      "weight": 8
+    },
+    "edificio para llegar antes": {
+      "count": 2,
+      "weight": 8
+    },
+    "llegar antes que bajando": {
+      "count": 2,
+      "weight": 8
+    },
+    "que bajando las escaleras": {
+      "count": 2,
+      "weight": 8
+    },
+    "bajando las escaleras si": {
+      "count": 2,
+      "weight": 8
+    },
+    "escaleras si la policias": {
+      "count": 2,
+      "weight": 8
+    },
+    "si la policias te": {
+      "count": 2,
+      "weight": 8
+    },
+    "la policias te va": {
+      "count": 2,
+      "weight": 8
+    },
+    "policias te va detener": {
+      "count": 2,
+      "weight": 8
+    },
+    "te va detener respetarlo": {
+      "count": 2,
+      "weight": 8
+    },
+    "va detener respetarlo vida": {
+      "count": 2,
+      "weight": 8
+    },
+    "detener respetarlo vida única": {
+      "count": 2,
+      "weight": 8
+    },
+    "respetarlo vida única muerte": {
+      "count": 2,
+      "weight": 8
+    },
+    "vida única muerte permanente": {
+      "count": 2,
+      "weight": 8
+    },
+    "única muerte permanente pkt": {
+      "count": 2,
+      "weight": 8
+    },
+    "muerte permanente pkt no": {
+      "count": 2,
+      "weight": 8
+    },
+    "permanente pkt no recorrdar": {
+      "count": 2,
+      "weight": 8
+    },
+    "pkt no recorrdar lo": {
+      "count": 2,
+      "weight": 8
+    },
+    "recorrdar lo que paso": {
+      "count": 2,
+      "weight": 8
+    },
+    "paso antes de morir": {
+      "count": 2,
+      "weight": 8
+    },
+    "morir por que as": {
+      "count": 2,
+      "weight": 8
+    },
+    "por que as muerto": {
+      "count": 2,
+      "weight": 8
+    },
+    "que as muerto historia": {
+      "count": 2,
+      "weight": 8
+    },
+    "as muerto historia de": {
+      "count": 2,
+      "weight": 8
+    },
+    "muerto historia de tu": {
+      "count": 2,
+      "weight": 8
+    },
+    "historia de tu personaje": {
+      "count": 2,
+      "weight": 8
+    },
+    "de tu personaje obligatorio": {
+      "count": 2,
+      "weight": 8
+    },
+    "tu personaje obligatorio estuve": {
+      "count": 2,
+      "weight": 8
+    },
+    "personaje obligatorio estuve en": {
+      "count": 2,
+      "weight": 8
+    },
+    "obligatorio estuve en la": {
+      "count": 3,
+      "weight": 10
+    },
+    "estuve en la antigua": {
+      "count": 3,
+      "weight": 10
+    },
+    "en la antigua ciudad": {
+      "count": 3,
+      "weight": 10
+    },
+    "la antigua ciudad de": {
+      "count": 3,
+      "weight": 10
+    },
+    "antigua ciudad de anubis": {
+      "count": 3,
+      "weight": 10
+    },
+    "ciudad de anubis me": {
+      "count": 3,
+      "weight": 10
+    },
+    "de anubis me encantaria": {
+      "count": 3,
+      "weight": 10
+    },
+    "anubis me encantaria disfrutar": {
+      "count": 3,
+      "weight": 10
+    },
+    "me encantaria disfrutar de": {
+      "count": 3,
+      "weight": 10
+    },
+    "encantaria disfrutar de esta": {
+      "count": 3,
+      "weight": 10
+    },
+    "disfrutar de esta datos": {
+      "count": 3,
+      "weight": 10
+    },
+    "de esta datos ooc": {
+      "count": 3,
+      "weight": 10
+    },
+    "esta datos ooc del": {
+      "count": 3,
+      "weight": 10
+    },
+    "datos ooc del jugador": {
+      "count": 3,
+      "weight": 10
+    },
+    "ooc del jugador obligatorio": {
+      "count": 3,
+      "weight": 10
+    },
+    "del jugador obligatorio adrian": {
+      "count": 3,
+      "weight": 10
+    },
+    "jugador obligatorio adrian edad": {
+      "count": 3,
+      "weight": 10
+    },
+    "obligatorio adrian edad 25": {
+      "count": 3,
+      "weight": 10
+    },
+    "adrian edad 25 ciudad": {
+      "count": 3,
+      "weight": 10
+    },
+    "edad 25 ciudad madrid": {
+      "count": 3,
+      "weight": 10
+    },
+    "25 ciudad madrid pais": {
+      "count": 3,
+      "weight": 10
+    },
+    "ciudad madrid pais españa": {
+      "count": 3,
+      "weight": 10
+    }
+  },
   "deniedPhrasesCount": {
     "un personaje ficticio": 1,
     "personaje ficticio actuar": 1,
@@ -1719,11 +2252,11 @@
     "salirte del papel": 1,
     "del papel valoración": 1,
     "papel valoración de": 1,
-    "valoración de vida": 2,
+    "valoración de vida": 4,
     "de vida significa": 1,
     "vida significa valorar": 1,
     "significa valorar la": 2,
-    "valorar la vida": 2,
+    "valorar la vida": 5,
     "personaje por encima": 2,
     "un arma estoy": 2,
     "arma estoy en": 2,
@@ -1736,9 +2269,9 @@
     "no hago locuras": 2,
     "hago locuras vida": 2,
     "locuras vida única": 2,
-    "vida única muerte": 4,
-    "única muerte permanente": 4,
-    "muerte permanente pkt": 4,
+    "vida única muerte": 7,
+    "única muerte permanente": 7,
+    "muerte permanente pkt": 7,
     "permanente pkt sí": 2,
     "pkt sí entiendo": 2,
     "sí entiendo que": 2,
@@ -1750,9 +2283,9 @@
     "personaje según ap": 3,
     "según ap historia": 3,
     "ap historia de": 3,
-    "historia de tu": 5,
-    "de tu personaje": 5,
-    "tu personaje obligatorio": 5,
+    "historia de tu": 6,
+    "de tu personaje": 6,
+    "tu personaje obligatorio": 6,
     "personaje obligatorio alejandro": 3,
     "obligatorio alejandro nació": 3,
     "alejandro nació en": 3,
@@ -1794,9 +2327,9 @@
     "de cero tranquilamente": 3,
     "cero tranquilamente datos": 3,
     "tranquilamente datos ooc": 3,
-    "datos ooc del": 6,
-    "ooc del jugador": 6,
-    "del jugador obligatorio": 6,
+    "datos ooc del": 7,
+    "ooc del jugador": 7,
+    "del jugador obligatorio": 7,
     "jugador obligatorio dani": 3,
     "obligatorio dani 22": 3,
     "dani 22 años": 3,
@@ -1849,8 +2382,8 @@
     "no hago locuras vida": 2,
     "hago locuras vida única": 2,
     "locuras vida única muerte": 2,
-    "vida única muerte permanente": 4,
-    "única muerte permanente pkt": 4,
+    "vida única muerte permanente": 7,
+    "única muerte permanente pkt": 7,
     "muerte permanente pkt sí": 2,
     "permanente pkt sí entiendo": 2,
     "pkt sí entiendo que": 2,
@@ -1868,8 +2401,8 @@
     "personaje según ap historia": 3,
     "según ap historia de": 3,
     "ap historia de tu": 3,
-    "historia de tu personaje": 5,
-    "de tu personaje obligatorio": 5,
+    "historia de tu personaje": 6,
+    "de tu personaje obligatorio": 6,
     "tu personaje obligatorio alejandro": 3,
     "personaje obligatorio alejandro nació": 3,
     "obligatorio alejandro nació en": 3,
@@ -1933,8 +2466,8 @@
     "de cero tranquilamente datos": 3,
     "cero tranquilamente datos ooc": 3,
     "tranquilamente datos ooc del": 3,
-    "datos ooc del jugador": 6,
-    "ooc del jugador obligatorio": 6,
+    "datos ooc del jugador": 7,
+    "ooc del jugador obligatorio": 7,
     "del jugador obligatorio dani": 3,
     "jugador obligatorio dani 22": 3,
     "obligatorio dani 22 años": 3,
@@ -2064,7 +2597,7 @@
     "un nuevo comienzo": 3,
     "nuevo comienzo de": 3,
     "comienzo de nuevas": 3,
-    "de nuevas oportunidades": 3,
+    "de nuevas oportunidades": 4,
     "nuevas oportunidades que": 3,
     "le permitan alcanzar": 3,
     "permitan alcanzar la": 3,
@@ -2255,9 +2788,368 @@
     "españa comprende la preservación": 1,
     "25 años españa obligatorio": 1,
     "años españa obligatorio desde": 1,
-    "españa obligatorio desde temprana": 1
+    "españa obligatorio desde temprana": 1,
+    "rol es interpretar": 1,
+    "interpretar un personaje": 1,
+    "un personaje dentro": 1,
+    "personaje dentro de": 1,
+    "una ciudad ficticia": 1,
+    "ciudad ficticia actuando": 1,
+    "ficticia actuando de": 1,
+    "actuando de forma": 1,
+    "de forma coerente": 1,
+    "forma coerente con": 1,
+    "su historia respetando": 1,
+    "historia respetando las": 1,
+    "respetando las normas": 2,
+    "normas del servidor": 2,
+    "del servidor valoración": 2,
+    "servidor valoración de": 2,
+    "de vida valorar": 2,
+    "vida valorar la": 2,
+    "la vida significa": 3,
+    "vida significa actuar": 3,
+    "significa actuar de": 3,
+    "actuar de forma": 3,
+    "forma que tu": 3,
+    "que tu personaje": 3,
+    "tu personaje proteja": 3,
+    "personaje proteja su": 3,
+    "proteja su vida": 3,
+    "se exponga innecesariamente": 3,
+    "exponga innecesariamente situaciones": 3,
+    "innecesariamente situaciones peligrosas": 3,
+    "situaciones peligrosas como": 3,
+    "si realmente estuviera": 3,
+    "realmente estuviera en": 3,
+    "estuviera en riesgo": 3,
+    "en riesgo vida": 3,
+    "riesgo vida única": 3,
+    "permanente pkt valorar": 1,
+    "pkt valorar la": 1,
+    "permanente pkt respetando": 1,
+    "pkt respetando las": 1,
+    "permanente pkt vida": 1,
+    "pkt vida única": 1,
+    "vida única significa": 1,
+    "única significa que": 1,
+    "si tu personaje": 1,
+    "tu personaje muere": 1,
+    "personaje muere debe": 1,
+    "muere debe actuar": 1,
+    "debe actuar como": 1,
+    "si esa muerte": 1,
+    "esa muerte hubiera": 1,
+    "muerte hubiera ocurrido": 1,
+    "hubiera ocurrido rea": 1,
+    "ocurrido rea historia": 1,
+    "rea historia de": 1,
+    "personaje obligatorio mi": 1,
+    "obligatorio mi personaje": 1,
+    "personaje se llama": 1,
+    "se llama adrián": 1,
+    "llama adrián navarro": 1,
+    "adrián navarro tiene": 1,
+    "navarro tiene 24": 1,
+    "tiene 24 años": 1,
+    "24 años nació": 1,
+    "años nació en": 1,
+    "nació en españa": 1,
+    "españa desde pequeño": 1,
+    "desde pequeño siempre": 1,
+    "pequeño siempre ha": 1,
+    "siempre ha sido": 1,
+    "sido una persona": 1,
+    "una persona trabajadora": 1,
+    "persona trabajadora responsable": 1,
+    "trabajadora responsable al": 1,
+    "responsable al terminar": 1,
+    "terminar sus estudios": 1,
+    "sus estudios decidió": 1,
+    "estudios decidió mudarse": 1,
+    "decidió mudarse la": 1,
+    "mudarse la ciudad": 1,
+    "ciudad en busca": 1,
+    "busca de nuevas": 1,
+    "nuevas oportunidades empezar": 1,
+    "oportunidades empezar una": 1,
+    "empezar una nueva": 1,
+    "una nueva vida": 1,
+    "nueva vida datos": 1,
+    "vida datos ooc": 1,
+    "jugador obligatorio adrian": 1,
+    "obligatorio adrian navarro": 1,
+    "adrian navarro 24años": 1,
+    "navarro 24años español": 1,
+    "24años español madrid": 1,
+    "español madrid razón": 1,
+    "madrid razón mejora": 1,
+    "razón mejora un": 1,
+    "mejora un poco": 1,
+    "poco la historia": 1,
+    "el rol es interpretar": 1,
+    "rol es interpretar un": 1,
+    "es interpretar un personaje": 1,
+    "interpretar un personaje dentro": 1,
+    "un personaje dentro de": 1,
+    "personaje dentro de una": 1,
+    "dentro de una ciudad": 1,
+    "de una ciudad ficticia": 1,
+    "una ciudad ficticia actuando": 1,
+    "ciudad ficticia actuando de": 1,
+    "ficticia actuando de forma": 1,
+    "actuando de forma coerente": 1,
+    "de forma coerente con": 1,
+    "forma coerente con su": 1,
+    "coerente con su historia": 1,
+    "con su historia respetando": 1,
+    "su historia respetando las": 1,
+    "historia respetando las normas": 1,
+    "respetando las normas del": 2,
+    "las normas del servidor": 2,
+    "normas del servidor valoración": 2,
+    "del servidor valoración de": 2,
+    "servidor valoración de vida": 2,
+    "valoración de vida valorar": 2,
+    "de vida valorar la": 2,
+    "vida valorar la vida": 2,
+    "valorar la vida significa": 3,
+    "la vida significa actuar": 3,
+    "vida significa actuar de": 3,
+    "significa actuar de forma": 3,
+    "actuar de forma que": 3,
+    "de forma que tu": 3,
+    "forma que tu personaje": 3,
+    "que tu personaje proteja": 3,
+    "tu personaje proteja su": 3,
+    "personaje proteja su vida": 3,
+    "proteja su vida no": 3,
+    "vida no se exponga": 3,
+    "no se exponga innecesariamente": 3,
+    "se exponga innecesariamente situaciones": 3,
+    "exponga innecesariamente situaciones peligrosas": 3,
+    "innecesariamente situaciones peligrosas como": 3,
+    "situaciones peligrosas como si": 3,
+    "peligrosas como si realmente": 3,
+    "como si realmente estuviera": 3,
+    "si realmente estuviera en": 3,
+    "realmente estuviera en riesgo": 3,
+    "estuviera en riesgo vida": 3,
+    "en riesgo vida única": 3,
+    "riesgo vida única muerte": 3,
+    "muerte permanente pkt valorar": 1,
+    "permanente pkt valorar la": 1,
+    "pkt valorar la vida": 1,
+    "muerte permanente pkt respetando": 1,
+    "permanente pkt respetando las": 1,
+    "pkt respetando las normas": 1,
+    "muerte permanente pkt vida": 1,
+    "permanente pkt vida única": 1,
+    "pkt vida única significa": 1,
+    "vida única significa que": 1,
+    "única significa que si": 1,
+    "significa que si tu": 1,
+    "que si tu personaje": 1,
+    "si tu personaje muere": 1,
+    "tu personaje muere debe": 1,
+    "personaje muere debe actuar": 1,
+    "muere debe actuar como": 1,
+    "debe actuar como si": 1,
+    "actuar como si esa": 1,
+    "como si esa muerte": 1,
+    "si esa muerte hubiera": 1,
+    "esa muerte hubiera ocurrido": 1,
+    "muerte hubiera ocurrido rea": 1,
+    "hubiera ocurrido rea historia": 1,
+    "ocurrido rea historia de": 1,
+    "rea historia de tu": 1,
+    "tu personaje obligatorio mi": 1,
+    "personaje obligatorio mi personaje": 1,
+    "obligatorio mi personaje se": 1,
+    "mi personaje se llama": 1,
+    "personaje se llama adrián": 1,
+    "se llama adrián navarro": 1,
+    "llama adrián navarro tiene": 1,
+    "adrián navarro tiene 24": 1,
+    "navarro tiene 24 años": 1,
+    "tiene 24 años nació": 1,
+    "24 años nació en": 1,
+    "años nació en españa": 1,
+    "nació en españa desde": 1,
+    "en españa desde pequeño": 1,
+    "españa desde pequeño siempre": 1,
+    "desde pequeño siempre ha": 1,
+    "pequeño siempre ha sido": 1,
+    "siempre ha sido una": 1,
+    "ha sido una persona": 1,
+    "sido una persona trabajadora": 1,
+    "una persona trabajadora responsable": 1,
+    "persona trabajadora responsable al": 1,
+    "trabajadora responsable al terminar": 1,
+    "responsable al terminar sus": 1,
+    "al terminar sus estudios": 1,
+    "terminar sus estudios decidió": 1,
+    "sus estudios decidió mudarse": 1,
+    "estudios decidió mudarse la": 1,
+    "decidió mudarse la ciudad": 1,
+    "mudarse la ciudad en": 1,
+    "la ciudad en busca": 1,
+    "ciudad en busca de": 1,
+    "en busca de nuevas": 1,
+    "busca de nuevas oportunidades": 1,
+    "de nuevas oportunidades empezar": 1,
+    "nuevas oportunidades empezar una": 1,
+    "oportunidades empezar una nueva": 1,
+    "empezar una nueva vida": 1,
+    "una nueva vida datos": 1,
+    "nueva vida datos ooc": 1,
+    "vida datos ooc del": 1,
+    "del jugador obligatorio adrian": 1,
+    "jugador obligatorio adrian navarro": 1,
+    "obligatorio adrian navarro 24años": 1,
+    "adrian navarro 24años español": 1,
+    "navarro 24años español madrid": 1,
+    "24años español madrid razón": 1,
+    "español madrid razón mejora": 1,
+    "madrid razón mejora un": 1,
+    "razón mejora un poco": 1,
+    "mejora un poco la": 1,
+    "un poco la historia": 1
   },
-  "approvedPhrasesCount": {},
+  "approvedPhrasesCount": {
+    "la vida real": 1,
+    "vida real portarse": 1,
+    "real portarse bien": 1,
+    "portarse bien valorrar": 1,
+    "bien valorrar vida": 1,
+    "valorrar vida conducir": 1,
+    "vida conducir bien": 1,
+    "conducir bien valoración": 1,
+    "bien valoración de": 1,
+    "valoración de vida": 1,
+    "de vida valorar": 1,
+    "vida valorar tu": 1,
+    "valorar tu vida": 2,
+    "tu vida es": 2,
+    "edificio para llegar": 2,
+    "bajando las escaleras": 2,
+    "la policias te": 2,
+    "policias te va": 2,
+    "te va detener": 2,
+    "va detener respetarlo": 2,
+    "detener respetarlo vida": 2,
+    "respetarlo vida única": 2,
+    "vida única muerte": 2,
+    "única muerte permanente": 2,
+    "muerte permanente pkt": 2,
+    "permanente pkt no": 2,
+    "pkt no recorrdar": 2,
+    "que as muerto": 2,
+    "as muerto historia": 2,
+    "muerto historia de": 2,
+    "historia de tu": 2,
+    "de tu personaje": 2,
+    "tu personaje obligatorio": 2,
+    "personaje obligatorio estuve": 2,
+    "obligatorio estuve en": 3,
+    "la antigua ciudad": 3,
+    "antigua ciudad de": 3,
+    "ciudad de anubis": 3,
+    "anubis me encantaria": 3,
+    "me encantaria disfrutar": 3,
+    "encantaria disfrutar de": 3,
+    "esta datos ooc": 3,
+    "datos ooc del": 3,
+    "ooc del jugador": 3,
+    "del jugador obligatorio": 3,
+    "jugador obligatorio adrian": 3,
+    "obligatorio adrian edad": 3,
+    "adrian edad 25": 3,
+    "edad 25 ciudad": 3,
+    "25 ciudad madrid": 3,
+    "ciudad madrid pais": 3,
+    "madrid pais españa": 3,
+    "pais españa valorar": 1,
+    "españa valorar tu": 1,
+    "pais españa obligatorio": 1,
+    "españa obligatorio estuve": 1,
+    "hacer lo que arias": 1,
+    "arias en la vida": 1,
+    "en la vida real": 1,
+    "la vida real portarse": 1,
+    "vida real portarse bien": 1,
+    "real portarse bien valorrar": 1,
+    "portarse bien valorrar vida": 1,
+    "bien valorrar vida conducir": 1,
+    "valorrar vida conducir bien": 1,
+    "vida conducir bien valoración": 1,
+    "conducir bien valoración de": 1,
+    "bien valoración de vida": 1,
+    "valoración de vida valorar": 1,
+    "de vida valorar tu": 1,
+    "vida valorar tu vida": 1,
+    "valorar tu vida es": 2,
+    "tu vida es no": 2,
+    "vida es no tirarse": 2,
+    "tirarse de un edificio": 2,
+    "un edificio para llegar": 2,
+    "edificio para llegar antes": 2,
+    "llegar antes que bajando": 2,
+    "que bajando las escaleras": 2,
+    "bajando las escaleras si": 2,
+    "escaleras si la policias": 2,
+    "si la policias te": 2,
+    "la policias te va": 2,
+    "policias te va detener": 2,
+    "te va detener respetarlo": 2,
+    "va detener respetarlo vida": 2,
+    "detener respetarlo vida única": 2,
+    "respetarlo vida única muerte": 2,
+    "vida única muerte permanente": 2,
+    "única muerte permanente pkt": 2,
+    "muerte permanente pkt no": 2,
+    "permanente pkt no recorrdar": 2,
+    "pkt no recorrdar lo": 2,
+    "recorrdar lo que paso": 2,
+    "paso antes de morir": 2,
+    "morir por que as": 2,
+    "por que as muerto": 2,
+    "que as muerto historia": 2,
+    "as muerto historia de": 2,
+    "muerto historia de tu": 2,
+    "historia de tu personaje": 2,
+    "de tu personaje obligatorio": 2,
+    "tu personaje obligatorio estuve": 2,
+    "personaje obligatorio estuve en": 2,
+    "obligatorio estuve en la": 3,
+    "estuve en la antigua": 3,
+    "en la antigua ciudad": 3,
+    "la antigua ciudad de": 3,
+    "antigua ciudad de anubis": 3,
+    "ciudad de anubis me": 3,
+    "de anubis me encantaria": 3,
+    "anubis me encantaria disfrutar": 3,
+    "me encantaria disfrutar de": 3,
+    "encantaria disfrutar de esta": 3,
+    "disfrutar de esta datos": 3,
+    "de esta datos ooc": 3,
+    "esta datos ooc del": 3,
+    "datos ooc del jugador": 3,
+    "ooc del jugador obligatorio": 3,
+    "del jugador obligatorio adrian": 3,
+    "jugador obligatorio adrian edad": 3,
+    "obligatorio adrian edad 25": 3,
+    "adrian edad 25 ciudad": 3,
+    "edad 25 ciudad madrid": 3,
+    "25 ciudad madrid pais": 3,
+    "ciudad madrid pais españa": 3,
+    "madrid pais españa valorar": 1,
+    "pais españa valorar tu": 1,
+    "españa valorar tu vida": 1,
+    "madrid pais españa obligatorio": 1,
+    "pais españa obligatorio estuve": 1,
+    "españa obligatorio estuve en": 1
+  },
   "samples": [
     {
       "applicant": "<@1308814761269395527>",
@@ -2270,6 +3162,18 @@
       "decision": "DENEGADA",
       "textPreview": "**\nEl concepto de roleplay constituye la personificación integral de una identidad ficticia dentro de un entorno estruct",
       "date": "2026-09-21T18:45:56.063Z"
+    },
+    {
+      "applicant": "<@1527502744431235183>",
+      "decision": "DENEGADA",
+      "textPreview": "**\nel rol es interpretar a un personaje dentro de una ciudad ficticia, actuando de forma coerente con su historia y resp",
+      "date": "2026-09-22T16:53:48.571Z"
+    },
+    {
+      "applicant": "<@1527502744431235183>",
+      "decision": "APROBADA",
+      "textPreview": "**\nhacer lo que arias en la vida real portarse bien valorrar vida conducir bien ......\n\n**  VALORACIÓN DE VIDA**\nvalorar",
+      "date": "2026-09-22T17:01:03.427Z"
     }
   ]
 }
