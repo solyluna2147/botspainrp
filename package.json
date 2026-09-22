@@ -4,6 +4,7 @@
   "description": "Discord bot para lectura automatica de Whitelist y publicacion de resultados",
   "main": "index.js",
   "scripts": {
+    "postinstall": "pip install --upgrade yt-dlp || pip3 install --upgrade yt-dlp || python3 -m pip install --upgrade yt-dlp || true",
     "start": "node --no-deprecation index.js"
   },
   "dependencies": {

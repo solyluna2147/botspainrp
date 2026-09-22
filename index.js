@@ -1752,7 +1752,8 @@ async function fetchYouTubeMetadata(target) {
     return new Promise((resolve) => {
         try {
             console.log(`🔎 [METADATOS YT] Obteniendo info de: "${target}"...`);
-            const proc = spawn('python', [
+            const pyCmd = process.platform === 'win32' ? 'python' : 'python3';
+            const proc = spawn(pyCmd, [
                 '-m', 'yt_dlp',
                 '--extractor-args', 'youtube:player_client=android,ios,web',
                 '--default-search', 'ytsearch1',
@@ -1952,7 +1953,8 @@ async function playMusicInVoice(query, connection, player, guildId) {
             console.log(`🎵 [MÚSICA] Iniciando yt-dlp y FFmpeg para: "${cleanTarget}"...`);
 
             // Extraer el stream de audio directo mediante yt-dlp (Soporte 100% oficial y actualizado)
-            const ytdlpProcess = spawn('python', [
+            const pyCmd = process.platform === 'win32' ? 'python' : 'python3';
+            const ytdlpProcess = spawn(pyCmd, [
                 '-m', 'yt_dlp',
                 '--extractor-args', 'youtube:player_client=android,ios,web',
                 '--no-progress',
@@ -4597,10 +4599,11 @@ client.on('messageCreate', async (message) => {
             }
 
             const targetUser = message.mentions.users.first();
-            // Los argumentos después de la mención
-            const remainingArgs = args.filter(a => !a.startsWith('<@'));
+            // Filtrar y buscar la URL o nombre de usuario
+            const cleanArgs = args.filter(a => !a.startsWith('<@') && a !== command && !a.startsWith('!'));
+            const urlArg = cleanArgs.find(a => a.startsWith('http') || a.includes('twitch.tv') || a.includes('.tv/')) || cleanArgs[0];
 
-            if (!targetUser || remainingArgs.length === 0) {
+            if (!targetUser || !urlArg) {
                 const helpMsg = await message.channel.send({
                     content: '🟣 **Uso correcto:** `!addtwitch @usuario <enlace_o_usuario_twitch> [título opcional]`\n*Ejemplo:* `!addtwitch @Alvin https://twitch.tv/alvin_0803`'
                 }).catch(() => null);
@@ -4608,9 +4611,8 @@ client.on('messageCreate', async (message) => {
                 return;
             }
 
-            const rawInput = remainingArgs[0];
-            let fullUrl = rawInput.startsWith('http') ? rawInput : `https://twitch.tv/${rawInput.replace(/^@/, '')}`;
-            const customTitle = remainingArgs.slice(1).join(' ').trim();
+            let fullUrl = urlArg.startsWith('http') ? urlArg : `https://twitch.tv/${urlArg.replace(/^@/, '')}`;
+            const customTitle = cleanArgs.filter(a => a !== urlArg).join(' ').trim();
 
             saveStreamer(targetUser.id, {
                 twitchUrl: fullUrl,
@@ -4618,10 +4620,27 @@ client.on('messageCreate', async (message) => {
                 name: targetUser.username
             });
 
-            const successMsg = await message.channel.send({
-                content: `🟣 **Canal de Twitch Registrado con Éxito:**\n👤 **Streamer:** <@${targetUser.id}>\n📺 **Plataforma:** \`Twitch\`\n🔗 **Canal:** <${fullUrl}>${customTitle ? `\n🏷️ **Título asignado:** *"${customTitle}"*` : ''}\n\n*Al pulsar "Notificar Twitch" se publicará este canal.*`
-            }).catch(() => null);
-            if (successMsg) setTimeout(() => successMsg.delete().catch(() => {}), 8000);
+            const successEmbed = new EmbedBuilder()
+                .setColor(0x9146FF) // Morado Twitch
+                .setAuthor({
+                    name: 'SISTEMA DE STREAMERS | TWITCH • SPAIN RP 🇪🇸',
+                    iconURL: client.user.displayAvatarURL()
+                })
+                .setTitle('🟣 ¡Canal de Twitch Registrado con Éxito!')
+                .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+                .setDescription(
+                    `✨ Se ha configurado el canal oficial de **Twitch** para el streamer.\n\n` +
+                    `👤 **Streamer:** <@${targetUser.id}>\n` +
+                    `📺 **Plataforma:** \`Twitch\`\n` +
+                    `🔗 **Canal:** [${fullUrl}](${fullUrl})\n` +
+                    (customTitle ? `🏷️ **Título por defecto:** *"${customTitle}"*\n` : '') +
+                    `\n> 💡 *Al pulsar **"Notificar Twitch"** en el panel se publicará este canal.*`
+                )
+                .setFooter({ text: 'SPAIN RP • Creadores de Contenido Oficiales' })
+                .setTimestamp();
+
+            const successMsg = await message.channel.send({ embeds: [successEmbed] }).catch(() => null);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => {}), 10000);
             return;
         }
 
@@ -4635,9 +4654,10 @@ client.on('messageCreate', async (message) => {
             }
 
             const targetUser = message.mentions.users.first();
-            const remainingArgs = args.filter(a => !a.startsWith('<@'));
+            const cleanArgs = args.filter(a => !a.startsWith('<@') && a !== command && !a.startsWith('!'));
+            const urlArg = cleanArgs.find(a => a.startsWith('http') || a.includes('tiktok.com') || a.includes('.com/@')) || cleanArgs[0];
 
-            if (!targetUser || remainingArgs.length === 0) {
+            if (!targetUser || !urlArg) {
                 const helpMsg = await message.channel.send({
                     content: '🌸 **Uso correcto:** `!addtiktok @usuario <enlace_o_usuario_tiktok> [título opcional]`\n*Ejemplo:* `!addtiktok @Alvin https://www.tiktok.com/@alvin_armys`'
                 }).catch(() => null);
@@ -4645,9 +4665,8 @@ client.on('messageCreate', async (message) => {
                 return;
             }
 
-            const rawInput = remainingArgs[0];
-            let fullUrl = rawInput.startsWith('http') ? rawInput : `https://www.tiktok.com/@${rawInput.replace(/^@/, '')}`;
-            const customTitle = remainingArgs.slice(1).join(' ').trim();
+            let fullUrl = urlArg.startsWith('http') ? urlArg : `https://www.tiktok.com/@${urlArg.replace(/^@/, '')}`;
+            const customTitle = cleanArgs.filter(a => a !== urlArg).join(' ').trim();
 
             saveStreamer(targetUser.id, {
                 tiktokUrl: fullUrl,
@@ -4655,10 +4674,27 @@ client.on('messageCreate', async (message) => {
                 name: targetUser.username
             });
 
-            const successMsg = await message.channel.send({
-                content: `🌸 **Canal de TikTok Registrado con Éxito:**\n👤 **Streamer:** <@${targetUser.id}>\n📺 **Plataforma:** \`TikTok LIVE\`\n🔗 **Canal:** <${fullUrl}>${customTitle ? `\n🏷️ **Título asignado:** *"${customTitle}"*` : ''}\n\n*Al pulsar "Notificar TikTok" se publicará este canal.*`
-            }).catch(() => null);
-            if (successMsg) setTimeout(() => successMsg.delete().catch(() => {}), 8000);
+            const successEmbed = new EmbedBuilder()
+                .setColor(0xFE2C55) // Rosa TikTok
+                .setAuthor({
+                    name: 'SISTEMA DE STREAMERS | TIKTOK • SPAIN RP 🇪🇸',
+                    iconURL: client.user.displayAvatarURL()
+                })
+                .setTitle('🌸 ¡Canal de TikTok Registrado con Éxito!')
+                .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+                .setDescription(
+                    `✨ Se ha configurado el canal oficial de **TikTok LIVE** para el streamer.\n\n` +
+                    `👤 **Streamer:** <@${targetUser.id}>\n` +
+                    `📺 **Plataforma:** \`TikTok LIVE\`\n` +
+                    `🔗 **Canal:** [${fullUrl}](${fullUrl})\n` +
+                    (customTitle ? `🏷️ **Título por defecto:** *"${customTitle}"*\n` : '') +
+                    `\n> 💡 *Al pulsar **"Notificar TikTok"** en el panel se publicará este canal.*`
+                )
+                .setFooter({ text: 'SPAIN RP • Creadores de Contenido Oficiales' })
+                .setTimestamp();
+
+            const successMsg = await message.channel.send({ embeds: [successEmbed] }).catch(() => null);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => {}), 10000);
             return;
         }
 
