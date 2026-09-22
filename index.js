@@ -4877,80 +4877,85 @@ client.on('interactionCreate', async (interaction) => {
     // BOTONES: NOTIFICAR DIRECTO (TWITCH / TIKTOK / GENERAL)
     // ----------------------------------------------------
     if (['btn_notificar_directo', 'btn_notificar_twitch', 'btn_notificar_tiktok'].includes(interaction.customId)) {
-        const userId = interaction.user.id;
-        const requestedPlatform = interaction.customId === 'btn_notificar_tiktok' ? 'TikTok' : (interaction.customId === 'btn_notificar_twitch' ? 'Twitch' : null);
-        const streamersData = getStreamersData();
-        let streamerInfo = streamersData[userId] || {};
+        // Responder a Discord DE INMEDIATO (dentro de los 3 segundos reglamentarios de la API de Discord)
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
 
-        let targetStreamUrl = null;
-        let activePlatform = requestedPlatform || 'Twitch';
+        try {
+            const userId = interaction.user.id;
+            const requestedPlatform = interaction.customId === 'btn_notificar_tiktok' ? 'TikTok' : (interaction.customId === 'btn_notificar_twitch' ? 'Twitch' : null);
+            const streamersData = getStreamersData();
+            let streamerInfo = streamersData[userId] || {};
 
-        // 1. Buscar en perfil guardado según la plataforma solicitada
-        if (requestedPlatform === 'TikTok') {
-            targetStreamUrl = streamerInfo.tiktokUrl || (streamerInfo.url && streamerInfo.url.includes('tiktok.com') ? streamerInfo.url : null);
-        } else if (requestedPlatform === 'Twitch') {
-            targetStreamUrl = streamerInfo.twitchUrl || (streamerInfo.url && (streamerInfo.url.includes('twitch.tv') || !streamerInfo.url.includes('tiktok.com')) ? streamerInfo.url : null);
-        } else {
-            targetStreamUrl = streamerInfo.url || streamerInfo.twitchUrl || streamerInfo.tiktokUrl;
-            activePlatform = streamerInfo.platform || 'Twitch';
-        }
+            let targetStreamUrl = null;
+            let activePlatform = requestedPlatform || 'Twitch';
 
-        // 2. Si no tiene URL específica para la plataforma pulsada, comprobar su presencia activa en Discord
-        if (!targetStreamUrl) {
-            const streamingActivity = interaction.member?.presence?.activities?.find(act =>
-                act.type === ActivityType.Streaming ||
-                (act.url && (act.url.includes('twitch.tv') || act.url.includes('kick.com') || act.url.includes('youtube.com') || act.url.includes('tiktok.com')))
-            );
+            // 1. Buscar en perfil guardado según la plataforma solicitada
+            if (requestedPlatform === 'TikTok') {
+                targetStreamUrl = streamerInfo.tiktokUrl || (streamerInfo.url && streamerInfo.url.includes('tiktok.com') ? streamerInfo.url : null);
+            } else if (requestedPlatform === 'Twitch') {
+                targetStreamUrl = streamerInfo.twitchUrl || (streamerInfo.url && (streamerInfo.url.includes('twitch.tv') || !streamerInfo.url.includes('tiktok.com')) ? streamerInfo.url : null);
+            } else {
+                targetStreamUrl = streamerInfo.url || streamerInfo.twitchUrl || streamerInfo.tiktokUrl;
+                activePlatform = streamerInfo.platform || 'Twitch';
+            }
 
-            if (streamingActivity && streamingActivity.url) {
-                if (requestedPlatform === 'TikTok' && streamingActivity.url.includes('tiktok.com')) {
-                    targetStreamUrl = streamingActivity.url;
-                } else if (requestedPlatform === 'Twitch' && (streamingActivity.url.includes('twitch.tv') || !streamingActivity.url.includes('tiktok.com'))) {
-                    targetStreamUrl = streamingActivity.url;
-                } else if (!requestedPlatform) {
-                    targetStreamUrl = streamingActivity.url;
-                    if (streamingActivity.url.includes('tiktok.com')) activePlatform = 'TikTok';
+            // 2. Si no tiene URL específica para la plataforma pulsada, comprobar su presencia activa en Discord
+            if (!targetStreamUrl) {
+                const streamingActivity = interaction.member?.presence?.activities?.find(act =>
+                    act.type === ActivityType.Streaming ||
+                    (act.url && (act.url.includes('twitch.tv') || act.url.includes('kick.com') || act.url.includes('youtube.com') || act.url.includes('tiktok.com')))
+                );
+
+                if (streamingActivity && streamingActivity.url) {
+                    if (requestedPlatform === 'TikTok' && streamingActivity.url.includes('tiktok.com')) {
+                        targetStreamUrl = streamingActivity.url;
+                    } else if (requestedPlatform === 'Twitch' && (streamingActivity.url.includes('twitch.tv') || !streamingActivity.url.includes('tiktok.com'))) {
+                        targetStreamUrl = streamingActivity.url;
+                    } else if (!requestedPlatform) {
+                        targetStreamUrl = streamingActivity.url;
+                        if (streamingActivity.url.includes('tiktok.com')) activePlatform = 'TikTok';
+                    }
                 }
             }
-        }
 
-        // 3. Si sigue sin tener canal específico para esa plataforma pero tiene nombre de usuario
-        if (!targetStreamUrl) {
-            // Si tiene registrado otro canal, avisar claramente
-            const platMsg = requestedPlatform ? ` de **${requestedPlatform}**` : '';
-            return interaction.reply({
-                content: `❌ **No tienes un canal${platMsg} registrado en el bot.**\n\n📌 Para poder notificar en **${requestedPlatform || 'esta plataforma'}**, un Administrador debe añadir tu canal con:\n\`!addstreamer @${interaction.user.username} <enlace_${(requestedPlatform || 'twitch').toLowerCase()}>\`\n💬 *Si eres streamer oficial, contacta con Administración.*`,
-                ephemeral: true
+            // 3. Si sigue sin tener canal específico para esa plataforma pero tiene nombre de usuario
+            if (!targetStreamUrl) {
+                const platMsg = requestedPlatform ? ` de **${requestedPlatform}**` : '';
+                return interaction.editReply({
+                    content: `❌ **No tienes un canal${platMsg} registrado en el bot.**\n\n📌 Para poder notificar en **${requestedPlatform || 'esta plataforma'}**, un Administrador debe añadir tu canal con:\n\`!addstreamer @${interaction.user.username} <enlace_${(requestedPlatform || 'twitch').toLowerCase()}>\`\n💬 *Si eres streamer oficial, contacta con Administración.*`
+                }).catch(() => {});
+            }
+
+            // Obtener el título en tiempo real desde la plataforma (Twitch/TikTok/Discord) o título guardado
+            const defaultPlatformTitle = requestedPlatform === 'TikTok' ? streamerInfo.tiktokTitle : (requestedPlatform === 'Twitch' ? streamerInfo.twitchTitle : streamerInfo.title);
+            const liveTitle = await fetchLiveStreamTitle(targetStreamUrl, interaction.member, defaultPlatformTitle || streamerInfo.title);
+
+            // Enviar notificación personalizada al canal oficial de streams
+            const result = await sendStreamerNotification({
+                userMention: `<@${userId}>`,
+                streamUrl: targetStreamUrl,
+                streamTitle: liveTitle,
+                platform: activePlatform,
+                avatarUrl: interaction.user.displayAvatarURL({ dynamic: true })
             });
-        }
 
-        await interaction.deferReply({ ephemeral: true });
+            const targetChannelId = botConfig.CHANNEL_STREAMERS_ID || '1517530849032016006';
 
-        // Obtener el título en tiempo real desde la plataforma (Twitch/TikTok/Discord) o título guardado
-        const defaultPlatformTitle = requestedPlatform === 'TikTok' ? streamerInfo.tiktokTitle : (requestedPlatform === 'Twitch' ? streamerInfo.twitchTitle : streamerInfo.title);
-        const liveTitle = await fetchLiveStreamTitle(targetStreamUrl, interaction.member, defaultPlatformTitle || streamerInfo.title);
-
-        // Enviar notificación personalizada al canal oficial de streams
-        const result = await sendStreamerNotification({
-            userMention: `<@${userId}>`,
-            streamUrl: targetStreamUrl,
-            streamTitle: liveTitle,
-            platform: activePlatform,
-            avatarUrl: interaction.user.displayAvatarURL({ dynamic: true })
-        });
-
-        const targetChannelId = botConfig.CHANNEL_STREAMERS_ID || '1517530849032016006';
-
-        if (result && result.success) {
-            streamerCooldowns.set(userId, Date.now());
-            const platEmoji = activePlatform.toLowerCase().includes('tiktok') ? '⚫' : '🟣';
+            if (result && result.success) {
+                const platEmoji = activePlatform.toLowerCase().includes('tiktok') ? '⚫' : '🟣';
+                return interaction.editReply({
+                    content: `✅ **¡Tu directo de ${activePlatform} ${platEmoji} ha sido anunciado con éxito en <#${targetChannelId}>!**\n🏷️ **Título:** \`"${liveTitle}"\`\n🔗 **Canal:** <${targetStreamUrl}>\n¡Mucho éxito en tu transmisión! 🚀`
+                }).catch(() => {});
+            } else {
+                return interaction.editReply({
+                    content: `❌ Hubo un error al publicar el anuncio en el canal <#${targetChannelId}>. Verifica permisos del bot.`
+                }).catch(() => {});
+            }
+        } catch (err) {
+            console.error('Error al procesar botón de stream:', err);
             return interaction.editReply({
-                content: `✅ **¡Tu directo de ${activePlatform} ${platEmoji} ha sido anunciado con éxito en <#${targetChannelId}>!**\n🏷️ **Título:** \`"${liveTitle}"\`\n🔗 **Canal:** <${targetStreamUrl}>\n¡Mucho éxito en tu transmisión! 🚀`
-            });
-        } else {
-            return interaction.editReply({
-                content: `❌ Hubo un error al publicar el anuncio en el canal <#${targetChannelId}>. Verifica permisos del bot.`
-            });
+                content: '⚠️ Ocurrió un problema al enviar la notificación. Por favor inténtalo de nuevo.'
+            }).catch(() => {});
         }
     }
 
