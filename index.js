@@ -4004,8 +4004,9 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !addstaff @usuario / !delstaff @usuario / !staffs (Gestiona la lista de Staffs a valorar)
         if (['!addstaff', '!agregarstaff', '!nuevostaff'].includes(command)) {
             await message.delete().catch(() => { });
-            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
-            if (!hasStaff) return;
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
 
             const targetUser = message.mentions.users.first() || { id: args[0]?.replace(/[<@!>]/g, '') };
             if (!targetUser || !targetUser.id) {
@@ -4022,8 +4023,9 @@ client.on('messageCreate', async (message) => {
 
         if (['!delstaff', '!eliminarstaff', '!quitarstaff'].includes(command)) {
             await message.delete().catch(() => { });
-            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
-            if (!hasStaff) return;
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
 
             const targetUser = message.mentions.users.first() || { id: args[0]?.replace(/[<@!>]/g, '') };
             if (!targetUser || !targetUser.id) {
@@ -5643,11 +5645,8 @@ client.on('messageCreate', async (message) => {
         // ==========================================
         if (['!addtwitch', '!agregartwitch', '!nuevotwitch', '!settwitch'].includes(command)) {
             await message.delete().catch(() => { });
-            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
-            if (!hasStaff) {
-                const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden registrar streamers.').catch(() => null);
-                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => { }), 4000);
-                return;
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
             }
 
             const targetUser = message.mentions.users.first();
@@ -5698,11 +5697,8 @@ client.on('messageCreate', async (message) => {
 
         if (['!addtiktok', '!agregartiktok', '!nuevotiktok', '!settiktok'].includes(command)) {
             await message.delete().catch(() => { });
-            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
-            if (!hasStaff) {
-                const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden registrar streamers.').catch(() => null);
-                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => { }), 4000);
-                return;
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
             }
 
             const targetUser = message.mentions.users.first();
@@ -5753,11 +5749,8 @@ client.on('messageCreate', async (message) => {
         // COMANDO GENERAL: !addstreamer @usuario <url_canal>
         if (['!addstreamer', '!agregarstreamer', '!nuevostreamer'].includes(command)) {
             await message.delete().catch(() => { });
-            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
-            if (!hasStaff) {
-                const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden registrar streamers.').catch(() => null);
-                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => { }), 4000);
-                return;
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
             }
 
             const targetUser = message.mentions.users.first();
@@ -5793,11 +5786,8 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !delstreamer @usuario [twitch/tiktok/todo]
         if (['!delstreamer', '!eliminarstreamer', '!quitarstreamer'].includes(command)) {
             await message.delete().catch(() => { });
-            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
-            if (!hasStaff) {
-                const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden eliminar streamers.').catch(() => null);
-                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => { }), 4000);
-                return;
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
             }
 
             const targetUser = message.mentions.users.first() || { id: args[0]?.replace(/[<@!>]/g, '') };
@@ -5855,11 +5845,8 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !limpiarstreamers / !limiarstreamers (Elimina todos los streamers registrados en el bot)
         if (['!limpiarstreamers', '!limiarstreamers', '!clearstreamers', '!borrarstreamers', '!vaciarstreamers'].includes(command)) {
             await message.delete().catch(() => { });
-            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
-            if (!hasStaff) {
-                const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden usar este comando.').catch(() => null);
-                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => { }), 4000);
-                return;
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
             }
 
             const prevData = getStreamersData();
@@ -5882,8 +5869,9 @@ client.on('messageCreate', async (message) => {
         if (['!setcanal-sanciones', '!setcanal-sancion', '!canalsanciones', '!fijar-sanciones'].includes(command) ||
             (['!setcanal', '!fijar-canal', '!canal'].includes(command) && ['sancion', 'sanciones', 'expedientes', 'logs-sanciones'].includes(args[1]?.toLowerCase()))) {
             await message.delete().catch(() => { });
-            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
-            if (!hasStaff) return;
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
 
             // Extraer posible ID o mención de cualquier argumento
             const rawChannelId = args.slice(1).join(' ').match(/\d{17,20}/)?.[0];
@@ -5914,8 +5902,9 @@ client.on('messageCreate', async (message) => {
         if (['!setcanal-panel-sanciones', '!setcanal-panelsanciones', '!canalpanelsanciones', '!fijar-panel-sanciones'].includes(command) ||
             (['!setcanal', '!fijar-canal', '!canal'].includes(command) && ['panel-sancion', 'panel-sanciones', 'panelsanciones', 'panelsancion', 'formulario-sanciones'].includes(args[1]?.toLowerCase()))) {
             await message.delete().catch(() => { });
-            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
-            if (!hasStaff) return;
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
 
             const rawChannelId = args.slice(1).join(' ').match(/\d{17,20}/)?.[0];
             let targetChannel = message.mentions.channels.first();
@@ -5931,7 +5920,7 @@ client.on('messageCreate', async (message) => {
             const confEmbed = new EmbedBuilder()
                 .setColor(0xE74C3C)
                 .setTitle('📋 Canal del Panel de Sanciones Configurado')
-                .setDescription(`✅ El canal asignado para el Panel interactivo de Sanciones es: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n💡 *Puedes enviar el panel allí ahora mismo escribiendo **\`!panel-sanciones\`**.*`)
+                .setDescription(`✅ El canal asignado para el Panel interactivo de Sanciones es: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n💡 *Puedes enviar el panel allí escribiendo **\`!panel-sanciones\`**.*`)
                 .setFooter({ text: 'SPAIN RP • Configuración Oficial de Moderación' })
                 .setTimestamp();
 
@@ -5941,7 +5930,7 @@ client.on('messageCreate', async (message) => {
             return;
         }
 
-        // 3. COMANDO: !panel-sanciones / !enviar-panel-sanciones (Envía el panel interactivo al canal actual o al configurado)
+        // 3. COMANDO: !panel-sanciones / !panelsanciones / !enviar-panel-sanciones (Envía el panel interactivo al canal actual o especificado)
         if (['!panel-sanciones', '!panelsanciones', '!enviar-panel-sanciones'].includes(command)) {
             await message.delete().catch(() => { });
             const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
@@ -5953,11 +5942,6 @@ client.on('messageCreate', async (message) => {
             if (!targetChannel && rawChannelId) {
                 targetChannel = message.guild.channels.cache.get(rawChannelId) ||
                     await client.channels.fetch(rawChannelId).catch(() => null);
-            }
-
-            if (!targetChannel && botConfig.CHANNEL_SANCIONES_PANEL_ID) {
-                targetChannel = message.guild.channels.cache.get(botConfig.CHANNEL_SANCIONES_PANEL_ID) ||
-                    await client.channels.fetch(botConfig.CHANNEL_SANCIONES_PANEL_ID).catch(() => null);
             }
 
             if (!targetChannel) targetChannel = message.channel;
@@ -5976,7 +5960,7 @@ client.on('messageCreate', async (message) => {
                 files
             }).catch(e => console.error('Error al enviar panel de sanciones:', e));
 
-            console.log(`🚨 [PANEL SANCIONES] Panel interactivo de sanciones enviado con éxito a #${targetChannel.name || targetChannel.id} por ${message.author.tag}`);
+            console.log(`🚨 [PANEL SANCIONES] Panel interactivo de sanciones enviado con éxito a #${targetChannel.name} por ${message.author.tag}`);
             return;
         }
     }
