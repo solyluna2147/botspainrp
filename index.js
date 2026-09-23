@@ -8,7 +8,11 @@ const {
     ButtonBuilder,
     ButtonStyle,
     ActivityType,
-    Partials
+    Partials,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
+    StringSelectMenuBuilder
 } = require('discord.js');
 const {
     joinVoiceChannel,
@@ -99,10 +103,131 @@ const client = new Client({
 });
 
 // ==========================================
-// CONFIGURACIÓN DINÁMICA Y PERSISTENTE (CONFIG.JSON / .ENV)
+// CONFIGURACIÓN DINÁMICA Y PERSISTENTE (CONFIG.JSON / MONGODB CLOUD)
 // ==========================================
+const mongoose = require('mongoose');
 const OWNER_ID = '418558256840179722'; // ID exclusivo del Creador (acceso total a paneles y configuración)
 const CONFIG_FILE = path.join(__dirname, 'config.json');
+
+// Esquemas Mongoose para MongoDB Atlas
+const botSettingSchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true },
+    value: mongoose.Schema.Types.Mixed
+}, { timestamps: true });
+
+const staffRatingSchema = new mongoose.Schema({
+    id: { type: String, unique: true },
+    userId: String,
+    userName: String,
+    staffId: String,
+    staffTag: String,
+    rating: Number,
+    comment: String,
+    timestamp: String
+});
+
+const staffRatingDataSchema = new mongoose.Schema({
+    docId: { type: String, default: 'main', unique: true },
+    staffList: [String],
+    stats: { type: Map, of: Object },
+    ratings: [staffRatingSchema]
+}, { timestamps: true });
+
+const streamerSchema = new mongoose.Schema({
+    userId: { type: String, required: true, unique: true },
+    data: Object
+}, { timestamps: true });
+
+const aiFeedbackSchema = new mongoose.Schema({
+    docId: { type: String, default: 'main', unique: true },
+    data: Object
+}, { timestamps: true });
+
+const BotSettingModel = mongoose.model('BotSetting', botSettingSchema);
+const StaffRatingDataModel = mongoose.model('StaffRatingData', staffRatingDataSchema);
+const StreamerModel = mongoose.model('Streamer', streamerSchema);
+const AiFeedbackModel = mongoose.model('AiFeedback', aiFeedbackSchema);
+
+let isMongoConnected = false;
+
+// Conectar a MongoDB Atlas si existe MONGODB_URI
+if (process.env.MONGODB_URI) {
+    try {
+        const dns = require('dns');
+        dns.setServers(['8.8.8.8', '1.1.1.1']);
+    } catch (e) {}
+
+    mongoose.connect(process.env.MONGODB_URI, {
+        serverSelectionTimeoutMS: 5000
+    }).then(async () => {
+        isMongoConnected = true;
+        console.log('🍃 [MONGODB ATLAS] Conexión establecida con éxito en la nube (SpainRP DB).');
+        await syncDataFromMongo();
+    }).catch(err => {
+        console.warn('⚠️ [MONGODB ATLAS] No se pudo conectar a MongoDB. Se usarán archivos JSON locales:', err.message);
+    });
+}
+
+// Sincronizar datos de Mongo al iniciar
+async function syncDataFromMongo() {
+    if (!isMongoConnected) return;
+    try {
+        // 1. Config
+        const settings = await BotSettingModel.find();
+        for (const s of settings) {
+            botConfig[s.key] = s.value;
+        }
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(botConfig, null, 2), 'utf8');
+
+        // 2. Staff Ratings
+        const staffDoc = await StaffRatingDataModel.findOne({ docId: 'main' });
+        if (staffDoc) {
+            const statsObj = {};
+            if (staffDoc.stats) {
+                staffDoc.stats.forEach((val, key) => { statsObj[key] = val; });
+            }
+            const dataToSave = {
+                staffList: staffDoc.staffList || ['418558256840179722'],
+                ratings: staffDoc.ratings || [],
+                stats: statsObj
+            };
+            fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(dataToSave, null, 2), 'utf8');
+        } else {
+            // Subir datos iniciales locales a Mongo si está vacío
+            const localData = getStaffRatingsData();
+            await StaffRatingDataModel.create({
+                docId: 'main',
+                staffList: localData.staffList,
+                stats: localData.stats,
+                ratings: localData.ratings
+            }).catch(() => {});
+        }
+
+        // 3. Streamers
+        const streamers = await StreamerModel.find();
+        if (streamers.length > 0) {
+            const streamersMap = {};
+            for (const st of streamers) {
+                streamersMap[st.userId] = st.data;
+            }
+            fs.writeFileSync(STREAMERS_FILE, JSON.stringify(streamersMap, null, 2), 'utf8');
+        }
+
+        // 4. Auto-aprendizaje de Whitelists (AI Feedback)
+        const aiDoc = await AiFeedbackModel.findOne({ docId: 'main' });
+        if (aiDoc && aiDoc.data) {
+            fs.writeFileSync(AI_FEEDBACK_FILE, JSON.stringify(aiDoc.data, null, 2), 'utf8');
+            console.log(`🧠 [IA WHITELIST] Aprendizaje sincronizado desde la nube (${aiDoc.data.totalSamples || 0} solicitudes procesadas).`);
+        } else if (fs.existsSync(AI_FEEDBACK_FILE)) {
+            const localAi = JSON.parse(fs.readFileSync(AI_FEEDBACK_FILE, 'utf8'));
+            await AiFeedbackModel.create({ docId: 'main', data: localAi }).catch(() => {});
+        }
+
+        console.log('🔄 [MONGODB ATLAS] Datos sincronizados correctamente desde la nube.');
+    } catch (e) {
+        console.error('Error al sincronizar desde MongoDB:', e);
+    }
+}
 
 function loadDynamicConfig() {
     const defaults = {
@@ -116,6 +241,8 @@ function loadDynamicConfig() {
         CHANNEL_NORMATIVAS_ID: process.env.CHANNEL_NORMATIVAS_ID || '1517530848658849996',
         CHANNEL_TICKETS_ID: process.env.CHANNEL_TICKETS_ID || '1517530849334136844',
         CHANNEL_GENERAL_ID: process.env.CHANNEL_GENERAL_ID || '1517530849032016002',
+        CHANNEL_VALORACION_PANEL_ID: process.env.CHANNEL_VALORACION_PANEL_ID || '1552087566776537148',
+        CHANNEL_VALORACIONES_ID: process.env.CHANNEL_VALORACIONES_ID || '1552087605980561448',
         ROLE_STAFF_ID: process.env.ROLE_STAFF_ID || '1538191116610838691',
         ROLE_STREAMER_ID: process.env.ROLE_STREAMER_ID || '',
         FIVEM_SERVER_IP: process.env.FIVEM_SERVER_IP || '185.230.52.246:30120',
@@ -135,7 +262,7 @@ function loadDynamicConfig() {
 
 let botConfig = loadDynamicConfig();
 
-function updateConfig(key, value) {
+async function updateConfig(key, value) {
     botConfig[key] = value;
     try {
         fs.writeFileSync(CONFIG_FILE, JSON.stringify(botConfig, null, 2), 'utf8');
@@ -143,6 +270,116 @@ function updateConfig(key, value) {
     } catch (e) {
         console.error('Error al guardar config.json:', e);
     }
+    if (isMongoConnected) {
+        try {
+            await BotSettingModel.findOneAndUpdate({ key }, { key, value }, { upsert: true });
+        } catch (e) {
+            console.error('Error guardando en Mongo config:', e);
+        }
+    }
+}
+
+// ==========================================
+// SISTEMA INDEPENDIENTE: VALORACIONES DE STAFF
+// ==========================================
+const STAFF_RATINGS_FILE = path.join(__dirname, 'staff_ratings.json');
+
+function getStaffRatingsData() {
+    if (fs.existsSync(STAFF_RATINGS_FILE)) {
+        try {
+            const data = JSON.parse(fs.readFileSync(STAFF_RATINGS_FILE, 'utf8'));
+            if (!data.staffList) data.staffList = ['418558256840179722'];
+            if (!data.ratings) data.ratings = [];
+            if (!data.stats) data.stats = {};
+            return data;
+        } catch (e) {
+            console.error('Error al leer staff_ratings.json:', e);
+        }
+    }
+    return { staffList: ['418558256840179722'], ratings: [], stats: {} };
+}
+
+function addStaffMemberToRating(staffId) {
+    const data = getStaffRatingsData();
+    if (!data.staffList.includes(staffId)) {
+        data.staffList.push(staffId);
+        try {
+            fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(data, null, 2), 'utf8');
+        } catch (e) {}
+        if (isMongoConnected) {
+            StaffRatingDataModel.findOneAndUpdate({ docId: 'main' }, { staffList: data.staffList }, { upsert: true }).catch(() => {});
+        }
+        return true;
+    }
+    return false;
+}
+
+function removeStaffMemberFromRating(staffId) {
+    const data = getStaffRatingsData();
+    const idx = data.staffList.indexOf(staffId);
+    if (idx !== -1) {
+        data.staffList.splice(idx, 1);
+        try {
+            fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(data, null, 2), 'utf8');
+        } catch (e) {}
+        if (isMongoConnected) {
+            StaffRatingDataModel.findOneAndUpdate({ docId: 'main' }, { staffList: data.staffList }, { upsert: true }).catch(() => {});
+        }
+        return true;
+    }
+    return false;
+}
+
+function saveStaffRating({ userId, userName, staffId, staffTag, rating, comment }) {
+    const data = getStaffRatingsData();
+    const entry = {
+        id: Date.now().toString(),
+        userId,
+        userName,
+        staffId,
+        staffTag,
+        rating: Number(rating),
+        comment: comment.trim(),
+        timestamp: new Date().toISOString()
+    };
+
+    data.ratings.push(entry);
+
+    // Calcular media acumulada del Staff
+    if (!data.stats[staffId]) {
+        data.stats[staffId] = {
+            staffTag,
+            totalRatings: 0,
+            sumRatings: 0,
+            average: 0
+        };
+    }
+
+    const s = data.stats[staffId];
+    s.staffTag = staffTag;
+    s.totalRatings += 1;
+    s.sumRatings += Number(rating);
+    s.average = Number((s.sumRatings / s.totalRatings).toFixed(1));
+
+    try {
+        fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) {
+        console.error('Error al guardar staff_ratings.json:', e);
+    }
+
+    if (isMongoConnected) {
+        StaffRatingDataModel.findOneAndUpdate(
+            { docId: 'main' },
+            { 
+                staffList: data.staffList,
+                stats: data.stats,
+                $push: { ratings: entry }
+            },
+            { upsert: true }
+        ).catch(e => console.error('Error guardando rating en Mongo:', e));
+    }
+
+    return { entry, stats: s };
 }
 
 const streamerCooldowns = new Map();
@@ -207,6 +444,10 @@ function saveStreamer(userId, streamerObj) {
     } catch (e) {
         console.error('Error al guardar en streamers.json:', e);
     }
+
+    if (isMongoConnected) {
+        StreamerModel.findOneAndUpdate({ userId }, { userId, data: updatedProfile }, { upsert: true }).catch(() => {});
+    }
 }
 
 function removeStreamer(userId) {
@@ -215,10 +456,13 @@ function removeStreamer(userId) {
         delete current[userId];
         try {
             fs.writeFileSync(STREAMERS_FILE, JSON.stringify(current, null, 2), 'utf8');
-            return true;
         } catch (e) {
             console.error('Error al eliminar de streamers.json:', e);
         }
+        if (isMongoConnected) {
+            StreamerModel.deleteOne({ userId }).catch(() => {});
+        }
+        return true;
     }
     return false;
 }
@@ -226,11 +470,14 @@ function removeStreamer(userId) {
 function clearAllStreamers() {
     try {
         fs.writeFileSync(STREAMERS_FILE, JSON.stringify({}, null, 2), 'utf8');
-        return true;
     } catch (e) {
         console.error('Error al limpiar streamers.json:', e);
         return false;
     }
+    if (isMongoConnected) {
+        StreamerModel.deleteMany({}).catch(() => {});
+    }
+    return true;
 }
 
 // Estado en memoria del servidor FiveM
@@ -348,6 +595,9 @@ function saveAiFeedbackData(data) {
         fs.writeFileSync(AI_FEEDBACK_FILE, JSON.stringify(data, null, 2), 'utf8');
     } catch (e) {
         console.error('Error al guardar ai_feedback.json:', e);
+    }
+    if (isMongoConnected) {
+        AiFeedbackModel.findOneAndUpdate({ docId: 'main' }, { data }, { upsert: true }).catch(() => {});
     }
 }
 
@@ -2481,6 +2731,195 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
 }
 
 // ==========================================
+// CONSTRUCTORES: SISTEMA DE VALORACIÓN DE STAFF (MODO CONTENEDOR)
+// ==========================================
+function buildStaffTopRankingEmbed() {
+    const ratingsData = getStaffRatingsData();
+    const stats = ratingsData.stats || {};
+    const staffList = Object.keys(stats).map(id => ({ id, ...stats[id] }));
+
+    // Ordenar por promedio y luego por cantidad de valoraciones
+    staffList.sort((a, b) => b.average - a.average || b.totalRatings - a.totalRatings);
+
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const topsBannerPath = path.join(__dirname, 'assets', 'panel_tops.png');
+    const files = [];
+    if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+    if (fs.existsSync(topsBannerPath)) files.push(new AttachmentBuilder(topsBannerPath, { name: 'panel_tops.png' }));
+
+    let desc = '';
+    if (staffList.length === 0) {
+        desc = `\u200B\n📭 *Todavía no se han registrado valoraciones de Staff en el servidor.*`;
+    } else {
+        desc = `\u200B\n`;
+        staffList.slice(0, 10).forEach((s, idx) => {
+            const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `\`#${idx + 1}\``));
+            desc += `${medal} <@${s.id}> • **${s.average}/10** ⭐\n\n` +
+                    `> 💬 **Reseñas:** \`${s.totalRatings}\` votos recibidos\n\n` +
+                    `────────────────────────────\n\n`;
+        });
+        // Quitar la última línea divisoria si termina en ella
+        desc = desc.replace(/\n\n────────[^\n]*\n\n$/, '');
+    }
+
+    const topEmbed = new EmbedBuilder()
+        .setColor(0xF1C40F)
+        .setAuthor({
+            name: 'RANKING DE ATENCIÓN DE STAFF • SPAIN RP',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setTitle('🏆 Top Miembros del Equipo con Mejor Calificación')
+        .setDescription(desc)
+        .setFooter({ text: 'SPAIN RP • Actualizado automáticamente en tiempo real' })
+        .setTimestamp();
+
+    if (fs.existsSync(topsBannerPath)) {
+        topEmbed.setImage('attachment://panel_tops.png');
+    }
+
+    return { topEmbed, files };
+}
+
+async function updateStaffTopRankingPanel() {
+    try {
+        const channelId = botConfig.CHANNEL_VALORACION_PANEL_ID;
+        const messageId = botConfig.MESSAGE_TOP_STAFF_ID;
+        if (!channelId || !messageId) return false;
+
+        const channel = await client.channels.fetch(channelId).catch(() => null);
+        if (!channel) return false;
+
+        const targetMessage = await channel.messages.fetch(messageId).catch(() => null);
+        if (!targetMessage) return false;
+
+        const { topEmbed } = buildStaffTopRankingEmbed();
+        await targetMessage.edit({ embeds: [topEmbed] }).catch(() => {});
+        console.log(`🏆 [RANKING AUTO-UPDATE] Mensaje de Top Staff (${messageId}) actualizado con éxito.`);
+        return true;
+    } catch (e) {
+        console.error('Error al actualizar panel de top staff:', e);
+        return false;
+    }
+}
+
+function buildStaffRatingPanelEmbed() {
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const panelImgPath = path.join(__dirname, 'assets', 'panel_valoracion.png');
+
+    const canalPublicacion = botConfig.CHANNEL_VALORACIONES_ID ? `<#${botConfig.CHANNEL_VALORACIONES_ID}>` : '`No configurado`';
+
+    const embed = new EmbedBuilder()
+        .setColor(0xF1C40F) // Oro / Amarillo VIP
+        .setAuthor({
+            name: 'SISTEMA DE VALORACIONES • SPAIN RP',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setTitle('⭐ ¿CÓMO FUE TU EXPERIENCIA CON EL EQUIPO DE STAFF?')
+        .setDescription(
+            `\u200B\n` +
+            `¡Bienvenido al sistema oficial de **Calidad y Atención al Usuario** de **SPAIN RP**!\n\n` +
+            `Tu opinión es fundamental para seguir mejorando nuestro servidor. Si has recibido atención en soporte, tickets, reportes o dudas, puedes valorar la labor del Staff que te atendió.\n\n` +
+            `📋 **¿Cómo valorar a un Staff?**\n` +
+            `> 1️⃣ Haz clic en el botón **"⭐ Valorar a un Staff"** aquí abajo.\n` +
+            `> 2️⃣ Elige al **Staff** en el menú desplegable con su nombre y foto.\n` +
+            `> 3️⃣ Asigna tu puntuación del **1 al 10**.\n` +
+            `> 4️⃣ Cuéntanos tu experiencia o comentario sobre la atención recibida.\n\n` +
+            `📢 **Canal de publicación de valoraciones:**\n` +
+            `> Las valoraciones se enviarán automáticamente a ${canalPublicacion} ❗\n\n` +
+            `🇪🇸 **¡Gracias por ayudar a SPAIN RP!** 🇪🇸`
+        )
+        .setFooter({
+            text: 'SPAIN RP • Departamento de Calidad y Atención al Usuario',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    if (fs.existsSync(panelImgPath)) {
+        embed.setImage('attachment://panel_valoracion.png');
+    }
+
+    return embed;
+}
+
+function buildStaffRatingPanelRow() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('btn_abrir_valoracion_staff')
+            .setLabel('⭐ Valorar a un Staff')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('📝')
+    );
+}
+
+function buildStaffRatingCardEmbed({ userMention, userAvatar, staffMention, staffName, rating, comment, average, totalRatings }) {
+    const numRating = Number(rating);
+    const fullStars = Math.min(Math.max(Math.round(numRating / 2), 1), 5);
+    const starString = '⭐'.repeat(fullStars) + '☆'.repeat(5 - fullStars);
+
+    // Color del contenedor según la nota
+    let embedColor = 0x2ECC71; // Verde (8-10 Excelente)
+    let badgeText = '🟢 ATENCIÓN DESTACADA';
+    if (numRating < 5) {
+        embedColor = 0xE74C3C; // Rojo (< 5 Negativa)
+        badgeText = '🔴 ATENCIÓN A REVISAR';
+    } else if (numRating < 8) {
+        embedColor = 0xF1C40F; // Amarillo (5-7 Aceptable)
+        badgeText = '🟡 ATENCIÓN CORRECTA';
+    }
+
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const cardImgPath = path.join(__dirname, 'assets', 'valoracion_card.png');
+    const panelImgPath = path.join(__dirname, 'assets', 'panel_valoracion.png');
+    const files = [];
+
+    if (fs.existsSync(logoPath)) {
+        files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+    }
+    if (fs.existsSync(cardImgPath)) {
+        files.push(new AttachmentBuilder(cardImgPath, { name: 'valoracion_card.png' }));
+    } else if (fs.existsSync(panelImgPath)) {
+        files.push(new AttachmentBuilder(panelImgPath, { name: 'valoracion_card.png' }));
+    }
+
+    const embed = new EmbedBuilder()
+        .setColor(embedColor)
+        .setAuthor({
+            name: 'SISTEMA DE VALORACIONES | SPAIN RP',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setThumbnail('attachment://logo.png')
+        .setTitle(badgeText)
+        .setDescription(
+            `\u200B\n` +
+            `✨ ¡Se ha registrado una nueva valoración para el Staff ${staffMention}!\n\n` +
+            `👤 **Usuario que Valora:**\n` +
+            `> ${userMention} ❗\n\n` +
+            `🛡️ **Miembro del Staff Evaluado:**\n` +
+            `> ${staffMention} ❗\n\n` +
+            `📊 **| Puntuación Otorgada:**\n` +
+            `> \`${numRating}/10\` (${starString})\n\n` +
+            `💬 **| Opinión y Experiencia del Usuario:**\n` +
+            `> *"${comment}"*\n\n` +
+            `📈 **| Estadísticas Acumuladas del Staff:**\n` +
+            `> ⭐ **Promedio General:** \`${average || numRating}/10\` • 📋 **Total:** \`${totalRatings || 1}\` valoraciones\n\n` +
+            `🇪🇸 **¡Gracias por ayudar a SPAIN RP!** 🇪🇸`
+        )
+        .setFooter({
+            text: 'SPAIN RP • Opiniones y Soporte',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    if (fs.existsSync(cardImgPath) || fs.existsSync(panelImgPath)) {
+        embed.setImage('attachment://valoracion_card.png');
+    }
+
+    return { embed, files };
+}
+
+// ==========================================
 // 4. PROCESAMIENTO DE SOLICITUDES DEL BOT KING
 // ==========================================
 async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
@@ -2796,7 +3235,8 @@ client.on('messageCreate', async (message) => {
             '!scan-historial', '!escanear-historial', '!ia-stats', '!reset-ia',
             '!entrevista', '!entrevistar', '!iniciar-entrevista', '!fin-entrevista', '!terminar-entrevista',
             '!hablar', '!conversar', '!ia-voz', '!charlar', '!callar', '!salir-voz', '!desconectar-voz',
-            '!play', '!p', '!reproducir', '!stop', '!parar', '!detener', '!skip', '!next', '!saltar', '!siguiente', '!queue', '!cola', '!playlist'
+            '!play', '!p', '!reproducir', '!stop', '!parar', '!detener', '!skip', '!next', '!saltar', '!siguiente', '!queue', '!cola', '!playlist',
+            '!panel-valoracion', '!panel-valoraciones', '!fijar-valoraciones', '!top-staff', '!ranking-staff', '!valoraciones', '!stats-staff'
         ];
 
         if (botCommands.includes(command)) {
@@ -3066,9 +3506,134 @@ client.on('messageCreate', async (message) => {
             });
         }
 
-
-
         // ----------------------------------------------------
+        // SISTEMA INDEPENDIENTE: PANEL DE VALORACIÓN DE STAFF (!panel-valoracion)
+        // ----------------------------------------------------
+        if (['!panel-valoracion', '!panel-valoraciones', '!fijar-valoraciones'].includes(command)) {
+            await message.delete().catch(() => {});
+            try {
+                const targetChannel = message.channel;
+
+                const embed = buildStaffRatingPanelEmbed();
+                const row = buildStaffRatingPanelRow();
+                const files = [];
+
+                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const panelImgPath = path.join(__dirname, 'assets', 'panel_valoracion.png');
+                if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+                if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_valoracion.png' }));
+
+                await targetChannel.send({
+                    embeds: [embed],
+                    components: [row],
+                    files
+                });
+
+                // Guardar automáticamente el canal donde se envió como canal del panel de valoraciones
+                updateConfig('CHANNEL_VALORACION_PANEL_ID', targetChannel.id);
+                console.log(`⭐ [PANEL VALORACIÓN] Panel de valoraciones publicado en #${targetChannel.name} (${targetChannel.id})`);
+                return;
+            } catch (err) {
+                console.error('Error al publicar panel de valoraciones:', err);
+                return;
+            }
+        }
+
+        // COMANDO: !tops / !top-staff / !ranking-staff / !panel-tops (Envía o actualiza el mensaje fijo que NUNCA se borra)
+        if (['!tops', '!top-staff', '!ranking-staff', '!stats-staff', '!valoraciones', '!topstaff', '!panel-tops', '!fijar-tops'].includes(command)) {
+            await message.delete().catch(() => {});
+            try {
+                const targetChannel = message.channel;
+                const { topEmbed, files } = buildStaffTopRankingEmbed();
+
+                // Si ya existe un mensaje de tops guardado en este canal, editarlo en vez de duplicarlo
+                let updatedExisting = false;
+                if (botConfig.MESSAGE_TOP_STAFF_ID && botConfig.CHANNEL_VALORACION_PANEL_ID === targetChannel.id) {
+                    try {
+                        const existingMsg = await targetChannel.messages.fetch(botConfig.MESSAGE_TOP_STAFF_ID).catch(() => null);
+                        if (existingMsg) {
+                            await existingMsg.edit({ embeds: [topEmbed] }).catch(() => {});
+                            updatedExisting = true;
+                            console.log(`🏆 [PANEL TOP STAFF] Mensaje existente editado con éxito.`);
+                        }
+                    } catch (e) {}
+                }
+
+                // Si no existía o se ejecuta en otro canal, enviar el mensaje fijo permanente y registrarlo
+                if (!updatedExisting) {
+                    const sentMsg = await targetChannel.send({ embeds: [topEmbed], files });
+                    updateConfig('CHANNEL_VALORACION_PANEL_ID', targetChannel.id);
+                    updateConfig('MESSAGE_TOP_STAFF_ID', sentMsg.id);
+                    console.log(`🏆 [PANEL TOP STAFF] Mensaje fijo permanente publicado en #${targetChannel.name} (Msg ID: ${sentMsg.id})`);
+                }
+                return;
+            } catch (err) {
+                console.error('Error al gestionar panel permanente de tops:', err);
+                return;
+            }
+        }
+
+        // COMANDO: !addstaff @usuario / !delstaff @usuario / !staffs (Gestiona la lista de Staffs a valorar)
+        if (['!addstaff', '!agregarstaff', '!nuevostaff'].includes(command)) {
+            await message.delete().catch(() => {});
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+
+            const targetUser = message.mentions.users.first() || { id: args[0]?.replace(/[<@!>]/g, '') };
+            if (!targetUser || !targetUser.id) {
+                const helpMsg = await message.channel.send('⚠️ **Uso:** `!addstaff @usuario` o `!addstaff <ID>`').catch(() => null);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => {}), 5000);
+                return;
+            }
+
+            addStaffMemberToRating(targetUser.id);
+            const successMsg = await message.channel.send(`✅ Staff <@${targetUser.id}> añadido a la lista del menú de valoraciones.`).catch(() => null);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => {}), 6000);
+            return;
+        }
+
+        if (['!delstaff', '!eliminarstaff', '!quitarstaff'].includes(command)) {
+            await message.delete().catch(() => {});
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+
+            const targetUser = message.mentions.users.first() || { id: args[0]?.replace(/[<@!>]/g, '') };
+            if (!targetUser || !targetUser.id) {
+                const helpMsg = await message.channel.send('⚠️ **Uso:** `!delstaff @usuario` o `!delstaff <ID>`').catch(() => null);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => {}), 5000);
+                return;
+            }
+
+            removeStaffMemberFromRating(targetUser.id);
+            const successMsg = await message.channel.send(`🗑️ Staff <@${targetUser.id}> retirado de la lista del menú de valoraciones.`).catch(() => null);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => {}), 6000);
+            return;
+        }
+
+        if (['!staffs', '!listastaff', '!stafflist'].includes(command)) {
+            await message.delete().catch(() => {});
+            const data = getStaffRatingsData();
+            const staffList = data.staffList || [];
+
+            let desc = '';
+            if (staffList.length === 0) {
+                desc = 'ℹ️ No hay Staffs registrados. Usa `!addstaff @usuario`';
+            } else {
+                staffList.forEach((sId, i) => {
+                    desc += `> \`#${i + 1}\` <@${sId}> (\`${sId}\`)\n`;
+                });
+            }
+
+            const staffListEmbed = new EmbedBuilder()
+                .setColor(0xF1C40F)
+                .setTitle('🛡️ Lista de Staffs Valorables en el Menú')
+                .setDescription(desc)
+                .setFooter({ text: 'SPAIN RP • Usa !addstaff y !delstaff para configurar' });
+
+            const listMsg = await message.channel.send({ embeds: [staffListEmbed] }).catch(() => null);
+            if (listMsg) setTimeout(() => listMsg.delete().catch(() => {}), 15000);
+            return;
+        }
         // COMANDO DE AYUDA: !wl-ayuda / !wl-comandos
         // ----------------------------------------------------
         if (['!wl-ayuda', '!wl-comandos', '!comandos-wl'].includes(command)) {
@@ -3085,6 +3650,8 @@ client.on('messageCreate', async (message) => {
                     `⏹️ \`!stop\` → Detiene la música y vacía la cola de canciones.\n` +
                     `⏭️ \`!skip\` → Salta a la siguiente canción de la cola.\n` +
                     `📜 \`!queue\` o \`!cola\` → Muestra la lista de canciones en espera.\n` +
+                    `⭐ \`!panel-valoracion\` → Publica el panel con el botón para que los usuarios valoren al Staff.\n` +
+                    `🏆 \`!tops\` o \`!top-staff\` → Muestra el ranking con las mejores puntuaciones del equipo de Staff.\n` +
                     `🎙️ \`!hablar\` o \`!ia-voz\` → Conecta al bot al canal de voz para mantener conversación por voz con la IA en vivo.\n` +
                     `🎙️ \`!entrevista @usuario\` → Inicia la auditoría de WL Oral con transcripción y ficha de evaluación.\n` +
                     `🛑 \`!callar\` o \`!salir-voz\` → Desconecta al bot del canal de voz.\n` +
@@ -3212,11 +3779,11 @@ client.on('messageCreate', async (message) => {
                 });
             }
 
-            const channelIdMatch = rawTarget.match(/<#(\d+)>|(\d+)/);
-            const channelId = channelIdMatch ? (channelIdMatch[1] || channelIdMatch[2]) : null;
+            const channelIdMatch = rawTarget.trim().match(/<#(\d{17,20})>|^(\d{17,20})$/);
+            const channelId = channelIdMatch ? (channelIdMatch[1] || channelIdMatch[2]) : rawTarget.trim().replace(/[^0-9]/g, '');
 
-            if (!channelId) {
-                return message.reply({ content: '❌ No se pudo detectar un canal o ID válido.' });
+            if (!channelId || !/^\d{17,20}$/.test(channelId)) {
+                return message.reply({ content: '❌ No se pudo detectar una ID numérica o canal válido de Discord.' });
             }
 
             const channelKeyMap = {
@@ -3243,13 +3810,18 @@ client.on('messageCreate', async (message) => {
                 'normativas': 'CHANNEL_NORMATIVAS_ID',
                 'tickets': 'CHANNEL_TICKETS_ID',
                 'ticket': 'CHANNEL_TICKETS_ID',
-                'general': 'CHANNEL_GENERAL_ID'
+                'general': 'CHANNEL_GENERAL_ID',
+                'valpanel': 'CHANNEL_VALORACION_PANEL_ID',
+                'valoracionpanel': 'CHANNEL_VALORACION_PANEL_ID',
+                'panelvaloracion': 'CHANNEL_VALORACION_PANEL_ID',
+                'valoraciones': 'CHANNEL_VALORACIONES_ID',
+                'valoracion': 'CHANNEL_VALORACIONES_ID'
             };
 
             const configKey = channelKeyMap[tipo];
             if (!configKey) {
                 return message.reply({
-                    content: `❌ Tipo de canal no válido: \`${tipo}\`.\nOpciones: \`solicitudes\`, \`aprobados\`, \`denegados\`, \`entrevistas\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\``
+                    content: `❌ Tipo de canal no válido: \`${tipo}\`.\nOpciones: \`solicitudes\`, \`aprobados\`, \`denegados\`, \`entrevistas\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\`, \`valoraciones\``
                 });
             }
 
@@ -4938,6 +5510,48 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
+    // ----------------------------------------------------
+    // SELECTOR DE STAFF: ABRIR MODAL DIRECTAMENTE AL ELEGIR
+    // ----------------------------------------------------
+    if (interaction.isStringSelectMenu() && interaction.customId === 'select_staff_to_rate') {
+        const targetStaffId = interaction.values[0];
+
+        // Obtener nombre desde la caché local de forma instantánea (0ms)
+        const cachedMember = interaction.guild?.members?.cache?.get(targetStaffId);
+        const staffDisplayName = cachedMember ? (cachedMember.displayName || cachedMember.user.username) : 'Staff';
+
+        const modal = new ModalBuilder()
+            .setCustomId(`modal_valorar_staff_${targetStaffId}`)
+            .setTitle(`⭐ Valorar a ${staffDisplayName}`.slice(0, 45));
+
+        const ratingInput = new TextInputBuilder()
+            .setCustomId('input_staff_rating')
+            .setLabel('Puntuación del 1 al 10')
+            .setPlaceholder('Escribe tu puntuación: 10, 9, 8...')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMinLength(1)
+            .setMaxLength(2);
+
+        const commentInput = new TextInputBuilder()
+            .setCustomId('input_staff_comment')
+            .setLabel('Opinión sobre la atención recibida')
+            .setPlaceholder('Describe cómo te atendió, rapidez, amabilidad o trato recibido...')
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true)
+            .setMinLength(5)
+            .setMaxLength(800);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(ratingInput),
+            new ActionRowBuilder().addComponents(commentInput)
+        );
+
+        return interaction.showModal(modal).catch(err => {
+            console.error('Error al mostrar modal de valoraciones:', err);
+        });
+    }
+
     if (!interaction.isButton()) return;
 
     // ----------------------------------------------------
@@ -5046,6 +5660,92 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ----------------------------------------------------
+    // BOTÓN: ABRIR SELECTOR DE STAFF PARA VALORAR
+    // ----------------------------------------------------
+    if (interaction.customId === 'btn_abrir_valoracion_staff') {
+        const ratingsData = getStaffRatingsData();
+        const staffIds = ratingsData.staffList || ['418558256840179722'];
+
+        const options = [];
+        for (const sId of staffIds) {
+            let label = `Staff (${sId})`;
+            let description = 'Equipo de Staff • SPAIN RP';
+            const member = interaction.guild?.members?.cache?.get(sId);
+            if (member) {
+                label = member.displayName || member.user.username;
+                description = `@${member.user.tag || member.user.username}`;
+            }
+
+            options.push({
+                label: label.slice(0, 100),
+                description: description.slice(0, 100),
+                value: sId,
+                emoji: '🛡️'
+            });
+        }
+
+        if (options.length === 0) {
+            options.push({
+                label: 'Staff General',
+                description: 'Valoración para el equipo de soporte',
+                value: '418558256840179722',
+                emoji: '🛡️'
+            });
+        }
+
+        const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId('select_staff_to_rate')
+            .setPlaceholder('🛡️ Elige al miembro de Staff que te atendió...')
+            .addOptions(options);
+
+        const row = new ActionRowBuilder().addComponents(selectMenu);
+
+        await interaction.reply({
+            content: '👤 **Selecciona en el menú al Staff que deseas valorar:**',
+            components: [row],
+            ephemeral: true
+        }).catch(() => {});
+
+        // Auto-eliminar el selector efímero tras 6 segundos (así si cancela o no hace nada, desaparece solo de inmediato)
+        setTimeout(() => {
+            interaction.deleteReply().catch(() => {});
+        }, 6000);
+        return;
+    }
+
+    // ----------------------------------------------------
+    // BOTÓN: VER TOP / RANKING DE STAFF
+    // ----------------------------------------------------
+    if (interaction.customId === 'btn_ver_top_staff') {
+        const ratingsData = getStaffRatingsData();
+        const stats = ratingsData.stats || {};
+        const staffList = Object.keys(stats).map(id => ({ id, ...stats[id] }));
+
+        staffList.sort((a, b) => b.average - a.average || b.totalRatings - a.totalRatings);
+
+        let desc = '';
+        if (staffList.length === 0) {
+            desc = '📭 *Todavía no se han registrado valoraciones de Staff en el servidor.*';
+        } else {
+            staffList.slice(0, 10).forEach((s, idx) => {
+                const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `\`#${idx + 1}\``));
+                const fullStars = Math.min(Math.max(Math.round(s.average / 2), 1), 5);
+                const stars = '⭐'.repeat(fullStars);
+                desc += `${medal} <@${s.id}> • **${s.average}/10** ${stars}\n> 💬 Reseñas: \`${s.totalRatings}\` votos recibidos\n\n`;
+            });
+        }
+
+        const topEmbed = new EmbedBuilder()
+            .setColor(0xF1C40F)
+            .setTitle('🏆 Ranking de Atención de Staff • SPAIN RP')
+            .setDescription(desc)
+            .setFooter({ text: 'SPAIN RP • Calidad de Soporte' })
+            .setTimestamp();
+
+        return interaction.reply({ embeds: [topEmbed], ephemeral: true });
+    }
+
+    // ----------------------------------------------------
     // BOTONES DEL SIMULADOR DE WHITELIST
     // ----------------------------------------------------
     const [action, type, targetUserId] = interaction.customId.split('_');
@@ -5096,6 +5796,138 @@ client.on('interactionCreate', async (interaction) => {
     // 2. Procesar el mensaje actualizado para que envíe el contenedor al canal de aprobados
     const message = await interaction.message.fetch();
     await handleWhitelistMessage(message, 'interactionSimulator');
+});
+
+// Manejo de envío de Modales (Formularios)
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isModalSubmit()) return;
+
+    // ----------------------------------------------------
+    // PROCESAMIENTO: MODAL VALORACIÓN DE STAFF
+    // ----------------------------------------------------
+    if (interaction.customId.startsWith('modal_valorar_staff')) {
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+
+        try {
+            const rawRating = interaction.fields.getTextInputValue('input_staff_rating').trim();
+            const comment = interaction.fields.getTextInputValue('input_staff_comment').trim();
+
+            // Extraer staffId del customId (ej: modal_valorar_staff_123456789)
+            let staffId = interaction.customId.replace('modal_valorar_staff_', '');
+            if (staffId === 'modal_valorar_staff') staffId = null;
+
+            // Si vino del formato anterior con input de texto
+            if (!staffId && interaction.fields.fields.has('input_staff_target')) {
+                const rawStaff = interaction.fields.getTextInputValue('input_staff_target').trim();
+                const idMatch = rawStaff.match(/^<@!?(\d{17,20})>$/) || rawStaff.match(/^(\d{17,20})$/);
+                if (idMatch) staffId = idMatch[1];
+                else {
+                    const members = await interaction.guild.members.fetch({ query: rawStaff, limit: 1 }).catch(() => null);
+                    const found = members?.first();
+                    if (found) staffId = found.id;
+                    else staffId = rawStaff.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                }
+            }
+
+            // Validar puntuación numérica
+            const numRating = parseInt(rawRating, 10);
+            if (isNaN(numRating) || numRating < 1 || numRating > 10) {
+                return interaction.editReply({
+                    content: '❌ **Puntuación inválida:** Debes indicar un número entero del **1 al 10** (por ejemplo `10` o `8`).'
+                }).catch(() => {});
+            }
+
+            // Obtener datos del staff
+            let staffTag = 'Staff';
+            let staffMention = `<@${staffId}>`;
+
+            if (staffId && /^\d+$/.test(staffId)) {
+                try {
+                    const member = await interaction.guild.members.fetch(staffId).catch(() => null);
+                    if (member) {
+                        staffTag = member.user.tag || member.displayName;
+                        staffMention = `<@${member.id}>`;
+                    }
+                } catch (e) {}
+            }
+
+            // Evitar auto-valoraciones
+            if (staffId === interaction.user.id) {
+                await interaction.editReply({
+                    content: '⚠️ **No puedes valorarte a ti mismo.** La valoración debe ser para otro miembro del equipo de Staff.'
+                }).catch(() => {});
+                setTimeout(() => {
+                    interaction.deleteReply().catch(() => {});
+                }, 3000);
+                return;
+            }
+
+            // Guardar en la base de datos persistente
+            const { entry, stats } = saveStaffRating({
+                userId: interaction.user.id,
+                userName: interaction.user.tag || interaction.user.username,
+                staffId: staffId || 'staff_general',
+                staffTag,
+                rating: numRating,
+                comment
+            });
+
+            // Construir la tarjeta contenedor oficial con banner y logo
+            const { embed: cardEmbed, files: cardFiles } = buildStaffRatingCardEmbed({
+                userMention: `<@${interaction.user.id}>`,
+                userAvatar: interaction.user.displayAvatarURL({ dynamic: true }),
+                staffMention,
+                staffName: staffTag,
+                rating: numRating,
+                comment,
+                average: stats.average,
+                totalRatings: stats.totalRatings
+            });
+
+            // Canal destino
+            const targetChannelId = botConfig.CHANNEL_VALORACIONES_ID || interaction.channelId;
+            const targetChannel = await client.channels.fetch(targetChannelId).catch(() => null);
+
+            if (targetChannel) {
+                await targetChannel.send({
+                    embeds: [cardEmbed],
+                    files: cardFiles
+                }).catch((err) => {
+                    console.error('Error al publicar valoración en el canal:', err);
+                    return null;
+                });
+            }
+
+            // Actualizar automáticamente el panel fijo de Tops si está configurado en el canal
+            updateStaffTopRankingPanel().catch(() => {});
+
+            await interaction.editReply({
+                content: `✅ **¡Tu valoración ha sido enviada con éxito!**\n⭐ Puntuación: \`${numRating}/10\` para ${staffMention}.\nMuchas gracias por ayudarnos a mejorar el servidor.`
+            }).catch(() => {});
+
+            // Auto-eliminar el mensaje efímero de confirmación en 3 segundos
+            setTimeout(() => {
+                interaction.deleteReply().catch(() => {});
+            }, 3000);
+
+            // Eliminar el mensaje anterior que contenía el selector si es accesible
+            try {
+                if (interaction.message && interaction.message.deletable) {
+                    await interaction.message.delete().catch(() => {});
+                }
+            } catch (e) {}
+            return;
+        } catch (err) {
+            console.error('Error al procesar modal de valoración de staff:', err);
+            await interaction.editReply({
+                content: '❌ Ocurrió un error al procesar tu valoración. Inténtalo de nuevo.'
+            }).catch(() => {});
+            setTimeout(() => {
+                interaction.deleteReply().catch(() => {});
+            }, 3000);
+            return;
+        }
+    }
 });
 
 // Cuando el bot oficial de solicitudes edita el mensaje (Envío instantáneo)
