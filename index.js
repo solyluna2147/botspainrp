@@ -261,6 +261,7 @@ function loadDynamicConfig() {
         CHANNEL_VALORACIONES_ID: process.env.CHANNEL_VALORACIONES_ID || '1552087605980561448',
         CHANNEL_SANCIONES_ID: process.env.CHANNEL_SANCIONES_ID || '',
         CHANNEL_SANCIONES_PANEL_ID: process.env.CHANNEL_SANCIONES_PANEL_ID || '',
+        CHANNEL_BIENVENIDAS_ID: process.env.CHANNEL_BIENVENIDAS_ID || '',
         ROLE_STAFF_ID: process.env.ROLE_STAFF_ID || '1538191116610838691',
         ROLE_STREAMER_ID: process.env.ROLE_STREAMER_ID || '',
         FIVEM_SERVER_IP: process.env.FIVEM_SERVER_IP || '185.230.52.246:30120',
@@ -2749,6 +2750,94 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
 }
 
 // ==========================================
+// CONSTRUCTORES: SISTEMA DE BIENVENIDAS OFICIALES (SPAIN RP)
+// ==========================================
+function buildWelcomeEmbed(member, guild) {
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const bannerPath = path.join(__dirname, 'assets', 'banner_bienvenida.png');
+    const files = [];
+
+    let iconURL = client.user.displayAvatarURL();
+    if (fs.existsSync(logoPath)) {
+        files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+        iconURL = 'attachment://logo.png';
+    }
+
+    const user = member.user || member;
+    const memberCount = guild?.memberCount || 0;
+    const accountCreatedTimestamp = Math.floor(user.createdTimestamp / 1000);
+
+    const canalNormativas = botConfig.CHANNEL_NORMATIVAS_ID ? `<#${botConfig.CHANNEL_NORMATIVAS_ID}>` : '`#normativas`';
+    const canalSolicitudes = botConfig.CHANNEL_SOLICITUDES_ID ? `<#${botConfig.CHANNEL_SOLICITUDES_ID}>` : '`#solicitudes`';
+    const canalTickets = botConfig.CHANNEL_TICKETS_ID ? `<#${botConfig.CHANNEL_TICKETS_ID}>` : '`#tickets`';
+    const canalGeneral = botConfig.CHANNEL_GENERAL_ID ? `<#${botConfig.CHANNEL_GENERAL_ID}>` : '`#general`';
+
+    const welcomeEmbed = new EmbedBuilder()
+        .setColor(0xE74C3C) // Rojo carmesí España / Spain RP
+        .setAuthor({
+            name: '¡TE DAMOS LA BIENVENIDA A SPAIN RP!',
+            iconURL: 'attachment://logo.png'
+        })
+        .setThumbnail('attachment://logo.png')
+        .setDescription(
+            `\u200B\n` +
+            `➥ 𝗘𝘀𝗽𝗲𝗿𝗮𝗺𝗼𝘀 𝗾𝘂𝗲 𝗱𝗶𝘀𝗳𝗿𝘂𝘁𝗲𝘀 𝗱𝗲 𝗻𝘂𝗲𝘀𝘁𝗿𝗮 𝗰𝗼𝗺𝘂𝗻𝗶𝗱𝗮𝗱, 𝘁𝗼𝗱𝗼 𝗹𝗼 𝗾𝘂𝗲 𝗻𝗲𝗰𝗲𝘀𝗶𝘁𝗲𝘀 𝘀𝗮𝗯𝗲𝗿 𝗹𝗼 𝘁𝗲𝗻𝗱𝗿𝗮́𝘀 𝗲𝗻 𝗹𝗼𝘀 𝗿𝗲𝘀𝗽𝗲𝗰𝘁𝗶𝘃𝗼𝘀 𝗰𝗮𝗻𝗮𝗹𝗲𝘀 𝗰𝗼𝗿𝗿𝗲𝘀𝗽𝗼𝗻𝗱𝗶𝗲𝗻𝘁𝗲𝘀 ❗\n\n` +
+            `👤 **Usuario:** <@${user.id}>\n` +
+            `👥 **Miembro Nº:** \`#${memberCount}\` ciudadanos\n` +
+            `📅 **Cuenta Creada:** <t:${accountCreatedTimestamp}:R>\n\n\n` +
+            `📝 **| Puedes consultar nuestras,**\n` +
+            `> ${canalNormativas} ❗\n\n` +
+            `📋 **| Puedes realizar tu Whitelist en,**\n` +
+            `> ${canalSolicitudes} ❗\n\n` +
+            `📁 **| Si tienes alguna duda abre,**\n` +
+            `> ${canalTickets} ❗\n\n` +
+            `🌍 **| Disfruta y diviértete en,**\n` +
+            `> ${canalGeneral} ❗\n\n\n` +
+            `🇪🇸 **| ¡Disfruta de SPAIN RP! |** 🇪🇸\n`
+        )
+        .setFooter({
+            text: 'SPAIN RP • Sistema de Bienvenidas',
+            iconURL: iconURL
+        })
+        .setTimestamp();
+
+    if (fs.existsSync(bannerPath)) {
+        files.push(new AttachmentBuilder(bannerPath, { name: 'banner_bienvenida.png' }));
+        welcomeEmbed.setImage('attachment://banner_bienvenida.png');
+    }
+
+    return { welcomeEmbed, files };
+}
+
+async function sendWelcomeMessage(member) {
+    try {
+        const guild = member.guild;
+        const targetChannelId = botConfig.CHANNEL_BIENVENIDAS_ID;
+        if (!targetChannelId) return;
+
+        const targetChannel = guild.channels.cache.get(targetChannelId) ||
+            await client.channels.fetch(targetChannelId).catch(() => null);
+
+        if (!targetChannel) {
+            console.error(`⚠️ [BIENVENIDAS] No se encontró el canal de bienvenidas (${targetChannelId}).`);
+            return;
+        }
+
+        const { welcomeEmbed, files } = buildWelcomeEmbed(member, guild);
+
+        await targetChannel.send({
+            content: `❗ **Bienvenid@,** <@${member.id}> ❗`,
+            embeds: [welcomeEmbed],
+            files: files
+        });
+
+        console.log(`✨ [BIENVENIDA] Notificación de bienvenida enviada para ${member.user?.tag || member.id} en #${targetChannel.name}`);
+    } catch (err) {
+        console.error('❌ [BIENVENIDAS] Error al enviar mensaje de bienvenida:', err);
+    }
+}
+
+// ==========================================
 // CONSTRUCTORES: SISTEMA DE VALORACIÓN DE STAFF (MODO CONTENEDOR)
 // ==========================================
 function buildStaffTopRankingEmbed() {
@@ -3483,11 +3572,11 @@ client.on('messageCreate', async (message) => {
 
                     const { embeds, embed, files, videoFiles } = buildSancionCardEmbed(sancionObj);
                     const targetChannelId = (botConfig.CHANNEL_SANCIONES_ID && botConfig.CHANNEL_SANCIONES_ID.trim()) ? botConfig.CHANNEL_SANCIONES_ID.trim() : message.channel.id;
-                    let targetChannel = message.guild.channels.cache.get(targetChannelId) || 
-                                        await client.channels.fetch(targetChannelId).catch(err => {
-                                            console.error(`⚠️ [SANCIONES] No se pudo obtener el canal #${targetChannelId}:`, err.message);
-                                            return null;
-                                        });
+                    let targetChannel = message.guild.channels.cache.get(targetChannelId) ||
+                        await client.channels.fetch(targetChannelId).catch(err => {
+                            console.error(`⚠️ [SANCIONES] No se pudo obtener el canal #${targetChannelId}:`, err.message);
+                            return null;
+                        });
 
                     if (!targetChannel) targetChannel = message.channel;
 
@@ -4161,6 +4250,7 @@ client.on('messageCreate', async (message) => {
                     `> 🔘 **Panel Botón Directo:** ${formatChannel(botConfig.CHANNEL_STREAM_PANEL_ID)}\n` +
                     `> 📢 **Canal de Avisos Stream:** ${formatChannel(botConfig.CHANNEL_STREAMERS_ID)}\n\n` +
                     `🌐 **CANALES DEL SERVIDOR & ESTADO:**\n` +
+                    `> 👋 **Bienvenidas:** ${formatChannel(botConfig.CHANNEL_BIENVENIDAS_ID)}\n` +
                     `> 📊 **Panel Estado FiveM:** ${formatChannel(botConfig.CHANNEL_STATUS_ID)}\n` +
                     `> 📜 **Normativas:** ${formatChannel(botConfig.CHANNEL_NORMATIVAS_ID)}\n` +
                     `> 🎫 **Tickets / Soporte:** ${formatChannel(botConfig.CHANNEL_TICKETS_ID)}\n` +
@@ -4173,6 +4263,7 @@ client.on('messageCreate', async (message) => {
                     `> 🔗 **CFX Code:** \`${botConfig.FIVEM_CFX_CODE || 'No definido'}\`\n\n` +
                     `────────────────────────────\n` +
                     `⚙️ **¿CÓMO CAMBIAR LOS CANALES Y AJUSTES?**\n` +
+                    `• \`!setcanal bienvenidas <#canal o ID>\` *(Avisos de bienvenida)*\n` +
                     `• \`!setcanal solicitudes <#canal o ID>\`\n` +
                     `• \`!setcanal aprobados <#canal o ID>\`\n` +
                     `• \`!setcanal denegados <#canal o ID>\`\n` +
@@ -4225,8 +4316,8 @@ client.on('messageCreate', async (message) => {
             if (!tipo || !rawTarget) {
                 return message.reply({
                     content: `❌ **Uso:** \`!setcanal <tipo> <#canal o ID>\`\n` +
-                        `📌 **Tipos disponibles:** \`solicitudes\`, \`aprobados\`, \`denegados\`, \`entrevistas\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\`\n` +
-                        `*Ejemplo:* \`!setcanal entrevistas #fichas-entrevistas\``
+                        `📌 **Tipos disponibles:** \`bienvenidas\`, \`solicitudes\`, \`aprobados\`, \`denegados\`, \`entrevistas\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\`, \`valoraciones\`, \`sanciones\`\n` +
+                        `*Ejemplo:* \`!setcanal bienvenidas #bienvenida\``
                 });
             }
 
@@ -4238,6 +4329,10 @@ client.on('messageCreate', async (message) => {
             }
 
             const channelKeyMap = {
+                'bienvenida': 'CHANNEL_BIENVENIDAS_ID',
+                'bienvenidas': 'CHANNEL_BIENVENIDAS_ID',
+                'welcome': 'CHANNEL_BIENVENIDAS_ID',
+                'welcomes': 'CHANNEL_BIENVENIDAS_ID',
                 'solicitudes': 'CHANNEL_SOLICITUDES_ID',
                 'solicitud': 'CHANNEL_SOLICITUDES_ID',
                 'aprobados': 'CHANNEL_APROBADOS_ID',
@@ -4274,7 +4369,7 @@ client.on('messageCreate', async (message) => {
             const configKey = channelKeyMap[tipo];
             if (!configKey) {
                 return message.reply({
-                    content: `❌ Tipo de canal no válido: \`${tipo}\`.\nOpciones: \`solicitudes\`, \`aprobados\`, \`denegados\`, \`entrevistas\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\`, \`valoraciones\`, \`sanciones\``
+                    content: `❌ Tipo de canal no válido: \`${tipo}\`.\nOpciones: \`bienvenidas\`, \`solicitudes\`, \`aprobados\`, \`denegados\`, \`entrevistas\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\`, \`valoraciones\`, \`sanciones\``
                 });
             }
 
@@ -5984,6 +6079,58 @@ client.on('messageCreate', async (message) => {
             console.log(`🚨 [PANEL SANCIONES] Panel interactivo de sanciones enviado con éxito a #${targetChannel.name} por ${message.author.tag}`);
             return;
         }
+
+        // ====================================================
+        // COMANDOS DE BIENVENIDAS: !setcanal-bienvenidas / !test-bienvenida
+        // ====================================================
+        if (['!setcanal-bienvenidas', '!setcanal-bienvenida', '!canal-bienvenidas', '!fijar-bienvenidas'].includes(command)) {
+            await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
+
+            const rawChannelId = args.slice(1).join(' ').match(/\d{17,20}/)?.[0];
+            let targetChannel = message.mentions.channels.first();
+
+            if (!targetChannel && rawChannelId) {
+                targetChannel = message.guild.channels.cache.get(rawChannelId) ||
+                    await client.channels.fetch(rawChannelId).catch(() => null);
+            }
+            if (!targetChannel) targetChannel = message.channel;
+
+            await updateConfig('CHANNEL_BIENVENIDAS_ID', targetChannel.id);
+
+            const confEmbed = new EmbedBuilder()
+                .setColor(0xE74C3C)
+                .setTitle('👋 Canal de Bienvenidas Configurado')
+                .setDescription(`✅ Los mensajes de bienvenida con contenedor y banner se publicarán en: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n💡 *Puedes probar cómo queda escribiendo **\`!test-bienvenida\`**.*`)
+                .setFooter({ text: 'SPAIN RP • Sistema Oficial de Bienvenidas' })
+                .setTimestamp();
+
+            const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
+            if (confMsg) setTimeout(() => confMsg.delete().catch(() => { }), 8000);
+            console.log(`🔧 [CONFIG] Canal de bienvenidas fijado en #${targetChannel.name || targetChannel.id} (${targetChannel.id}) por ${message.author.tag}`);
+            return;
+        }
+
+        if (['!bpruebas', '!test-bienvenida', '!probar-bienvenida', '!test-welcome', '!pbienvenida', '!bp'].includes(command)) {
+            await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
+
+            const targetMember = message.mentions.members.first() || message.member;
+            const { welcomeEmbed, files } = buildWelcomeEmbed(targetMember, message.guild);
+
+            await message.channel.send({
+                content: `❗ **Bienvenid@,** <@${targetMember.id}> ❗ *(Mensaje de prueba)*`,
+                embeds: [welcomeEmbed],
+                files: files
+            }).catch(e => console.error('Error al probar mensaje de bienvenida:', e));
+
+            console.log(`✨ [TEST BIENVENIDA] Prueba de bienvenida enviada en #${message.channel.name} por ${message.author.tag}`);
+            return;
+        }
     }
 
     if (message.author.id === client.user.id) return;
@@ -6687,6 +6834,18 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
         }
     } catch (err) {
         console.error('Error en presenceUpdate de streamers:', err);
+    }
+});
+
+// ==========================================
+// EVENTO: BIENVENIDAS DE NUEVOS MIEMBROS (guildMemberAdd)
+// ==========================================
+client.on('guildMemberAdd', async (member) => {
+    try {
+        if (!member || member.user.bot) return;
+        await sendWelcomeMessage(member);
+    } catch (err) {
+        console.error('❌ Error en evento guildMemberAdd:', err);
     }
 });
 
