@@ -4100,13 +4100,34 @@ client.on('messageCreate', async (message) => {
         // Función para manejar intentos no autorizados de comandos con prefijo !
         async function sendDeniedAccessMessage(msg) {
             try {
-                // Borrar inmediatamente el comando del chat público para que no quede rastro
+                // Borrar inmediatamente el comando del chat
                 await msg.delete().catch(() => { });
 
-                // Enviar aviso privado (DM) para que nadie en el canal lo vea
-                await msg.author.send({
-                    content: '⛔ **Acceso denegado:** Los comandos de administración son exclusivos del **Creador del Bot**.'
-                }).catch(() => { });
+                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const files = [];
+                let iconURL = client.user.displayAvatarURL();
+                if (fs.existsSync(logoPath)) {
+                    files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+                    iconURL = 'attachment://logo.png';
+                }
+
+                const deniedEmbed = new EmbedBuilder()
+                    .setColor(0xE74C3C)
+                    .setAuthor({
+                        name: 'ACCESO DENEGADO • SEGURIDAD SPAIN RP',
+                        iconURL: iconURL
+                    })
+                    .setDescription(
+                        `⛔ <@${msg.author.id}>, este comando de administración y configuración es de uso **exclusivo para el Propietario / Owner** del bot.\n\n` +
+                        `> 🔒 *Tu solicitud ha sido bloqueada y registrada por el sistema de seguridad.*`
+                    )
+                    .setFooter({ text: 'SPAIN RP • Mensaje temporal (se auto-eliminará en 5s)' })
+                    .setTimestamp();
+
+                const sent = await msg.channel.send({ embeds: [deniedEmbed], files }).catch(() => null);
+                if (sent) {
+                    setTimeout(() => sent.delete().catch(() => { }), 5000);
+                }
             } catch (err) { }
         }
 
