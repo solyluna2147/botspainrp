@@ -53,10 +53,10 @@ function purgeTempAudioFiles() {
                 const fullPath = path.join(__dirname, file);
                 try {
                     fs.unlinkSync(fullPath);
-                } catch (e) {}
+                } catch (e) { }
             }
         }
-    } catch (e) {}
+    } catch (e) { }
 }
 purgeTempAudioFiles();
 setInterval(purgeTempAudioFiles, 30 * 60 * 1000); // Cada 30 minutos
@@ -143,10 +143,26 @@ const aiFeedbackSchema = new mongoose.Schema({
     data: Object
 }, { timestamps: true });
 
+const sancionSchema = new mongoose.Schema({
+    id: { type: String, unique: true },
+    reporterId: String,
+    reporterTag: String,
+    targetId: String,
+    targetTag: String,
+    reason: String,
+    punishment: String,
+    involvedStaff: String,
+    imageUrl: String,
+    channelId: String,
+    messageId: String,
+    timestamp: { type: Date, default: Date.now }
+}, { timestamps: true });
+
 const BotSettingModel = mongoose.model('BotSetting', botSettingSchema);
 const StaffRatingDataModel = mongoose.model('StaffRatingData', staffRatingDataSchema);
 const StreamerModel = mongoose.model('Streamer', streamerSchema);
 const AiFeedbackModel = mongoose.model('AiFeedback', aiFeedbackSchema);
+const SancionModel = mongoose.model('Sancion', sancionSchema);
 
 let isMongoConnected = false;
 
@@ -155,7 +171,7 @@ if (process.env.MONGODB_URI) {
     try {
         const dns = require('dns');
         dns.setServers(['8.8.8.8', '1.1.1.1']);
-    } catch (e) {}
+    } catch (e) { }
 
     mongoose.connect(process.env.MONGODB_URI, {
         serverSelectionTimeoutMS: 5000
@@ -200,7 +216,7 @@ async function syncDataFromMongo() {
                 staffList: localData.staffList,
                 stats: localData.stats,
                 ratings: localData.ratings
-            }).catch(() => {});
+            }).catch(() => { });
         }
 
         // 3. Streamers
@@ -220,7 +236,7 @@ async function syncDataFromMongo() {
             console.log(`🧠 [IA WHITELIST] Aprendizaje sincronizado desde la nube (${aiDoc.data.totalSamples || 0} solicitudes procesadas).`);
         } else if (fs.existsSync(AI_FEEDBACK_FILE)) {
             const localAi = JSON.parse(fs.readFileSync(AI_FEEDBACK_FILE, 'utf8'));
-            await AiFeedbackModel.create({ docId: 'main', data: localAi }).catch(() => {});
+            await AiFeedbackModel.create({ docId: 'main', data: localAi }).catch(() => { });
         }
 
         console.log('🔄 [MONGODB ATLAS] Datos sincronizados correctamente desde la nube.');
@@ -243,6 +259,8 @@ function loadDynamicConfig() {
         CHANNEL_GENERAL_ID: process.env.CHANNEL_GENERAL_ID || '1517530849032016002',
         CHANNEL_VALORACION_PANEL_ID: process.env.CHANNEL_VALORACION_PANEL_ID || '1552087566776537148',
         CHANNEL_VALORACIONES_ID: process.env.CHANNEL_VALORACIONES_ID || '1552087605980561448',
+        CHANNEL_SANCIONES_ID: process.env.CHANNEL_SANCIONES_ID || '',
+        CHANNEL_SANCIONES_PANEL_ID: process.env.CHANNEL_SANCIONES_PANEL_ID || '',
         ROLE_STAFF_ID: process.env.ROLE_STAFF_ID || '1538191116610838691',
         ROLE_STREAMER_ID: process.env.ROLE_STREAMER_ID || '',
         FIVEM_SERVER_IP: process.env.FIVEM_SERVER_IP || '185.230.52.246:30120',
@@ -305,9 +323,9 @@ function addStaffMemberToRating(staffId) {
         data.staffList.push(staffId);
         try {
             fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(data, null, 2), 'utf8');
-        } catch (e) {}
+        } catch (e) { }
         if (isMongoConnected) {
-            StaffRatingDataModel.findOneAndUpdate({ docId: 'main' }, { staffList: data.staffList }, { upsert: true }).catch(() => {});
+            StaffRatingDataModel.findOneAndUpdate({ docId: 'main' }, { staffList: data.staffList }, { upsert: true }).catch(() => { });
         }
         return true;
     }
@@ -321,9 +339,9 @@ function removeStaffMemberFromRating(staffId) {
         data.staffList.splice(idx, 1);
         try {
             fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(data, null, 2), 'utf8');
-        } catch (e) {}
+        } catch (e) { }
         if (isMongoConnected) {
-            StaffRatingDataModel.findOneAndUpdate({ docId: 'main' }, { staffList: data.staffList }, { upsert: true }).catch(() => {});
+            StaffRatingDataModel.findOneAndUpdate({ docId: 'main' }, { staffList: data.staffList }, { upsert: true }).catch(() => { });
         }
         return true;
     }
@@ -370,7 +388,7 @@ function saveStaffRating({ userId, userName, staffId, staffTag, rating, comment 
     if (isMongoConnected) {
         StaffRatingDataModel.findOneAndUpdate(
             { docId: 'main' },
-            { 
+            {
                 staffList: data.staffList,
                 stats: data.stats,
                 $push: { ratings: entry }
@@ -446,7 +464,7 @@ function saveStreamer(userId, streamerObj) {
     }
 
     if (isMongoConnected) {
-        StreamerModel.findOneAndUpdate({ userId }, { userId, data: updatedProfile }, { upsert: true }).catch(() => {});
+        StreamerModel.findOneAndUpdate({ userId }, { userId, data: updatedProfile }, { upsert: true }).catch(() => { });
     }
 }
 
@@ -460,7 +478,7 @@ function removeStreamer(userId) {
             console.error('Error al eliminar de streamers.json:', e);
         }
         if (isMongoConnected) {
-            StreamerModel.deleteOne({ userId }).catch(() => {});
+            StreamerModel.deleteOne({ userId }).catch(() => { });
         }
         return true;
     }
@@ -475,7 +493,7 @@ function clearAllStreamers() {
         return false;
     }
     if (isMongoConnected) {
-        StreamerModel.deleteMany({}).catch(() => {});
+        StreamerModel.deleteMany({}).catch(() => { });
     }
     return true;
 }
@@ -597,7 +615,7 @@ function saveAiFeedbackData(data) {
         console.error('Error al guardar ai_feedback.json:', e);
     }
     if (isMongoConnected) {
-        AiFeedbackModel.findOneAndUpdate({ docId: 'main' }, { data }, { upsert: true }).catch(() => {});
+        AiFeedbackModel.findOneAndUpdate({ docId: 'main' }, { data }, { upsert: true }).catch(() => { });
     }
 }
 
@@ -1012,7 +1030,7 @@ async function fetchLiveStreamTitle(streamUrl, member = null, defaultTitle = nul
                     const html = await oembedRes.text().catch(() => '');
                     // Extraer meta og:description o twitter:title o title
                     const descMatch = html.match(/<meta\s+property=["']og:description["']\s+content=["']([^"']+)["']/i) ||
-                                      html.match(/<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i);
+                        html.match(/<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i);
                     if (descMatch && descMatch[1] && !descMatch[1].toLowerCase().includes('twitch is the world\'s')) {
                         return descMatch[1].trim();
                     }
@@ -1028,7 +1046,7 @@ async function fetchLiveStreamTitle(streamUrl, member = null, defaultTitle = nul
                 return `🔴 Directo de ${channelName} | SPAIN RP 🇪🇸`;
             }
         }
-    } catch (err) {}
+    } catch (err) { }
 
     // 3. Si es TikTok, extraer nombre del creador
     try {
@@ -1039,7 +1057,7 @@ async function fetchLiveStreamTitle(streamUrl, member = null, defaultTitle = nul
                 return `🔴 LIVE de @${tiktokUser} | SPAIN RP 🇪🇸`;
             }
         }
-    } catch (e) {}
+    } catch (e) { }
 
     if (defaultTitle && defaultTitle.trim() && !defaultTitle.includes('Roleplay en directo en SPAIN RP')) {
         return defaultTitle.trim();
@@ -1895,7 +1913,7 @@ Responde de forma clara y hablada en 2 o 3 frases explicativas con ritmo humano.
                         return text.trim();
                     }
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
     }
 
@@ -1918,7 +1936,7 @@ function playTtsResponseInVoice(text, connection, player) {
             // 1. Voz Neuronal de Microsoft (Álvaro - Hombre Español natural con entonación humana y velocidad perfecta)
             try {
                 const { EdgeTTS } = require('node-edge-tts');
-                const tempFile = path.join(__dirname, `tts_${Date.now()}_${Math.floor(Math.random()*1000)}.mp3`);
+                const tempFile = path.join(__dirname, `tts_${Date.now()}_${Math.floor(Math.random() * 1000)}.mp3`);
                 const tts = new EdgeTTS({
                     voice: 'es-ES-AlvaroNeural',
                     rate: '+15%', // Velocidad humana óptima (ágil, dinámica y sin lentitud)
@@ -1937,7 +1955,7 @@ function playTtsResponseInVoice(text, connection, player) {
                     const cleanupTempFile = () => {
                         try {
                             if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-                        } catch (e) {}
+                        } catch (e) { }
                     };
 
                     const onIdle = () => {
@@ -2080,7 +2098,7 @@ async function playNextInQueue(guildId) {
         if (queue) {
             queue.isPlaying = false;
             if (queue.lastNowPlayingMsg) {
-                queue.lastNowPlayingMsg.delete().catch(() => {});
+                queue.lastNowPlayingMsg.delete().catch(() => { });
                 queue.lastNowPlayingMsg = null;
             }
         }
@@ -2105,7 +2123,7 @@ async function playNextInQueue(guildId) {
         if (queue.textChannel) {
             // Eliminar contenedor de la canción anterior si existía para mantener el chat limpio
             if (queue.lastNowPlayingMsg) {
-                queue.lastNowPlayingMsg.delete().catch(() => {});
+                queue.lastNowPlayingMsg.delete().catch(() => { });
                 queue.lastNowPlayingMsg = null;
             }
 
@@ -2158,8 +2176,8 @@ async function playNextInQueue(guildId) {
                 .setDescription(`❌ **No se pudo reproducir:** \`${currentSong.query}\`\n⏭️ *Saltando al siguiente tema en cola...*`);
 
             queue.textChannel.send({ embeds: [errEmbed], files })
-                .then(m => setTimeout(() => m.delete().catch(() => {}), 3500))
-                .catch(() => {});
+                .then(m => setTimeout(() => m.delete().catch(() => { }), 3500))
+                .catch(() => { });
         }
         queue.songs.shift();
         playNextInQueue(guildId);
@@ -2209,8 +2227,8 @@ async function playMusicInVoice(query, connection, player, guildId) {
             // Detener cualquier proceso de música anterior en este servidor
             if (guildId && activeMusicStreams.has(guildId)) {
                 const prev = activeMusicStreams.get(guildId);
-                try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) {}
-                try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) {}
+                try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) { }
+                try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) { }
                 activeMusicStreams.delete(guildId);
             }
 
@@ -2270,8 +2288,8 @@ async function playMusicInVoice(query, connection, player, guildId) {
 
             ytdlpProcess.stdout.pipe(ffmpegProcess.stdin);
 
-            ffmpegProcess.stdin.on('error', () => {});
-            ytdlpProcess.stdin.on('error', () => {});
+            ffmpegProcess.stdin.on('error', () => { });
+            ytdlpProcess.stdin.on('error', () => { });
             ytdlpProcess.stderr.on('data', (d) => {
                 const msg = d.toString().trim();
                 // Ocultar mensajes normales de porcentaje y avisos internos de YouTube
@@ -2293,8 +2311,8 @@ async function playMusicInVoice(query, connection, player, guildId) {
 
             setTimeout(() => {
                 if (!streamStarted) {
-                    try { ytdlpProcess.kill(); } catch (e) {}
-                    try { ffmpegProcess.kill(); } catch (e) {}
+                    try { ytdlpProcess.kill(); } catch (e) { }
+                    try { ffmpegProcess.kill(); } catch (e) { }
                     console.error(`⏱️ [MÚSICA TIMEOUT] No se recibió audio de YouTube tras 12s para: "${cleanTarget}"`);
                     resolve({ success: false, message: 'No se pudo cargar la canción en este momento.' });
                 }
@@ -2755,8 +2773,8 @@ function buildStaffTopRankingEmbed() {
         staffList.slice(0, 10).forEach((s, idx) => {
             const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `\`#${idx + 1}\``));
             desc += `${medal} <@${s.id}> • **${s.average}/10** ⭐\n\n` +
-                    `> 💬 **Reseñas:** \`${s.totalRatings}\` votos recibidos\n\n` +
-                    `────────────────────────────\n\n`;
+                `> 💬 **Reseñas:** \`${s.totalRatings}\` votos recibidos\n\n` +
+                `────────────────────────────\n\n`;
         });
         // Quitar la última línea divisoria si termina en ella
         desc = desc.replace(/\n\n────────[^\n]*\n\n$/, '');
@@ -2794,7 +2812,7 @@ async function updateStaffTopRankingPanel() {
         if (!targetMessage) return false;
 
         const { topEmbed } = buildStaffTopRankingEmbed();
-        await targetMessage.edit({ embeds: [topEmbed] }).catch(() => {});
+        await targetMessage.edit({ embeds: [topEmbed] }).catch(() => { });
         console.log(`🏆 [RANKING AUTO-UPDATE] Mensaje de Top Staff (${messageId}) actualizado con éxito.`);
         return true;
     } catch (e) {
@@ -2917,6 +2935,178 @@ function buildStaffRatingCardEmbed({ userMention, userAvatar, staffMention, staf
     }
 
     return { embed, files };
+}
+
+// ==========================================
+// SISTEMA DE SANCIONES Y MODERACIÓN STAFF (SPAIN RP)
+// ==========================================
+const SANCIONES_FILE = path.join(__dirname, 'sanciones.json');
+const pendingSancionesAwaitingImage = new Map(); // staffId -> { targetId, targetTag, reason, punishment, involvedStaff, channelId, expiresAt }
+
+function getSancionesData() {
+    if (fs.existsSync(SANCIONES_FILE)) {
+        try {
+            return JSON.parse(fs.readFileSync(SANCIONES_FILE, 'utf8'));
+        } catch (e) {
+            console.error('Error al leer sanciones.json:', e);
+        }
+    }
+    return [];
+}
+
+async function saveSancionRecord(sancionObj) {
+    const data = getSancionesData();
+    // Clonar y guardar solo metadatos serializables (sin Buffers de AttachmentBuilder en JSON)
+    const cleanRecord = {
+        id: sancionObj.id,
+        reporterId: sancionObj.reporterId,
+        reporterTag: sancionObj.reporterTag,
+        targetId: sancionObj.targetId,
+        targetTag: sancionObj.targetTag,
+        reason: sancionObj.reason,
+        punishment: sancionObj.punishment,
+        involvedStaff: sancionObj.involvedStaff,
+        imageUrl: sancionObj.imageUrl,
+        videoUrl: sancionObj.videoUrl,
+        channelId: sancionObj.channelId,
+        timestamp: new Date().toISOString()
+    };
+
+    data.push(cleanRecord);
+    try {
+        if (data.length > 500) {
+            data.splice(0, data.length - 500);
+        }
+        fs.writeFileSync(SANCIONES_FILE, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) {
+        console.error('Error al guardar sanciones.json:', e);
+    }
+    if (isMongoConnected) {
+        try {
+            await SancionModel.create(cleanRecord);
+        } catch (e) {
+            console.error('Error guardando sancion en Mongo:', e);
+        }
+    }
+}
+
+function buildSancionesPanelEmbed() {
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const bannerPath = path.join(__dirname, 'assets', 'panel_sanciones.png');
+    const embed = new EmbedBuilder()
+        .setColor(0xE74C3C) // Rojo Moderación / Sanciones
+        .setAuthor({
+            name: 'SISTEMA DE SANCIONES • SPAIN RP',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setTitle('🚨 REGISTRO OFICIAL DE SANCIONES Y SANCIONADOS')
+        .setDescription(
+            `Bienvenido al **Panel Oficial de Registro de Sanciones** para el equipo de Staff de **SPAIN RP** 🇪🇸.\n\n` +
+            `Este canal está destinado a mantener un control estricto, transparente y unificado de todas las faltas, advertencias y expulsiones aplicadas a usuarios en la comunidad.\n\n` +
+            `📋 **¿Cómo registrar una nueva sanción?**\n` +
+            `> 1️⃣ Pulsa el botón **"🚨 Registrar Sanción"** aquí abajo.\n` +
+            `> 2️⃣ Rellena el formulario con la **ID del sancionado**, la **sanción/escenarios** y el **motivo**.\n` +
+            `> 3️⃣ Envía la(s) **captura(s) o vídeo de prueba** en el chat cuando el bot te lo solicite.\n\n` +
+            `💡 *El bot detectará automáticamente tu nombre de Staff y generará el expediente oficial con formato blindado.*`
+        )
+        .setFooter({
+            text: 'SPAIN RP • Registro Interno Exclusivo de Moderación',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    if (fs.existsSync(bannerPath)) {
+        embed.setImage('attachment://panel_sanciones.png');
+    }
+
+    return embed;
+}
+
+function buildSancionesPanelRow() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('btn_abrir_modal_sancion')
+            .setLabel('🚨 Registrar Sanción')
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji('📝')
+    );
+}
+
+function buildSancionCardEmbed({ id, reporterId, reporterTag, targetId, targetTag, reason, punishment, involvedStaff, imageUrl, imageAttachment, mediaFiles = [], videoUrl = null }) {
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const files = [];
+    if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+
+    const reporterMention = `<@${reporterId}>`;
+    const targetMention = targetId ? `<@${targetId}>` : `\`${targetTag || 'Usuario'}\``;
+    const staffImplicados = involvedStaff && involvedStaff.trim() ? involvedStaff : reporterMention;
+
+    // Espaciador invisible de ancho completo para expandir la tarjeta al 100% de anchura en Discord
+    const wideSpacer = '\u3000'.repeat(38);
+
+    // Si hay un archivo de vídeo adjunto o enlace externo
+    const videoFiles = Array.isArray(mediaFiles) ? mediaFiles.filter(f => f.name.endsWith('.mp4') || f.name.endsWith('.mov') || f.name.endsWith('.webm') || f.name.endsWith('.mkv') || f.name.endsWith('.avi')) : [];
+    const imageFiles = Array.isArray(mediaFiles) ? mediaFiles.filter(f => !videoFiles.includes(f)) : [];
+
+    let videoSection = '';
+    if (videoUrl) {
+        videoSection = `🎥 **Vídeo / Clip de Prueba:**\n> 🔗 [Ver Grabación de Prueba](${videoUrl})\n\n`;
+    }
+
+    const galleryUrl = `https://spainrp.es/sanciones/${id || Date.now()}`;
+    const mainEmbed = new EmbedBuilder()
+        .setColor(0xE74C3C) // Rojo fuego moderación
+        .setAuthor({
+            name: 'SISTEMA DE SANCIONES • SPAIN RP',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setURL(galleryUrl)
+        .setDescription(
+            `**🚨 ACTA DISCIPLINARIA • EXPEDIENTE #${id || Date.now().toString().slice(-4)}**\n\n` +
+            `Este expediente certifica la resolución disciplinaria oficial aplicada dentro de la comunidad de **SPAIN RP** 🇪🇸.\n\n` +
+            `👤 **| Información del Reporte y Staff:**\n` +
+            `> 👮 **Quien reporta:** ${reporterMention}\n` +
+            `> 🎯 **A quien se reporta:** ${targetMention}\n` +
+            `> ⚖️ **Sanción / Escenarios:** \`${punishment || 'Sanción Aplicada'}\`\n` +
+            `> 🛡️ **Staff implicados:** ${staffImplicados}\n\n` +
+            `📝 **| Breve explicación:**\n` +
+            `> ${reason || 'Sin explicación adicional'}\n\n` +
+            videoSection +
+            `🇪🇸 **| ¡Gracias por ayudar a SPAIN RP! |** 🇪🇸`
+        )
+        .setFooter({
+            text: 'SPAIN RP • Registro Oficial de Moderación',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    const embeds = [mainEmbed];
+
+    // Adjuntar las fotos directamente al contenedor del acta dentro del MISMO mensaje
+    if (Array.isArray(mediaFiles) && mediaFiles.length > 0) {
+        if (imageFiles.length > 0) {
+            imageFiles.forEach(f => files.push(f));
+            mainEmbed.setImage(`attachment://${imageFiles[0].name}`);
+
+            if (imageFiles.length > 1) {
+                // Todas las fotos comparten exactamente la misma URL para unificarse en el visor y mosaico
+                for (let i = 1; i < imageFiles.length && i < 10; i++) {
+                    const extraEmbed = new EmbedBuilder()
+                        .setURL(galleryUrl)
+                        .setImage(`attachment://${imageFiles[i].name}`);
+                    embeds.push(extraEmbed);
+                }
+            }
+        }
+    } else if (imageAttachment) {
+        files.push(imageAttachment);
+        mainEmbed.setImage(`attachment://${imageAttachment.name}`);
+    } else if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
+        mainEmbed.setImage(imageUrl);
+    }
+
+    return { embeds, embed: mainEmbed, files, videoFiles };
 }
 
 // ==========================================
@@ -3168,7 +3358,7 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
             if (auditChan) {
                 const msgToDelete = await auditChan.messages.fetch(pendingData.auditMessageId).catch(() => null);
                 if (msgToDelete) {
-                    await msgToDelete.delete().catch(() => {});
+                    await msgToDelete.delete().catch(() => { });
                     console.log(`🗑️ [AUDITORÍA LIMPIA] Tarjeta de auditoría eliminada tras la decisión (${decisionType}) de ${userMention}.`);
                 }
             }
@@ -3183,7 +3373,7 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
                         const embedAuthor = rMsg.embeds[0].author?.name || '';
                         const embedDesc = rMsg.embeds[0].description || '';
                         if (embedAuthor.includes('AUDITORÍA') && (embedDesc.includes(userMention) || embedDesc.includes(message.id))) {
-                            await rMsg.delete().catch(() => {});
+                            await rMsg.delete().catch(() => { });
                             console.log(`🗑️ [AUDITORÍA LIMPIA] Tarjeta de auditoría previa encontrada y eliminada.`);
                             break;
                         }
@@ -3216,6 +3406,149 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
 client.on('messageCreate', async (message) => {
     // Si el mensaje es enviado por un usuario real (Staff / Admin)
     if (!message.author.bot) {
+        // Comprobar si este Staff tiene una sanción pendiente de subir captura
+        if (pendingSancionesAwaitingImage.has(message.author.id)) {
+            const pending = pendingSancionesAwaitingImage.get(message.author.id);
+            console.log(`\n🚨 [SANCIÓN PENDIENTE] Mensaje recibido de Staff ${message.author.tag} (${message.author.id})`);
+            console.log(`   -> Adjuntos detectados: ${message.attachments.size} | Contenido de texto: "${message.content}"`);
+
+            if (Date.now() < pending.expiresAt) {
+                const attachments = Array.from(message.attachments.values());
+                let imgUrl = null;
+                let videoUrl = null;
+
+                // Detectar si el texto contiene enlaces de vídeo (Medal, YouTube, Streamable, etc.)
+                const videoLinkMatch = message.content.match(/https?:\/\/(?:www\.)?(?:medal\.tv|youtube\.com|youtu\.be|streamable\.com|twitch\.tv|kick\.com|tiktok\.com)\S+/i);
+                if (videoLinkMatch) {
+                    videoUrl = videoLinkMatch[0];
+                    console.log(`   -> 🎥 Enlace de vídeo/clip detectado: ${videoUrl}`);
+                } else if (message.content.match(/^https?:\/\/\S+/i)) {
+                    imgUrl = message.content.trim();
+                    console.log(`   -> 🔗 Captura detectada desde enlace web: ${imgUrl}`);
+                }
+
+                const isNoPhoto = message.content.toLowerCase().includes('sin foto') || message.content.toLowerCase().includes('nofoto');
+
+                // Si mandó archivos, enlaces o escribió 'sin foto'
+                if (attachments.length > 0 || imgUrl || videoUrl || isNoPhoto) {
+                    const mediaFiles = [];
+                    for (let i = 0; i < attachments.length; i++) {
+                        const att = attachments[i];
+                        const isVideo = att.name.endsWith('.mp4') || att.name.endsWith('.mov') || att.name.endsWith('.webm') || att.name.endsWith('.mkv') || att.name.endsWith('.avi');
+                        const isLarge = (att.size || 0) > 24 * 1024 * 1024; // > 24MB
+
+                        // Si es un vídeo de más de 25MB (Discord no deja al bot re-subirlo como bot), guardar su URL directa de Discord
+                        if (isVideo && isLarge) {
+                            videoUrl = att.url;
+                            console.log(`   -> 🎥 Vídeo pesado detectado (${(att.size / (1024 * 1024)).toFixed(2)} MB). Se mantendrá enlace directo a Discord CDN: ${videoUrl}`);
+                            continue;
+                        }
+
+                        try {
+                            console.log(`   -> 📥 Descargando adjunto ${i + 1}/${attachments.length}: ${att.name} (${(att.size / (1024 * 1024)).toFixed(2)} MB)...`);
+                            const res = await fetch(att.url);
+                            if (res.ok) {
+                                const arrayBuffer = await res.arrayBuffer();
+                                const buffer = Buffer.from(arrayBuffer);
+                                const ext = path.extname(att.name) || '.png';
+                                const safeName = `prueba_${i + 1}${ext}`;
+                                mediaFiles.push(new AttachmentBuilder(buffer, { name: safeName }));
+                                console.log(`      ✅ Adjunto #${i + 1} (${safeName}) cargado en memoria (${buffer.length} bytes).`);
+                            } else {
+                                console.error(`      ❌ Error HTTP al descargar ${att.url}: ${res.status}`);
+                            }
+                        } catch (e) {
+                            console.error(`      ❌ Error al descargar adjunto ${i + 1} (${att.name}):`, e.message);
+                        }
+                    }
+
+                    pendingSancionesAwaitingImage.delete(message.author.id);
+
+                    const sancionObj = {
+                        id: pending.id,
+                        reporterId: pending.reporterId,
+                        reporterTag: pending.reporterTag,
+                        targetId: pending.targetId,
+                        targetTag: pending.targetTag,
+                        reason: pending.reason,
+                        punishment: pending.punishment,
+                        involvedStaff: pending.involvedStaff || `<@${pending.reporterId}>`,
+                        imageUrl: imgUrl,
+                        mediaFiles,
+                        videoUrl,
+                        channelId: message.channel.id
+                    };
+
+                    await saveSancionRecord(sancionObj);
+
+                    const { embeds, embed, files, videoFiles } = buildSancionCardEmbed(sancionObj);
+                    const targetChannelId = (botConfig.CHANNEL_SANCIONES_ID && botConfig.CHANNEL_SANCIONES_ID.trim()) ? botConfig.CHANNEL_SANCIONES_ID.trim() : message.channel.id;
+                    let targetChannel = message.guild.channels.cache.get(targetChannelId) || 
+                                        await client.channels.fetch(targetChannelId).catch(err => {
+                                            console.error(`⚠️ [SANCIONES] No se pudo obtener el canal #${targetChannelId}:`, err.message);
+                                            return null;
+                                        });
+
+                    if (!targetChannel) targetChannel = message.channel;
+
+                    console.log(`\n📢 [SANCIONES DESTINO] Publicando expediente #${pending.id} en canal: #${targetChannel.name} (${targetChannel.id}) [Configurado: ${botConfig.CHANNEL_SANCIONES_ID}]`);
+
+                    let sentMessage = null;
+                    if (targetChannel) {
+                        try {
+                            console.log(`   -> 🚀 Enviando contenedor oficial a #${targetChannel.name}...`);
+                            sentMessage = await targetChannel.send({ embeds: embeds || [embed], files });
+                            if (sentMessage && sentMessage.id) {
+                                console.log(`✅ [SANCIÓN PUBLICADA] Expediente #${pending.id} enviado con éxito (Msg ID: ${sentMessage.id}) a #${targetChannel.name}.\n`);
+                            }
+
+                            // Si se adjuntaron vídeos de prueba, enviar primero el contenedor del título y luego el vídeo para que quede por encima
+                            if (Array.isArray(videoFiles) && videoFiles.length > 0) {
+                                console.log(`   -> 🎬 Reenviando ${videoFiles.length} vídeo(s) de prueba bajo el contenedor...`);
+                                const videoEmbed = new EmbedBuilder()
+                                    .setColor(0xE74C3C)
+                                    .setDescription(
+                                        `🎥 **Grabación de Prueba:**\n` +
+                                        `> 📁 Vídeo de prueba adjunto correspondiente al **Expediente #${pending.id}**.`
+                                    );
+
+                                // 1. Enviar el contenedor de título primero
+                                await targetChannel.send({
+                                    embeds: [videoEmbed]
+                                }).catch(e => console.error('Error al enviar contenedor de vídeo:', e));
+
+                                // 2. Enviar el reproductor de vídeo justo debajo
+                                await targetChannel.send({
+                                    files: videoFiles
+                                }).catch(e => console.error('Error al reenviar vídeo adjunto:', e));
+                            }
+                        } catch (sendErr) {
+                            console.error(`❌ [ERROR ENVIAR SANCIÓN A DISCORD]:`, sendErr);
+                            if (sendErr.code === 40005 || sendErr.message?.includes('Entity too large') || sendErr.message?.includes('Payload Too Large')) {
+                                console.warn('⚠️ Archivos demasiado grandes para Discord. Enviando expediente con fotos y enlace...');
+                                const fallbackEmbed = embeds[0];
+                                sentMessage = await targetChannel.send({ embeds: [fallbackEmbed] }).catch(() => null);
+                            }
+                        }
+                    }
+
+                    // Borrar el mensaje original del Staff ÚNICAMENTE cuando el contenedor y el vídeo ya han sido entregados al 100%
+                    if (sentMessage && sentMessage.id) {
+                        if (!videoUrl || !videoUrl.includes('cdn.discordapp.com')) {
+                            await message.delete().catch(() => { });
+                        }
+                    }
+
+                    return;
+                } else {
+                    console.log('   ⚠️ El mensaje del staff no contenía una imagen válida ni "sin foto". Sigue esperando...');
+                }
+            } else {
+                console.log('   ⏰ El tiempo de espera de 60s expiró para esta sanción.');
+                pendingSancionesAwaitingImage.delete(message.author.id);
+            }
+        }
+
         const content = message.content.trim();
         const args = content.split(/\s+/);
         const command = args[0].toLowerCase();
@@ -3236,7 +3569,11 @@ client.on('messageCreate', async (message) => {
             '!entrevista', '!entrevistar', '!iniciar-entrevista', '!fin-entrevista', '!terminar-entrevista',
             '!hablar', '!conversar', '!ia-voz', '!charlar', '!callar', '!salir-voz', '!desconectar-voz',
             '!play', '!p', '!reproducir', '!stop', '!parar', '!detener', '!skip', '!next', '!saltar', '!siguiente', '!queue', '!cola', '!playlist',
-            '!panel-valoracion', '!panel-valoraciones', '!fijar-valoraciones', '!top-staff', '!ranking-staff', '!valoraciones', '!stats-staff'
+            '!panel-valoracion', '!panel-valoraciones', '!fijar-valoraciones', '!top-staff', '!ranking-staff', '!valoraciones', '!stats-staff',
+            '!panel-sanciones', '!panelsanciones', '!enviar-panel-sanciones', '!sancionar', '!sancion', '!sanciones', '!historial',
+            '!setcanal-sanciones', '!setcanal-sancion', '!canalsanciones', '!fijar-sanciones',
+            '!setcanal-panel-sanciones', '!setcanal-panelsanciones', '!canalpanelsanciones', '!fijar-panel-sanciones',
+            '!setcanal', '!fijar-canal', '!canal'
         ];
 
         if (botCommands.includes(command)) {
@@ -3283,7 +3620,7 @@ client.on('messageCreate', async (message) => {
                 });
 
                 // Solo reaccionar para confirmar internamente sin enviar mensajes extra en el chat
-                await message.react('✅').catch(() => {});
+                await message.react('✅').catch(() => { });
                 return;
             } catch (err) {
                 console.error('Error al enviar la WL Aprobada manualmente:', err);
@@ -3324,7 +3661,7 @@ client.on('messageCreate', async (message) => {
                 });
 
                 // Solo reaccionar para confirmar internamente sin enviar mensajes extra en el chat
-                await message.react('❌').catch(() => {});
+                await message.react('❌').catch(() => { });
                 return;
             } catch (err) {
                 console.error('Error al enviar la WL Denegada manualmente:', err);
@@ -3341,9 +3678,9 @@ client.on('messageCreate', async (message) => {
                 if (message.reference && message.reference.messageId) {
                     const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
                     if (repliedMsg) {
-                        await repliedMsg.delete().catch(() => {});
+                        await repliedMsg.delete().catch(() => { });
                     }
-                    await message.delete().catch(() => {});
+                    await message.delete().catch(() => { });
                     return;
                 }
 
@@ -3352,7 +3689,7 @@ client.on('messageCreate', async (message) => {
                 if (!isNaN(count) && count > 0) {
                     const deleteCount = Math.min(count + 1, 100);
                     await message.channel.bulkDelete(deleteCount, true).catch(async () => {
-                        await message.delete().catch(() => {});
+                        await message.delete().catch(() => { });
                     });
                     return;
                 }
@@ -3362,10 +3699,10 @@ client.on('messageCreate', async (message) => {
                 if (fetchedMessages) {
                     const lastBotMsg = fetchedMessages.find(m => m.id !== message.id && m.author.id === client.user.id);
                     if (lastBotMsg) {
-                        await lastBotMsg.delete().catch(() => {});
+                        await lastBotMsg.delete().catch(() => { });
                     }
                 }
-                await message.delete().catch(() => {});
+                await message.delete().catch(() => { });
                 return;
             } catch (err) {
                 console.error('Error al ejecutar comando !borrar:', err);
@@ -3400,7 +3737,7 @@ client.on('messageCreate', async (message) => {
         // ----------------------------------------------------
         if (['!fijar-estado', '!panel-estado'].includes(command)) {
             try {
-                await message.delete().catch(() => {});
+                await message.delete().catch(() => { });
                 const state = await fetchFiveMServerStatus();
                 const embed = buildStatusEmbed(state);
                 const row = buildStatusActionRow();
@@ -3436,7 +3773,7 @@ client.on('messageCreate', async (message) => {
                 }
 
                 let urlArg = filteredArgs.find(arg => arg.startsWith('http') || arg.includes('twitch.tv') || arg.includes('kick.com') || arg.includes('youtube.com') || arg.includes('tiktok.com'));
-                
+
                 // Si no pone URL, usamos una URL por defecto para pruebas
                 if (!urlArg) {
                     urlArg = 'https://twitch.tv/spainrp';
@@ -3464,7 +3801,7 @@ client.on('messageCreate', async (message) => {
                 });
 
                 if (res && res.success) {
-                    await message.delete().catch(() => {});
+                    await message.delete().catch(() => { });
                 }
                 return;
             } catch (err) {
@@ -3510,7 +3847,7 @@ client.on('messageCreate', async (message) => {
         // SISTEMA INDEPENDIENTE: PANEL DE VALORACIÓN DE STAFF (!panel-valoracion)
         // ----------------------------------------------------
         if (['!panel-valoracion', '!panel-valoraciones', '!fijar-valoraciones'].includes(command)) {
-            await message.delete().catch(() => {});
+            await message.delete().catch(() => { });
             try {
                 const targetChannel = message.channel;
 
@@ -3539,9 +3876,100 @@ client.on('messageCreate', async (message) => {
             }
         }
 
+        // ----------------------------------------------------
+        // SISTEMA DE SANCIONES STAFF (!sancionar / !sanciones)
+        // ----------------------------------------------------
+        // COMANDO MANUAL: !sancionar @usuario <Sanción> <Motivo...> (con foto adjunta opcional)
+        if (['!sancionar', '!sancion', '!warn', '!ban', '!permaban'].includes(command)) {
+            await message.delete().catch(() => { });
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+
+            const targetUser = message.mentions.users.first();
+            const cleanArgs = args.slice(1).filter(a => !a.startsWith('<@'));
+
+            if (!targetUser || cleanArgs.length < 2) {
+                const helpMsg = await message.channel.send({
+                    content: '⚠️ **Uso:** `!sancionar @usuario <Sanción/Escenario> <Breve explicación>` *(Puedes adjuntar la captura al enviar el mensaje)*\n📌 *Ejemplo:* `!sancionar @pepe Permaban Portaba un RPG en su inventario`'
+                }).catch(() => null);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 6000);
+                return;
+            }
+
+            const punishment = cleanArgs[0];
+            const reason = cleanArgs.slice(1).join(' ');
+            const attachment = message.attachments.first();
+            const imageUrl = attachment ? attachment.url : null;
+            const sancionId = Date.now().toString().slice(-4);
+
+            const sancionObj = {
+                id: sancionId,
+                reporterId: message.author.id,
+                reporterTag: message.author.tag || message.author.username,
+                targetId: targetUser.id,
+                targetTag: targetUser.tag || targetUser.username,
+                reason,
+                punishment,
+                involvedStaff: `<@${message.author.id}>`,
+                imageUrl,
+                channelId: message.channel.id
+            };
+
+            await saveSancionRecord(sancionObj);
+
+            const { embed, files } = buildSancionCardEmbed(sancionObj);
+            const targetChannelId = botConfig.CHANNEL_SANCIONES_ID || message.channel.id;
+            const targetChannel = await client.channels.fetch(targetChannelId).catch(() => message.channel);
+
+            await targetChannel.send({ embeds: [embed], files }).catch(e => console.error('Error al enviar sancion:', e));
+            return;
+        }
+
+        // COMANDO: !sanciones @usuario / !historial @usuario
+        if (['!sanciones', '!historial-sanciones', '!historial'].includes(command)) {
+            await message.delete().catch(() => { });
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+
+            const targetUser = message.mentions.users.first() || { id: args[1]?.replace(/[<@!>]/g, '') };
+            if (!targetUser || !targetUser.id) {
+                const helpMsg = await message.channel.send('⚠️ **Uso:** `!sanciones @usuario` o `!sanciones <ID>`').catch(() => null);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 5000);
+                return;
+            }
+
+            const allSanciones = getSancionesData();
+            const userSanciones = allSanciones.filter(s => s.targetId === targetUser.id);
+
+            let desc = '';
+            if (userSanciones.length === 0) {
+                desc = `🟢 El usuario <@${targetUser.id}> (\`${targetUser.id}\`) **no tiene sanciones registradas** en el historial.`;
+            } else {
+                desc = `📋 **Total de sanciones acumuladas:** \`${userSanciones.length}\`\n\n`;
+                userSanciones.slice(-5).reverse().forEach((s, idx) => {
+                    desc += `**#${s.id || idx + 1} | ${s.punishment || 'Sanción'}**\n` +
+                        `> 👮 **Staff:** <@${s.reporterId}>\n` +
+                        `> 📝 **Motivo:** *"${s.reason || 'Sin motivo'}"*\n` +
+                        (s.imageUrl ? `> 📸 [Ver Captura de Prueba](${s.imageUrl})\n` : '') +
+                        `\n`;
+                });
+            }
+
+            const histEmbed = new EmbedBuilder()
+                .setColor(userSanciones.length > 0 ? 0xE74C3C : 0x2ECC71)
+                .setTitle(`🚨 Historial Disciplinario • <@${targetUser.id}>`)
+                .setDescription(desc)
+                .setFooter({ text: 'SPAIN RP • Base de Datos de Moderación' })
+                .setTimestamp();
+
+            const histMsg = await message.channel.send({ embeds: [histEmbed] }).catch(() => null);
+            if (histMsg) setTimeout(() => histMsg.delete().catch(() => { }), 20000);
+            return;
+        }
+
         // COMANDO: !tops / !top-staff / !ranking-staff / !panel-tops (Envía o actualiza el mensaje fijo que NUNCA se borra)
         if (['!tops', '!top-staff', '!ranking-staff', '!stats-staff', '!valoraciones', '!topstaff', '!panel-tops', '!fijar-tops'].includes(command)) {
-            await message.delete().catch(() => {});
+            await message.delete().catch(() => { });
             try {
                 const targetChannel = message.channel;
                 const { topEmbed, files } = buildStaffTopRankingEmbed();
@@ -3552,11 +3980,11 @@ client.on('messageCreate', async (message) => {
                     try {
                         const existingMsg = await targetChannel.messages.fetch(botConfig.MESSAGE_TOP_STAFF_ID).catch(() => null);
                         if (existingMsg) {
-                            await existingMsg.edit({ embeds: [topEmbed] }).catch(() => {});
+                            await existingMsg.edit({ embeds: [topEmbed] }).catch(() => { });
                             updatedExisting = true;
                             console.log(`🏆 [PANEL TOP STAFF] Mensaje existente editado con éxito.`);
                         }
-                    } catch (e) {}
+                    } catch (e) { }
                 }
 
                 // Si no existía o se ejecuta en otro canal, enviar el mensaje fijo permanente y registrarlo
@@ -3575,43 +4003,43 @@ client.on('messageCreate', async (message) => {
 
         // COMANDO: !addstaff @usuario / !delstaff @usuario / !staffs (Gestiona la lista de Staffs a valorar)
         if (['!addstaff', '!agregarstaff', '!nuevostaff'].includes(command)) {
-            await message.delete().catch(() => {});
+            await message.delete().catch(() => { });
             const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) return;
 
             const targetUser = message.mentions.users.first() || { id: args[0]?.replace(/[<@!>]/g, '') };
             if (!targetUser || !targetUser.id) {
                 const helpMsg = await message.channel.send('⚠️ **Uso:** `!addstaff @usuario` o `!addstaff <ID>`').catch(() => null);
-                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => {}), 5000);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 5000);
                 return;
             }
 
             addStaffMemberToRating(targetUser.id);
             const successMsg = await message.channel.send(`✅ Staff <@${targetUser.id}> añadido a la lista del menú de valoraciones.`).catch(() => null);
-            if (successMsg) setTimeout(() => successMsg.delete().catch(() => {}), 6000);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 6000);
             return;
         }
 
         if (['!delstaff', '!eliminarstaff', '!quitarstaff'].includes(command)) {
-            await message.delete().catch(() => {});
+            await message.delete().catch(() => { });
             const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) return;
 
             const targetUser = message.mentions.users.first() || { id: args[0]?.replace(/[<@!>]/g, '') };
             if (!targetUser || !targetUser.id) {
                 const helpMsg = await message.channel.send('⚠️ **Uso:** `!delstaff @usuario` o `!delstaff <ID>`').catch(() => null);
-                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => {}), 5000);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 5000);
                 return;
             }
 
             removeStaffMemberFromRating(targetUser.id);
             const successMsg = await message.channel.send(`🗑️ Staff <@${targetUser.id}> retirado de la lista del menú de valoraciones.`).catch(() => null);
-            if (successMsg) setTimeout(() => successMsg.delete().catch(() => {}), 6000);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 6000);
             return;
         }
 
         if (['!staffs', '!listastaff', '!stafflist'].includes(command)) {
-            await message.delete().catch(() => {});
+            await message.delete().catch(() => { });
             const data = getStaffRatingsData();
             const staffList = data.staffList || [];
 
@@ -3631,7 +4059,7 @@ client.on('messageCreate', async (message) => {
                 .setFooter({ text: 'SPAIN RP • Usa !addstaff y !delstaff para configurar' });
 
             const listMsg = await message.channel.send({ embeds: [staffListEmbed] }).catch(() => null);
-            if (listMsg) setTimeout(() => listMsg.delete().catch(() => {}), 15000);
+            if (listMsg) setTimeout(() => listMsg.delete().catch(() => { }), 15000);
             return;
         }
         // COMANDO DE AYUDA: !wl-ayuda / !wl-comandos
@@ -3671,13 +4099,13 @@ client.on('messageCreate', async (message) => {
         async function sendDeniedAccessMessage(msg) {
             try {
                 // Borrar inmediatamente el comando del chat público para que no quede rastro
-                await msg.delete().catch(() => {});
+                await msg.delete().catch(() => { });
 
                 // Enviar aviso privado (DM) para que nadie en el canal lo vea
                 await msg.author.send({
                     content: '⛔ **Acceso denegado:** Los comandos de administración son exclusivos del **Creador del Bot**.'
-                }).catch(() => {});
-            } catch (err) {}
+                }).catch(() => { });
+            } catch (err) { }
         }
 
         // Función para construir el Embed y Archivos del Panel de Control de Admin
@@ -3815,13 +4243,15 @@ client.on('messageCreate', async (message) => {
                 'valoracionpanel': 'CHANNEL_VALORACION_PANEL_ID',
                 'panelvaloracion': 'CHANNEL_VALORACION_PANEL_ID',
                 'valoraciones': 'CHANNEL_VALORACIONES_ID',
-                'valoracion': 'CHANNEL_VALORACIONES_ID'
+                'valoracion': 'CHANNEL_VALORACIONES_ID',
+                'sanciones': 'CHANNEL_SANCIONES_ID',
+                'sancion': 'CHANNEL_SANCIONES_ID'
             };
 
             const configKey = channelKeyMap[tipo];
             if (!configKey) {
                 return message.reply({
-                    content: `❌ Tipo de canal no válido: \`${tipo}\`.\nOpciones: \`solicitudes\`, \`aprobados\`, \`denegados\`, \`entrevistas\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\`, \`valoraciones\``
+                    content: `❌ Tipo de canal no válido: \`${tipo}\`.\nOpciones: \`solicitudes\`, \`aprobados\`, \`denegados\`, \`entrevistas\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\`, \`valoraciones\`, \`sanciones\``
                 });
             }
 
@@ -3829,12 +4259,12 @@ client.on('messageCreate', async (message) => {
 
             // Si se cambió el canal del panel de directos, enviar el panel allí de inmediato
             if (configKey === 'CHANNEL_STREAM_PANEL_ID') {
-                ensureStreamPanel().catch(() => {});
+                ensureStreamPanel().catch(() => { });
             }
 
             // Si se cambió el canal de estado, actualizar panel
             if (configKey === 'CHANNEL_STATUS_ID') {
-                updateChannelStatusPanel().catch(() => {});
+                updateChannelStatusPanel().catch(() => { });
             }
 
             return message.reply({
@@ -3919,8 +4349,8 @@ client.on('messageCreate', async (message) => {
             }
 
             await message.reply({ content: '🔄 **Reenviando y actualizando paneles automáticos...**' });
-            if (botConfig.CHANNEL_STREAM_PANEL_ID) await ensureStreamPanel().catch(() => {});
-            if (botConfig.CHANNEL_STATUS_ID) await updateChannelStatusPanel().catch(() => {});
+            if (botConfig.CHANNEL_STREAM_PANEL_ID) await ensureStreamPanel().catch(() => { });
+            if (botConfig.CHANNEL_STATUS_ID) await updateChannelStatusPanel().catch(() => { });
             return;
         }
 
@@ -3940,7 +4370,7 @@ client.on('messageCreate', async (message) => {
                             textToAnalyze += ' ' + repliedMsg.embeds.map(e => `${e.title || ''} ${e.description || ''}`).join(' ');
                         }
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
 
             if (!textToAnalyze) {
@@ -3992,7 +4422,7 @@ client.on('messageCreate', async (message) => {
                             textToAnalyze += ' ' + repliedMsg.embeds.map(e => `${e.title || ''} ${e.description || ''}`).join(' ');
                         }
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
 
             // Si no escribió ningún texto, usar historia de prueba automática
@@ -4153,7 +4583,7 @@ client.on('messageCreate', async (message) => {
                         const decision = isAprob ? 'APROBADA' : 'DENEGADA';
                         const userMatch = fullMsgText.match(/<@!?(\d{17,20})>/) || fullMsgText.match(/Solicitante[:\s*]+@?([^\n\r]+)/i);
                         const userKey = userMatch ? (userMatch[1] ? `<@${userMatch[1]}>` : `@${userMatch[1]}`) : `Historial_${msg.id}`;
-                        
+
                         registerFeedbackOutcome(userKey, decision, fullMsgText);
                         learnedCount++;
                     }
@@ -4382,7 +4812,7 @@ client.on('messageCreate', async (message) => {
             // Desconectar al bot de voz
             try {
                 if (session.connection) session.connection.destroy();
-            } catch (e) {}
+            } catch (e) { }
 
             const durationSec = Math.round((Date.now() - session.startTime) / 1000);
             const durationMin = Math.floor(durationSec / 60);
@@ -4566,7 +4996,7 @@ client.on('messageCreate', async (message) => {
                                 try {
                                     const member = await message.guild.members.fetch(userId).catch(() => null);
                                     if (member) speakerName = member.displayName || member.user.username;
-                                } catch (e) {}
+                                } catch (e) { }
 
                                 chatSession.isResponding = true;
 
@@ -4581,15 +5011,15 @@ client.on('messageCreate', async (message) => {
                                         queue.songs = [];
                                         queue.isPlaying = false;
                                         if (queue.lastNowPlayingMsg) {
-                                            queue.lastNowPlayingMsg.delete().catch(() => {});
+                                            queue.lastNowPlayingMsg.delete().catch(() => { });
                                             queue.lastNowPlayingMsg = null;
                                         }
                                     }
 
                                     if (activeMusicStreams.has(message.guild.id)) {
                                         const prev = activeMusicStreams.get(message.guild.id);
-                                        try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) {}
-                                        try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) {}
+                                        try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) { }
+                                        try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) { }
                                         activeMusicStreams.delete(message.guild.id);
                                     }
                                     const confirmText = '¡Oído cocina! Paro la música ahora mismo crack.';
@@ -4657,8 +5087,8 @@ client.on('messageCreate', async (message) => {
 
                                             if (queue.textChannel) {
                                                 queue.textChannel.send({ embeds: [queueAddEmbed], files })
-                                                    .then(m => setTimeout(() => m.delete().catch(() => {}), 4000))
-                                                    .catch(() => {});
+                                                    .then(m => setTimeout(() => m.delete().catch(() => { }), 4000))
+                                                    .catch(() => { });
                                             }
                                         } else {
                                             queue.songs = [songItem];
@@ -4735,7 +5165,7 @@ client.on('messageCreate', async (message) => {
             }).catch((err) => {
                 console.log(`⚠️ [BORRADO PENDIENTE/ERROR]: ${err.message}`);
             });
-            setTimeout(() => message.delete().catch(() => {}), 800);
+            setTimeout(() => message.delete().catch(() => { }), 800);
 
             // 2. Barrer y limpiar cualquier comando !play / !stop / !skip previo que haya quedado arriba
             try {
@@ -4750,12 +5180,12 @@ client.on('messageCreate', async (message) => {
                                 rMsg.content.trim().startsWith('!parar') ||
                                 rMsg.content.trim().startsWith('!skip')
                             )) {
-                                rMsg.delete().then(() => console.log(`🧹 [BARRIDO] Comando anterior eliminado: "${rMsg.content}"`)).catch(() => {});
+                                rMsg.delete().then(() => console.log(`🧹 [BARRIDO] Comando anterior eliminado: "${rMsg.content}"`)).catch(() => { });
                             }
                         }
                     }
                 }).catch((err) => console.log('⚠️ [ERROR BARRIDO]:', err.message));
-            } catch (e) {}
+            } catch (e) { }
 
             const logoPath = path.join(__dirname, 'assets', 'logo.png');
             const files = [];
@@ -4772,8 +5202,8 @@ client.on('messageCreate', async (message) => {
                     .setDescription(`❌ <@${message.author.id}>, **debes estar conectado a un canal de voz** para reproducir música.`);
 
                 return message.channel.send({ embeds: [noVoiceEmbed], files })
-                    .then(m => setTimeout(() => m.delete().catch(() => {}), 3500))
-                    .catch(() => {});
+                    .then(m => setTimeout(() => m.delete().catch(() => { }), 3500))
+                    .catch(() => { });
             }
 
             const query = args.slice(1).join(' ').trim();
@@ -4788,8 +5218,8 @@ client.on('messageCreate', async (message) => {
                     .setDescription('📌 **Uso:** `!play <canción o enlace de YouTube>`\n*Ejemplo:* `!play JC Reyes Messi`');
 
                 return message.channel.send({ embeds: [noQueryEmbed], files })
-                    .then(m => setTimeout(() => m.delete().catch(() => {}), 5000))
-                    .catch(() => {});
+                    .then(m => setTimeout(() => m.delete().catch(() => { }), 5000))
+                    .catch(() => { });
             }
 
             let connection = getVoiceConnection(message.guild.id);
@@ -4827,7 +5257,7 @@ client.on('messageCreate', async (message) => {
                     const connErr = new EmbedBuilder()
                         .setColor(0xE74C3C)
                         .setDescription(`❌ Error al conectar al canal de voz: ${e.message}`);
-                    return message.channel.send({ embeds: [connErr] }).then(m => setTimeout(() => m.delete().catch(() => {}), 3000)).catch(() => {});
+                    return message.channel.send({ embeds: [connErr] }).then(m => setTimeout(() => m.delete().catch(() => { }), 3000)).catch(() => { });
                 }
             } else if (!player) {
                 player = createAudioPlayer();
@@ -4856,7 +5286,7 @@ client.on('messageCreate', async (message) => {
                     } else {
                         queue.isPlaying = false;
                         if (queue.lastNowPlayingMsg) {
-                            queue.lastNowPlayingMsg.delete().catch(() => {});
+                            queue.lastNowPlayingMsg.delete().catch(() => { });
                             queue.lastNowPlayingMsg = null;
                         }
                     }
@@ -4903,7 +5333,7 @@ client.on('messageCreate', async (message) => {
 
                 const sentAdd = await message.channel.send({ embeds: [queueAddEmbed], files }).catch(() => null);
                 if (sentAdd) {
-                    setTimeout(() => sentAdd.delete().catch(() => {}), 4000);
+                    setTimeout(() => sentAdd.delete().catch(() => { }), 4000);
                 }
                 return;
             } else {
@@ -4918,7 +5348,7 @@ client.on('messageCreate', async (message) => {
 
                 const searchMsg = await message.channel.send({ embeds: [searchEmbed], files }).catch(() => null);
                 if (searchMsg) {
-                    setTimeout(() => searchMsg.delete().catch(() => {}), 3000);
+                    setTimeout(() => searchMsg.delete().catch(() => { }), 3000);
                 }
 
                 await playNextInQueue(message.guild.id);
@@ -4929,8 +5359,8 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !stop (Detiene la música y limpia la cola)
         if (['!stop', '!parar', '!detener'].includes(command)) {
             console.log(`\n⏹️ [COMANDO !stop] Ejecutado por ${message.author.tag} en #${message.channel.name}`);
-            message.delete().then(() => console.log('🗑️ [BORRADO EXITOSO] Mensaje de !stop eliminado.')).catch(() => {});
-            setTimeout(() => message.delete().catch(() => {}), 800);
+            message.delete().then(() => console.log('🗑️ [BORRADO EXITOSO] Mensaje de !stop eliminado.')).catch(() => { });
+            setTimeout(() => message.delete().catch(() => { }), 800);
 
             const queue = activeMusicQueues.get(message.guild.id);
             if (queue) {
@@ -4939,15 +5369,15 @@ client.on('messageCreate', async (message) => {
                 queue.isPlaying = false;
                 if (queue.player) queue.player.stop();
                 if (queue.lastNowPlayingMsg) {
-                    queue.lastNowPlayingMsg.delete().catch(() => {});
+                    queue.lastNowPlayingMsg.delete().catch(() => { });
                     queue.lastNowPlayingMsg = null;
                 }
             }
 
             if (activeMusicStreams.has(message.guild.id)) {
                 const prev = activeMusicStreams.get(message.guild.id);
-                try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) {}
-                try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) {}
+                try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) { }
+                try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) { }
                 activeMusicStreams.delete(message.guild.id);
             }
 
@@ -4970,7 +5400,7 @@ client.on('messageCreate', async (message) => {
 
             const stopMsg = await message.channel.send({ embeds: [stopEmbed], files }).catch(() => null);
             if (stopMsg) {
-                setTimeout(() => stopMsg.delete().catch(() => {}), 3000);
+                setTimeout(() => stopMsg.delete().catch(() => { }), 3000);
             }
             console.log('✅ [MÚSICA DETENIDA] Audio parado y cola vaciada.');
             return;
@@ -4979,8 +5409,8 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !skip / !next (Salta a la siguiente canción)
         if (['!skip', '!next', '!saltar', '!siguiente'].includes(command)) {
             console.log(`\n⏭️ [COMANDO !skip] Ejecutado por ${message.author.tag} en #${message.channel.name}`);
-            message.delete().then(() => console.log('🗑️ [BORRADO EXITOSO] Mensaje de !skip eliminado.')).catch(() => {});
-            setTimeout(() => message.delete().catch(() => {}), 800);
+            message.delete().then(() => console.log('🗑️ [BORRADO EXITOSO] Mensaje de !skip eliminado.')).catch(() => { });
+            setTimeout(() => message.delete().catch(() => { }), 800);
 
             const logoPath = path.join(__dirname, 'assets', 'logo.png');
             const files = [];
@@ -4997,8 +5427,8 @@ client.on('messageCreate', async (message) => {
                     .setDescription('❌ **No hay ninguna canción reproduciéndose actualmente.**');
 
                 return message.channel.send({ embeds: [noPlayEmbed], files })
-                    .then(m => setTimeout(() => m.delete().catch(() => {}), 3000))
-                    .catch(() => {});
+                    .then(m => setTimeout(() => m.delete().catch(() => { }), 3000))
+                    .catch(() => { });
             }
 
             queue.isManualSkip = true;
@@ -5007,8 +5437,8 @@ client.on('messageCreate', async (message) => {
 
             if (activeMusicStreams.has(message.guild.id)) {
                 const prev = activeMusicStreams.get(message.guild.id);
-                try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) {}
-                try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) {}
+                try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) { }
+                try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) { }
                 activeMusicStreams.delete(message.guild.id);
             }
             if (queue.player) queue.player.stop();
@@ -5024,13 +5454,13 @@ client.on('messageCreate', async (message) => {
 
                 const sentSkip = await message.channel.send({ embeds: [skipEmbed], files }).catch(() => null);
                 if (sentSkip) {
-                    setTimeout(() => sentSkip.delete().catch(() => {}), 3000);
+                    setTimeout(() => sentSkip.delete().catch(() => { }), 3000);
                 }
                 await playNextInQueue(message.guild.id);
             } else {
                 queue.isPlaying = false;
                 if (queue.lastNowPlayingMsg) {
-                    queue.lastNowPlayingMsg.delete().catch(() => {});
+                    queue.lastNowPlayingMsg.delete().catch(() => { });
                     queue.lastNowPlayingMsg = null;
                 }
 
@@ -5044,7 +5474,7 @@ client.on('messageCreate', async (message) => {
 
                 const sentSkipEnd = await message.channel.send({ embeds: [skipEndEmbed], files }).catch(() => null);
                 if (sentSkipEnd) {
-                    setTimeout(() => sentSkipEnd.delete().catch(() => {}), 3000);
+                    setTimeout(() => sentSkipEnd.delete().catch(() => { }), 3000);
                 }
             }
             return;
@@ -5052,7 +5482,7 @@ client.on('messageCreate', async (message) => {
 
         // COMANDO: !queue / !cola (Muestra las canciones en espera)
         if (['!queue', '!cola', '!playlist'].includes(command)) {
-            await message.delete().catch(() => {});
+            await message.delete().catch(() => { });
 
             const logoPath = path.join(__dirname, 'assets', 'logo.png');
             const files = [];
@@ -5069,8 +5499,8 @@ client.on('messageCreate', async (message) => {
                     .setDescription('📭 **La cola de música está vacía.** Usa `!play <canción>` para añadir temas.');
 
                 return message.channel.send({ embeds: [emptyEmbed], files })
-                    .then(m => setTimeout(() => m.delete().catch(() => {}), 4000))
-                    .catch(() => {});
+                    .then(m => setTimeout(() => m.delete().catch(() => { }), 4000))
+                    .catch(() => { });
             }
 
             let queueDesc = '';
@@ -5097,14 +5527,14 @@ client.on('messageCreate', async (message) => {
 
             const sentQueue = await message.channel.send({ embeds: [queueEmbed], files }).catch(() => null);
             if (sentQueue) {
-                setTimeout(() => sentQueue.delete().catch(() => {}), 12000);
+                setTimeout(() => sentQueue.delete().catch(() => { }), 12000);
             }
             return;
         }
 
         // COMANDO: !callar / !salir-voz (Desconecta al bot de voz)
         if (['!cancelar-entrevista', '!salir-voz', '!kick-voz', '!callar', '!desconectar-voz', '!leave'].includes(command)) {
-            await message.delete().catch(() => {});
+            await message.delete().catch(() => { });
 
             const logoPath = path.join(__dirname, 'assets', 'logo.png');
             const files = [];
@@ -5116,7 +5546,7 @@ client.on('messageCreate', async (message) => {
                 queue.isPlaying = false;
                 if (queue.player) queue.player.stop();
                 if (queue.lastNowPlayingMsg) {
-                    queue.lastNowPlayingMsg.delete().catch(() => {});
+                    queue.lastNowPlayingMsg.delete().catch(() => { });
                     queue.lastNowPlayingMsg = null;
                 }
                 activeMusicQueues.delete(message.guild.id);
@@ -5124,14 +5554,14 @@ client.on('messageCreate', async (message) => {
 
             if (activeMusicStreams.has(message.guild.id)) {
                 const prev = activeMusicStreams.get(message.guild.id);
-                try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) {}
-                try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) {}
+                try { if (prev.ytdlp) prev.ytdlp.kill(); } catch (e) { }
+                try { if (prev.ffmpeg) prev.ffmpeg.kill(); } catch (e) { }
                 activeMusicStreams.delete(message.guild.id);
             }
 
             const chatSession = activeVoiceChats.get(message.guild.id);
             if (chatSession) {
-                try { if (chatSession.connection) chatSession.connection.destroy(); } catch (e) {}
+                try { if (chatSession.connection) chatSession.connection.destroy(); } catch (e) { }
                 activeVoiceChats.delete(message.guild.id);
 
                 const leaveEmbed = new EmbedBuilder()
@@ -5142,12 +5572,12 @@ client.on('messageCreate', async (message) => {
                     })
                     .setDescription('👋 **Sesión de voz y música finalizada. Bot desconectado.**');
 
-                return message.channel.send({ embeds: [leaveEmbed], files }).then(m => setTimeout(() => m.delete().catch(() => {}), 3000)).catch(() => {});
+                return message.channel.send({ embeds: [leaveEmbed], files }).then(m => setTimeout(() => m.delete().catch(() => { }), 3000)).catch(() => { });
             }
 
             const session = activeVoiceInterviews.get(message.guild.id);
             if (session) {
-                try { if (session.connection) session.connection.destroy(); } catch (e) {}
+                try { if (session.connection) session.connection.destroy(); } catch (e) { }
                 activeVoiceInterviews.delete(message.guild.id);
 
                 const interviewCancelEmbed = new EmbedBuilder()
@@ -5158,7 +5588,7 @@ client.on('messageCreate', async (message) => {
                     })
                     .setDescription('🛑 **Entrevista de voz cancelada y bot desconectado del canal.**');
 
-                return message.channel.send({ embeds: [interviewCancelEmbed], files }).then(m => setTimeout(() => m.delete().catch(() => {}), 3000)).catch(() => {});
+                return message.channel.send({ embeds: [interviewCancelEmbed], files }).then(m => setTimeout(() => m.delete().catch(() => { }), 3000)).catch(() => { });
             } else {
                 const connection = getVoiceConnection(message.guild.id);
                 if (connection) {
@@ -5171,23 +5601,23 @@ client.on('messageCreate', async (message) => {
                         })
                         .setDescription('👋 **Bot desconectado del canal de voz.**');
 
-                    return message.channel.send({ embeds: [discEmbed], files }).then(m => setTimeout(() => m.delete().catch(() => {}), 3000)).catch(() => {});
+                    return message.channel.send({ embeds: [discEmbed], files }).then(m => setTimeout(() => m.delete().catch(() => { }), 3000)).catch(() => { });
                 }
 
                 const notConnEmbed = new EmbedBuilder()
                     .setColor(0x95A5A6)
                     .setDescription('ℹ️ El bot no está conectado a ningún canal de voz.');
-                return message.channel.send({ embeds: [notConnEmbed] }).then(m => setTimeout(() => m.delete().catch(() => {}), 3000)).catch(() => {});
+                return message.channel.send({ embeds: [notConnEmbed] }).then(m => setTimeout(() => m.delete().catch(() => { }), 3000)).catch(() => { });
             }
         }
 
         // COMANDO: !notificarstream / !panelstream (Publica el Panel de Directos Oficial)
         if (['!notificarstream', '!panelstream', '!paneldirectos', '!streampanel'].includes(command)) {
-            await message.delete().catch(() => {});
+            await message.delete().catch(() => { });
             const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) {
                 const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden usar este comando.').catch(() => null);
-                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => {}), 4000);
+                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => { }), 4000);
                 return;
             }
 
@@ -5212,11 +5642,11 @@ client.on('messageCreate', async (message) => {
         // COMANDOS DE STREAMERS: !addtwitch / !addtiktok / !addstreamer
         // ==========================================
         if (['!addtwitch', '!agregartwitch', '!nuevotwitch', '!settwitch'].includes(command)) {
-            await message.delete().catch(() => {});
+            await message.delete().catch(() => { });
             const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) {
                 const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden registrar streamers.').catch(() => null);
-                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => {}), 4000);
+                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => { }), 4000);
                 return;
             }
 
@@ -5229,7 +5659,7 @@ client.on('messageCreate', async (message) => {
                 const helpMsg = await message.channel.send({
                     content: '🟣 **Uso correcto:** `!addtwitch @usuario <enlace_o_usuario_twitch> [título opcional]`\n*Ejemplo:* `!addtwitch @Alvin https://twitch.tv/alvin_0803`'
                 }).catch(() => null);
-                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => {}), 6000);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 6000);
                 return;
             }
 
@@ -5262,16 +5692,16 @@ client.on('messageCreate', async (message) => {
                 .setTimestamp();
 
             const successMsg = await message.channel.send({ embeds: [successEmbed] }).catch(() => null);
-            if (successMsg) setTimeout(() => successMsg.delete().catch(() => {}), 10000);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 10000);
             return;
         }
 
         if (['!addtiktok', '!agregartiktok', '!nuevotiktok', '!settiktok'].includes(command)) {
-            await message.delete().catch(() => {});
+            await message.delete().catch(() => { });
             const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) {
                 const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden registrar streamers.').catch(() => null);
-                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => {}), 4000);
+                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => { }), 4000);
                 return;
             }
 
@@ -5283,7 +5713,7 @@ client.on('messageCreate', async (message) => {
                 const helpMsg = await message.channel.send({
                     content: '🌸 **Uso correcto:** `!addtiktok @usuario <enlace_o_usuario_tiktok> [título opcional]`\n*Ejemplo:* `!addtiktok @Alvin https://www.tiktok.com/@alvin_armys`'
                 }).catch(() => null);
-                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => {}), 6000);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 6000);
                 return;
             }
 
@@ -5316,17 +5746,17 @@ client.on('messageCreate', async (message) => {
                 .setTimestamp();
 
             const successMsg = await message.channel.send({ embeds: [successEmbed] }).catch(() => null);
-            if (successMsg) setTimeout(() => successMsg.delete().catch(() => {}), 10000);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 10000);
             return;
         }
 
         // COMANDO GENERAL: !addstreamer @usuario <url_canal>
         if (['!addstreamer', '!agregarstreamer', '!nuevostreamer'].includes(command)) {
-            await message.delete().catch(() => {});
+            await message.delete().catch(() => { });
             const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) {
                 const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden registrar streamers.').catch(() => null);
-                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => {}), 4000);
+                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => { }), 4000);
                 return;
             }
 
@@ -5337,7 +5767,7 @@ client.on('messageCreate', async (message) => {
                 const helpMsg = await message.channel.send({
                     content: '⚠️ **Uso:**\n• `!addtwitch @usuario <url_twitch>` (Para Twitch)\n• `!addtiktok @usuario <url_tiktok>` (Para TikTok)\n• `!addstreamer @usuario <url>` (Detecta automáticamente)'
                 }).catch(() => null);
-                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => {}), 6000);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 6000);
                 return;
             }
 
@@ -5356,24 +5786,24 @@ client.on('messageCreate', async (message) => {
             const successMsg = await message.channel.send({
                 content: `✅ **Streamer registrado:** <@${targetUser.id}> en \`${platform}\` -> <${fullUrl}>`
             }).catch(() => null);
-            if (successMsg) setTimeout(() => successMsg.delete().catch(() => {}), 6000);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 6000);
             return;
         }
 
         // COMANDO: !delstreamer @usuario [twitch/tiktok/todo]
         if (['!delstreamer', '!eliminarstreamer', '!quitarstreamer'].includes(command)) {
-            await message.delete().catch(() => {});
+            await message.delete().catch(() => { });
             const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) {
                 const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden eliminar streamers.').catch(() => null);
-                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => {}), 4000);
+                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => { }), 4000);
                 return;
             }
 
             const targetUser = message.mentions.users.first() || { id: args[0]?.replace(/[<@!>]/g, '') };
             if (!targetUser || !targetUser.id) {
                 const helpMsg = await message.channel.send('⚠️ **Uso:** `!delstreamer @usuario`').catch(() => null);
-                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => {}), 5000);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 5000);
                 return;
             }
 
@@ -5383,19 +5813,19 @@ client.on('messageCreate', async (message) => {
                 : `⚠️ El usuario <@${targetUser.id}> no estaba registrado.`;
 
             const resMsg = await message.channel.send(msg).catch(() => null);
-            if (resMsg) setTimeout(() => resMsg.delete().catch(() => {}), 5000);
+            if (resMsg) setTimeout(() => resMsg.delete().catch(() => { }), 5000);
             return;
         }
 
         // COMANDO: !streamers (Lista de streamers registrados)
         if (['!streamers', '!listastreamers'].includes(command)) {
-            await message.delete().catch(() => {});
+            await message.delete().catch(() => { });
             const streamers = getStreamersData();
             const keys = Object.keys(streamers);
 
             if (keys.length === 0) {
                 const emptyMsg = await message.channel.send('ℹ️ No hay streamers registrados manualmente aún. Usa `!addtwitch @usuario <url>` o `!addtiktok @usuario <url>`').catch(() => null);
-                if (emptyMsg) setTimeout(() => emptyMsg.delete().catch(() => {}), 6000);
+                if (emptyMsg) setTimeout(() => emptyMsg.delete().catch(() => { }), 6000);
                 return;
             }
 
@@ -5418,17 +5848,17 @@ client.on('messageCreate', async (message) => {
                 .setTimestamp();
 
             const listMsg = await message.channel.send({ embeds: [listEmbed] }).catch(() => null);
-            if (listMsg) setTimeout(() => listMsg.delete().catch(() => {}), 20000);
+            if (listMsg) setTimeout(() => listMsg.delete().catch(() => { }), 20000);
             return;
         }
 
         // COMANDO: !limpiarstreamers / !limiarstreamers (Elimina todos los streamers registrados en el bot)
         if (['!limpiarstreamers', '!limiarstreamers', '!clearstreamers', '!borrarstreamers', '!vaciarstreamers'].includes(command)) {
-            await message.delete().catch(() => {});
+            await message.delete().catch(() => { });
             const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) {
                 const noPermsMsg = await message.channel.send('❌ Solo los miembros de **Staff** o el **Creador** pueden usar este comando.').catch(() => null);
-                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => {}), 4000);
+                if (noPermsMsg) setTimeout(() => noPermsMsg.delete().catch(() => { }), 4000);
                 return;
             }
 
@@ -5439,8 +5869,114 @@ client.on('messageCreate', async (message) => {
             const clearMsg = await message.channel.send({
                 content: `🧹 **Lista de streamers vaciada con éxito:** Se han eliminado los **${count}** streamer(s) registrados en el bot.`
             }).catch(() => null);
-            if (clearMsg) setTimeout(() => clearMsg.delete().catch(() => {}), 6000);
+            if (clearMsg) setTimeout(() => clearMsg.delete().catch(() => { }), 6000);
             console.log(`🧹 [STREAMERS] Lista de streamers vaciada por ${message.author.tag} (${count} eliminados).`);
+            return;
+        }
+
+        // ====================================================
+        // COMANDOS DE CONFIGURACIÓN DE CANAL PARA SANCIONES
+        // ====================================================
+
+        // 1. Configurar dónde se PUBLICAN los expedientes de sanciones oficiales
+        if (['!setcanal-sanciones', '!setcanal-sancion', '!canalsanciones', '!fijar-sanciones'].includes(command) ||
+            (['!setcanal', '!fijar-canal', '!canal'].includes(command) && ['sancion', 'sanciones', 'expedientes', 'logs-sanciones'].includes(args[1]?.toLowerCase()))) {
+            await message.delete().catch(() => { });
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+
+            // Extraer posible ID o mención de cualquier argumento
+            const rawChannelId = args.slice(1).join(' ').match(/\d{17,20}/)?.[0];
+            let targetChannel = message.mentions.channels.first();
+
+            if (!targetChannel && rawChannelId) {
+                targetChannel = message.guild.channels.cache.get(rawChannelId) ||
+                    await client.channels.fetch(rawChannelId).catch(() => null);
+            }
+            if (!targetChannel) targetChannel = message.channel;
+
+            await updateConfig('CHANNEL_SANCIONES_ID', targetChannel.id);
+
+            const confEmbed = new EmbedBuilder()
+                .setColor(0xE74C3C)
+                .setTitle('🚨 Canal de Publicación de Sanciones Configurado')
+                .setDescription(`✅ Los expedientes de sanciones y actas disciplinarias se publicarán ahora en: <#${targetChannel.id}> (\`${targetChannel.id}\`)`)
+                .setFooter({ text: 'SPAIN RP • Configuración Oficial de Moderación' })
+                .setTimestamp();
+
+            const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
+            if (confMsg) setTimeout(() => confMsg.delete().catch(() => { }), 8000);
+            console.log(`🔧 [CONFIG] Canal de publicaciones de sanciones fijado en #${targetChannel.name || targetChannel.id} (${targetChannel.id}) por ${message.author.tag}`);
+            return;
+        }
+
+        // 2. Configurar dónde se fija o envía el PANEL para que el Staff registre sanciones
+        if (['!setcanal-panel-sanciones', '!setcanal-panelsanciones', '!canalpanelsanciones', '!fijar-panel-sanciones'].includes(command) ||
+            (['!setcanal', '!fijar-canal', '!canal'].includes(command) && ['panel-sancion', 'panel-sanciones', 'panelsanciones', 'panelsancion', 'formulario-sanciones'].includes(args[1]?.toLowerCase()))) {
+            await message.delete().catch(() => { });
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+
+            const rawChannelId = args.slice(1).join(' ').match(/\d{17,20}/)?.[0];
+            let targetChannel = message.mentions.channels.first();
+
+            if (!targetChannel && rawChannelId) {
+                targetChannel = message.guild.channels.cache.get(rawChannelId) ||
+                    await client.channels.fetch(rawChannelId).catch(() => null);
+            }
+            if (!targetChannel) targetChannel = message.channel;
+
+            await updateConfig('CHANNEL_SANCIONES_PANEL_ID', targetChannel.id);
+
+            const confEmbed = new EmbedBuilder()
+                .setColor(0xE74C3C)
+                .setTitle('📋 Canal del Panel de Sanciones Configurado')
+                .setDescription(`✅ El canal asignado para el Panel interactivo de Sanciones es: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n💡 *Puedes enviar el panel allí ahora mismo escribiendo **\`!panel-sanciones\`**.*`)
+                .setFooter({ text: 'SPAIN RP • Configuración Oficial de Moderación' })
+                .setTimestamp();
+
+            const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
+            if (confMsg) setTimeout(() => confMsg.delete().catch(() => { }), 8000);
+            console.log(`🔧 [CONFIG] Canal del panel de sanciones fijado en #${targetChannel.name || targetChannel.id} (${targetChannel.id}) por ${message.author.tag}`);
+            return;
+        }
+
+        // 3. COMANDO: !panel-sanciones / !enviar-panel-sanciones (Envía el panel interactivo al canal actual o al configurado)
+        if (['!panel-sanciones', '!panelsanciones', '!enviar-panel-sanciones'].includes(command)) {
+            await message.delete().catch(() => { });
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+
+            const rawChannelId = args.slice(1).join(' ').match(/\d{17,20}/)?.[0];
+            let targetChannel = message.mentions.channels.first();
+
+            if (!targetChannel && rawChannelId) {
+                targetChannel = message.guild.channels.cache.get(rawChannelId) ||
+                    await client.channels.fetch(rawChannelId).catch(() => null);
+            }
+
+            if (!targetChannel && botConfig.CHANNEL_SANCIONES_PANEL_ID) {
+                targetChannel = message.guild.channels.cache.get(botConfig.CHANNEL_SANCIONES_PANEL_ID) ||
+                    await client.channels.fetch(botConfig.CHANNEL_SANCIONES_PANEL_ID).catch(() => null);
+            }
+
+            if (!targetChannel) targetChannel = message.channel;
+
+            const embed = buildSancionesPanelEmbed();
+            const row = buildSancionesPanelRow();
+            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const bannerPath = path.join(__dirname, 'assets', 'panel_sanciones.png');
+            const files = [];
+            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+            if (fs.existsSync(bannerPath)) files.push(new AttachmentBuilder(bannerPath, { name: 'panel_sanciones.png' }));
+
+            await targetChannel.send({
+                embeds: [embed],
+                components: [row],
+                files
+            }).catch(e => console.error('Error al enviar panel de sanciones:', e));
+
+            console.log(`🚨 [PANEL SANCIONES] Panel interactivo de sanciones enviado con éxito a #${targetChannel.name || targetChannel.id} por ${message.author.tag}`);
             return;
         }
     }
@@ -5578,7 +6114,7 @@ client.on('interactionCreate', async (interaction) => {
     // ----------------------------------------------------
     if (['btn_notificar_directo', 'btn_notificar_twitch', 'btn_notificar_tiktok'].includes(interaction.customId)) {
         // Responder a Discord DE INMEDIATO (dentro de los 3 segundos reglamentarios de la API de Discord)
-        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        await interaction.deferReply({ ephemeral: true }).catch(() => { });
 
         try {
             const userId = interaction.user.id;
@@ -5623,7 +6159,7 @@ client.on('interactionCreate', async (interaction) => {
                 const platMsg = requestedPlatform ? ` de **${requestedPlatform}**` : '';
                 return interaction.editReply({
                     content: `❌ **No tienes un canal${platMsg} registrado en el bot.**\n\n📌 Para poder notificar en **${requestedPlatform || 'esta plataforma'}**, un Administrador debe añadir tu canal con:\n\`!addstreamer @${interaction.user.username} <enlace_${(requestedPlatform || 'twitch').toLowerCase()}>\`\n💬 *Si eres streamer oficial, contacta con Administración.*`
-                }).catch(() => {});
+                }).catch(() => { });
             }
 
             // Obtener el título en tiempo real desde la plataforma (Twitch/TikTok/Discord) o título guardado
@@ -5645,17 +6181,17 @@ client.on('interactionCreate', async (interaction) => {
                 const platEmoji = activePlatform.toLowerCase().includes('tiktok') ? '⚫' : '🟣';
                 return interaction.editReply({
                     content: `✅ **¡Tu directo de ${activePlatform} ${platEmoji} ha sido anunciado con éxito en <#${targetChannelId}>!**\n🏷️ **Título:** \`"${liveTitle}"\`\n🔗 **Canal:** <${targetStreamUrl}>\n¡Mucho éxito en tu transmisión! 🚀`
-                }).catch(() => {});
+                }).catch(() => { });
             } else {
                 return interaction.editReply({
                     content: `❌ Hubo un error al publicar el anuncio en el canal <#${targetChannelId}>. Verifica permisos del bot.`
-                }).catch(() => {});
+                }).catch(() => { });
             }
         } catch (err) {
             console.error('Error al procesar botón de stream:', err);
             return interaction.editReply({
                 content: '⚠️ Ocurrió un problema al enviar la notificación. Por favor inténtalo de nuevo.'
-            }).catch(() => {});
+            }).catch(() => { });
         }
     }
 
@@ -5704,13 +6240,59 @@ client.on('interactionCreate', async (interaction) => {
             content: '👤 **Selecciona en el menú al Staff que deseas valorar:**',
             components: [row],
             ephemeral: true
-        }).catch(() => {});
+        }).catch(() => { });
 
         // Auto-eliminar el selector efímero tras 6 segundos (así si cancela o no hace nada, desaparece solo de inmediato)
         setTimeout(() => {
-            interaction.deleteReply().catch(() => {});
+            interaction.deleteReply().catch(() => { });
         }, 6000);
         return;
+    }
+
+    // ----------------------------------------------------
+    // BOTÓN: ABRIR MODAL DE REGISTRAR SANCIÓN STAFF
+    // ----------------------------------------------------
+    if (interaction.customId === 'btn_abrir_modal_sancion') {
+        const hasStaff = await isStaffMember(interaction.member, interaction.guild, interaction.user.id);
+        if (!hasStaff) {
+            return interaction.reply({
+                content: '❌ Solo los miembros del equipo de **Staff** pueden registrar sanciones.',
+                ephemeral: true
+            });
+        }
+
+        const modal = new ModalBuilder()
+            .setCustomId('modal_sancion_staff')
+            .setTitle('SISTEMA DE SANCIONES');
+
+        const inputTarget = new TextInputBuilder()
+            .setCustomId('input_sancion_target')
+            .setLabel('👤 Usuario Sancionado (@mención o ID)')
+            .setPlaceholder('Ej: 1294687324545880127 o @usuario')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+        const inputPunishment = new TextInputBuilder()
+            .setCustomId('input_sancion_punishment')
+            .setLabel('⚖️ Sanción / Escenarios')
+            .setPlaceholder('Ej: Permaban / Ban 7 días / Warn 1 / Mute')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+        const inputReason = new TextInputBuilder()
+            .setCustomId('input_sancion_reason')
+            .setLabel('📝 Breve Explicación de los Hechos')
+            .setPlaceholder('Ej: Portaba un RPG en su inventario...')
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(inputTarget),
+            new ActionRowBuilder().addComponents(inputPunishment),
+            new ActionRowBuilder().addComponents(inputReason)
+        );
+
+        return interaction.showModal(modal);
     }
 
     // ----------------------------------------------------
@@ -5806,7 +6388,7 @@ client.on('interactionCreate', async (interaction) => {
     // PROCESAMIENTO: MODAL VALORACIÓN DE STAFF
     // ----------------------------------------------------
     if (interaction.customId.startsWith('modal_valorar_staff')) {
-        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        await interaction.deferReply({ ephemeral: true }).catch(() => { });
 
         try {
             const rawRating = interaction.fields.getTextInputValue('input_staff_rating').trim();
@@ -5834,7 +6416,7 @@ client.on('interactionCreate', async (interaction) => {
             if (isNaN(numRating) || numRating < 1 || numRating > 10) {
                 return interaction.editReply({
                     content: '❌ **Puntuación inválida:** Debes indicar un número entero del **1 al 10** (por ejemplo `10` o `8`).'
-                }).catch(() => {});
+                }).catch(() => { });
             }
 
             // Obtener datos del staff
@@ -5848,16 +6430,16 @@ client.on('interactionCreate', async (interaction) => {
                         staffTag = member.user.tag || member.displayName;
                         staffMention = `<@${member.id}>`;
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
 
             // Evitar auto-valoraciones
             if (staffId === interaction.user.id) {
                 await interaction.editReply({
                     content: '⚠️ **No puedes valorarte a ti mismo.** La valoración debe ser para otro miembro del equipo de Staff.'
-                }).catch(() => {});
+                }).catch(() => { });
                 setTimeout(() => {
-                    interaction.deleteReply().catch(() => {});
+                    interaction.deleteReply().catch(() => { });
                 }, 3000);
                 return;
             }
@@ -5899,31 +6481,128 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             // Actualizar automáticamente el panel fijo de Tops si está configurado en el canal
-            updateStaffTopRankingPanel().catch(() => {});
+            updateStaffTopRankingPanel().catch(() => { });
 
             await interaction.editReply({
                 content: `✅ **¡Tu valoración ha sido enviada con éxito!**\n⭐ Puntuación: \`${numRating}/10\` para ${staffMention}.\nMuchas gracias por ayudarnos a mejorar el servidor.`
-            }).catch(() => {});
+            }).catch(() => { });
 
             // Auto-eliminar el mensaje efímero de confirmación en 3 segundos
             setTimeout(() => {
-                interaction.deleteReply().catch(() => {});
+                interaction.deleteReply().catch(() => { });
             }, 3000);
 
             // Eliminar el mensaje anterior que contenía el selector si es accesible
             try {
                 if (interaction.message && interaction.message.deletable) {
-                    await interaction.message.delete().catch(() => {});
+                    await interaction.message.delete().catch(() => { });
                 }
-            } catch (e) {}
+            } catch (e) { }
             return;
         } catch (err) {
             console.error('Error al procesar modal de valoración de staff:', err);
             await interaction.editReply({
                 content: '❌ Ocurrió un error al procesar tu valoración. Inténtalo de nuevo.'
-            }).catch(() => {});
+            }).catch(() => { });
             setTimeout(() => {
-                interaction.deleteReply().catch(() => {});
+                interaction.deleteReply().catch(() => { });
+            }, 3000);
+            return;
+        }
+    }
+
+    // ----------------------------------------------------
+    // PROCESAMIENTO: MODAL REGISTRAR SANCIÓN STAFF
+    // ----------------------------------------------------
+    if (interaction.customId === 'modal_sancion_staff') {
+        await interaction.deferReply({ ephemeral: true }).catch(() => { });
+
+        try {
+            const rawTarget = interaction.fields.getTextInputValue('input_sancion_target').trim();
+            const punishment = interaction.fields.getTextInputValue('input_sancion_punishment').trim();
+            const reason = interaction.fields.getTextInputValue('input_sancion_reason').trim();
+            const involvedStaff = `<@${interaction.user.id}>`;
+            let imageUrl = '';
+
+            let targetId = null;
+            let targetTag = rawTarget;
+            const idMatch = rawTarget.match(/^<@!?(\d{17,20})>$/) || rawTarget.match(/^(\d{17,20})$/);
+            if (idMatch) {
+                targetId = idMatch[1];
+                try {
+                    const member = await interaction.guild.members.fetch(targetId).catch(() => null);
+                    if (member) targetTag = member.user.tag || member.displayName;
+                } catch (e) { }
+            }
+
+            const sancionId = Date.now().toString().slice(-4);
+
+            // Si no proporcionó enlace de imagen, poner al Staff en estado de espera para que la adjunte en el chat
+            if (!imageUrl || (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://'))) {
+                pendingSancionesAwaitingImage.set(interaction.user.id, {
+                    id: sancionId,
+                    reporterId: interaction.user.id,
+                    reporterTag: interaction.user.tag || interaction.user.username,
+                    targetId,
+                    targetTag,
+                    reason,
+                    punishment,
+                    involvedStaff,
+                    channelId: interaction.channelId,
+                    expiresAt: Date.now() + 60000 // 60 segundos
+                });
+
+                console.log(`\n⏳ [SANCIÓN EN ESPERA DE FOTO] Staff ${interaction.user.tag} (${interaction.user.id}) ha rellenado el formulario #${sancionId}. Esperando captura en el chat...`);
+
+                await interaction.editReply({
+                    content: `📸 **¡Datos del expediente #${sancionId} registrados!**\n\n` +
+                        `👉 **Ahora pega o sube la captura de prueba en este chat** en los próximos **60 segundos** para publicarla automáticamente.\n` +
+                        `*(Si no tienes captura, escribe \`sin foto\` y se publicará sin imagen).*`
+                }).catch(() => { });
+
+                setTimeout(() => {
+                    interaction.deleteReply().catch(() => { });
+                }, 15000);
+                return;
+            }
+
+            // Si proporcionó enlace de imagen, publicar el acta directamente
+            const sancionObj = {
+                id: sancionId,
+                reporterId: interaction.user.id,
+                reporterTag: interaction.user.tag || interaction.user.username,
+                targetId,
+                targetTag,
+                reason,
+                punishment,
+                involvedStaff: involvedStaff || `<@${interaction.user.id}>`,
+                imageUrl,
+                channelId: interaction.channelId
+            };
+
+            await saveSancionRecord(sancionObj);
+
+            const { embeds, embed, files } = buildSancionCardEmbed(sancionObj);
+            const targetChannelId = botConfig.CHANNEL_SANCIONES_ID || interaction.channelId;
+            const targetChannel = await client.channels.fetch(targetChannelId).catch(() => interaction.channel);
+
+            await targetChannel.send({ embeds: embeds || [embed], files }).catch(e => console.error('Error al enviar sancion:', e));
+
+            await interaction.editReply({
+                content: `✅ **Expediente de sanción #${sancionId} registrado y publicado con éxito.**`
+            }).catch(() => { });
+
+            setTimeout(() => {
+                interaction.deleteReply().catch(() => { });
+            }, 3000);
+            return;
+        } catch (err) {
+            console.error('Error al procesar modal de sancion:', err);
+            await interaction.editReply({
+                content: '❌ Ocurrió un error al procesar el acta de sanción.'
+            }).catch(() => { });
+            setTimeout(() => {
+                interaction.deleteReply().catch(() => { });
             }, 3000);
             return;
         }
@@ -6041,7 +6720,7 @@ if (process.stdin.isTTY || process.env.NODE_ENV !== 'production') {
                 let deletedCount = 0;
                 for (const [, msg] of messages) {
                     if (msg.author.id === client.user.id) {
-                        await msg.delete().catch(() => {});
+                        await msg.delete().catch(() => { });
                         deletedCount++;
                     }
                 }
@@ -6070,14 +6749,14 @@ if (process.stdin.isTTY || process.env.NODE_ENV !== 'production') {
                         if (messages) {
                             for (const [, msg] of messages) {
                                 if (msg.author.id === client.user.id) {
-                                    await msg.delete().catch(() => {});
+                                    await msg.delete().catch(() => { });
                                     count++;
                                 }
                             }
                         }
                         console.log(`✅ [CMD] Eliminados ${count} mensajes en #${channel.name}`);
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
             console.log('✨ [CMD] Limpieza global completada.\n');
             return;
@@ -6112,7 +6791,7 @@ if (process.stdin.isTTY || process.env.NODE_ENV !== 'production') {
         // Desconectar forzosamente al bot de canales de voz
         if (['salir-voz', 'desconectar-voz', 'kick-voz'].includes(input)) {
             activeVoiceInterviews.forEach((session, gId) => {
-                try { if (session.connection) session.connection.destroy(); } catch (e) {}
+                try { if (session.connection) session.connection.destroy(); } catch (e) { }
             });
             activeVoiceInterviews.clear();
             console.log('👋 [CMD] Bot desconectado de todos los canales de voz.\n');
