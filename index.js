@@ -230,6 +230,7 @@ async function syncDataFromMongo() {
                 ratings: staffDoc.ratings || [],
                 stats: statsObj
             };
+            recalculateStaffRatings(dataToSave);
             fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(dataToSave, null, 2), 'utf8');
         } else {
             // Subir datos iniciales locales a Mongo si está vacío
@@ -383,6 +384,48 @@ function removeStaffMemberFromRating(staffId) {
     return false;
 }
 
+function recalculateStaffRatings(data) {
+    const newStats = {};
+    for (const r of (data.ratings || [])) {
+        const staffId = r.staffId || 'staff_general';
+        if (!newStats[staffId]) {
+            newStats[staffId] = {
+                staffTag: r.staffTag || 'Staff',
+                totalRatings: 0,
+                sumRatings: 0,
+                average: 0
+            };
+        }
+        const s = newStats[staffId];
+        s.staffTag = r.staffTag || s.staffTag;
+        s.totalRatings += 1;
+        s.sumRatings += Number(r.rating) || 0;
+        s.average = Number((s.sumRatings / s.totalRatings).toFixed(1));
+    }
+    data.stats = newStats;
+    return data;
+}
+
+function saveStaffRatingsData(data) {
+    recalculateStaffRatings(data);
+    try {
+        fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) {
+        console.error('Error al guardar staff_ratings.json:', e);
+    }
+    if (isMongoConnected) {
+        StaffRatingDataModel.findOneAndUpdate(
+            { docId: 'main' },
+            {
+                staffList: data.staffList,
+                stats: data.stats,
+                ratings: data.ratings
+            },
+            { upsert: true }
+        ).catch(e => console.error('Error guardando ratings completos en Mongo:', e));
+    }
+}
+
 function saveStaffRating({ userId, userName, staffId, staffTag, rating, comment }) {
     const data = getStaffRatingsData();
     const entry = {
@@ -398,21 +441,11 @@ function saveStaffRating({ userId, userName, staffId, staffTag, rating, comment 
 
     data.ratings.push(entry);
 
-    // Calcular media acumulada del Staff
-    if (!data.stats[staffId]) {
-        data.stats[staffId] = {
-            staffTag,
-            totalRatings: 0,
-            sumRatings: 0,
-            average: 0
-        };
+    if (staffId && !data.staffList.includes(staffId)) {
+        data.staffList.push(staffId);
     }
 
-    const s = data.stats[staffId];
-    s.staffTag = staffTag;
-    s.totalRatings += 1;
-    s.sumRatings += Number(rating);
-    s.average = Number((s.sumRatings / s.totalRatings).toFixed(1));
+    recalculateStaffRatings(data);
 
     try {
         fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(data, null, 2), 'utf8');
@@ -432,7 +465,113 @@ function saveStaffRating({ userId, userName, staffId, staffTag, rating, comment 
         ).catch(e => console.error('Error guardando rating en Mongo:', e));
     }
 
+    const s = data.stats[staffId] || {
+        staffTag,
+        totalRatings: 1,
+        sumRatings: Number(rating),
+        average: Number(rating)
+    };
+
     return { entry, stats: s };
+}
+
+async function syncStaffRatingsFromChannel(targetChannel = null) {
+    try {
+        const channelId = targetChannel?.id || botConfig.CHANNEL_VALORACIONES_ID;
+        if (!channelId) return { success: false, error: 'Canal de valoraciones no configurado.' };
+
+        const channel = targetChannel || await client.channels.fetch(channelId).catch(() => null);
+        if (!channel) return { success: false, error: 'No se pudo acceder al canal de valoraciones.' };
+
+        console.log(`🔍 [SYNC VALORACIONES] Escaneando historial del canal #${channel.name} (${channel.id})...`);
+
+        let allMessages = [];
+        let lastId = null;
+        while (true) {
+            const options = { limit: 100 };
+            if (lastId) options.before = lastId;
+            const messages = await channel.messages.fetch(options).catch(() => null);
+            if (!messages || messages.size === 0) break;
+            allMessages.push(...messages.values());
+            lastId = messages.last().id;
+            if (messages.size < 100) break;
+        }
+
+        console.log(`📋 [SYNC VALORACIONES] Total de mensajes obtenidos en el canal: ${allMessages.length}`);
+
+        const currentData = getStaffRatingsData();
+        const existingRatings = currentData.ratings || [];
+        let importedCount = 0;
+
+        for (const msg of allMessages) {
+            if (!msg.embeds || msg.embeds.length === 0) continue;
+            for (const embed of msg.embeds) {
+                const desc = embed.description || '';
+                const authorName = embed.author?.name || '';
+                if (!authorName.includes('VALORACIONES') && !desc.includes('valoración para el Staff') && !desc.includes('Miembro del Staff Evaluado')) {
+                    continue;
+                }
+
+                const userMatch = desc.match(/Usuario que Valora:\s*\n?>\s*<@!?(\d{17,20})>/i);
+                const staffMatch = desc.match(/Miembro del Staff Evaluado:\s*\n?>\s*<@!?(\d{17,20})>/i);
+                const ratingMatch = desc.match(/Puntuación Otorgada:\s*\n?>\s*`?(\d{1,2})\/10`?/i);
+                const commentMatch = desc.match(/Opinión y Experiencia del Usuario:\s*\n?>\s*[\*"]*([\s\S]*?)[\*"]*\n\n📈/i) ||
+                    desc.match(/Opinión y Experiencia del Usuario:\s*\n?>\s*([\s\S]*?)(?:\n\n|\n>|$)/i);
+
+                if (staffMatch && ratingMatch) {
+                    const userId = userMatch ? userMatch[1] : (msg.author?.id || 'unknown');
+                    const staffId = staffMatch[1];
+                    const numRating = parseInt(ratingMatch[1], 10);
+                    const comment = commentMatch ? commentMatch[1].replace(/^[\*"]+|[\*"]+$/g, '').trim() : '';
+                    const timestamp = (embed.timestamp ? new Date(embed.timestamp) : msg.createdAt).toISOString();
+
+                    const isDuplicate = existingRatings.some(r => {
+                        if (r.id === msg.id) return true;
+                        if (r.staffId === staffId && r.userId === userId && r.rating === numRating && Math.abs(new Date(r.timestamp).getTime() - new Date(timestamp).getTime()) < 60000) {
+                            return true;
+                        }
+                        return false;
+                    });
+
+                    if (!isDuplicate) {
+                        let staffTag = 'Staff';
+                        const member = channel.guild?.members?.cache?.get(staffId);
+                        if (member) staffTag = member.user?.tag || member.displayName;
+
+                        let userName = 'Usuario';
+                        const userMember = channel.guild?.members?.cache?.get(userId);
+                        if (userMember) userName = userMember.user?.tag || userMember.displayName;
+
+                        existingRatings.push({
+                            id: msg.id,
+                            userId,
+                            userName,
+                            staffId,
+                            staffTag,
+                            rating: numRating,
+                            comment: comment || 'Sin comentario',
+                            timestamp
+                        });
+
+                        if (!currentData.staffList.includes(staffId)) {
+                            currentData.staffList.push(staffId);
+                        }
+
+                        importedCount++;
+                    }
+                }
+            }
+        }
+
+        currentData.ratings = existingRatings;
+        saveStaffRatingsData(currentData);
+
+        console.log(`✅ [SYNC VALORACIONES] Sincronización completada. ${importedCount} nuevas valoraciones recuperadas. Total en BD: ${existingRatings.length}`);
+        return { success: true, importedCount, totalRatings: existingRatings.length, stats: currentData.stats };
+    } catch (err) {
+        console.error('Error al sincronizar valoraciones desde el canal:', err);
+        return { success: false, error: err.message };
+    }
 }
 
 const streamerCooldowns = new Map();
@@ -4153,7 +4292,9 @@ client.on('messageCreate', async (message) => {
             '!entrevista', '!entrevistar', '!iniciar-entrevista', '!fin-entrevista', '!terminar-entrevista',
             '!hablar', '!conversar', '!ia-voz', '!charlar', '!callar', '!salir-voz', '!desconectar-voz',
             '!play', '!p', '!reproducir', '!stop', '!parar', '!detener', '!skip', '!next', '!saltar', '!siguiente', '!queue', '!cola', '!playlist',
-            '!panel-valoracion', '!panel-valoraciones', '!fijar-valoraciones', '!top-staff', '!ranking-staff', '!valoraciones', '!stats-staff',
+            '!tops', '!top-staff', '!ranking-staff', '!valoraciones', '!stats-staff', '!topstaff', '!panel-tops', '!fijar-tops',
+            '!sync-valoraciones', '!syncvaloraciones', '!escanear-valoraciones', '!recuperar-valoraciones',
+            '!panel-valoracion', '!panel-valoraciones', '!fijar-valoraciones',
             '!panel-sanciones', '!panelsanciones', '!enviar-panel-sanciones', '!sancionar', '!sancion', '!sanciones', '!historial',
             '!setcanal-sanciones', '!setcanal-sancion', '!canalsanciones', '!fijar-sanciones',
             '!setcanal-panel-sanciones', '!setcanal-panelsanciones', '!canalpanelsanciones', '!fijar-panel-sanciones',
@@ -4611,6 +4752,9 @@ client.on('messageCreate', async (message) => {
         if (['!tops', '!top-staff', '!ranking-staff', '!stats-staff', '!valoraciones', '!topstaff', '!panel-tops', '!fijar-tops'].includes(command)) {
             await message.delete().catch(() => { });
             try {
+                // Sincronizar automáticamente cualquier valoración que falte por registrar en el canal de valoraciones
+                await syncStaffRatingsFromChannel().catch(e => console.error('Error en syncStaffRatingsFromChannel durante !tops:', e));
+
                 const targetChannel = message.channel;
                 const { topEmbed, files } = buildStaffTopRankingEmbed();
 
@@ -4637,6 +4781,32 @@ client.on('messageCreate', async (message) => {
                 return;
             } catch (err) {
                 console.error('Error al gestionar panel permanente de tops:', err);
+                return;
+            }
+        }
+
+        // COMANDO: !sync-valoraciones / !recuperar-valoraciones (Escanea todo el canal y sincroniza a fondo)
+        if (['!sync-valoraciones', '!syncvaloraciones', '!escanear-valoraciones', '!recuperar-valoraciones'].includes(command)) {
+            await message.delete().catch(() => { });
+            try {
+                const statusMsg = await message.channel.send('⏳ **Escaneando el canal de valoraciones para sincronizar el Top...**').catch(() => null);
+                const syncRes = await syncStaffRatingsFromChannel();
+                
+                if (syncRes.success) {
+                    await updateStaffTopRankingPanel().catch(() => { });
+                    if (statusMsg) {
+                        await statusMsg.edit(`✅ **Sincronización completada:**\n> 📥 Nuevas valoraciones importadas: \`${syncRes.importedCount}\`\n> 📊 Total de valoraciones registradas: \`${syncRes.totalRatings}\`\n> 🏆 El panel de Tops ha sido actualizado.`);
+                        setTimeout(() => statusMsg.delete().catch(() => { }), 8000);
+                    }
+                } else {
+                    if (statusMsg) {
+                        await statusMsg.edit(`❌ **Error al sincronizar:** ${syncRes.error}`);
+                        setTimeout(() => statusMsg.delete().catch(() => { }), 8000);
+                    }
+                }
+                return;
+            } catch (err) {
+                console.error('Error en comando !sync-valoraciones:', err);
                 return;
             }
         }
@@ -4722,6 +4892,7 @@ client.on('messageCreate', async (message) => {
                     `📜 \`!queue\` o \`!cola\` → Muestra la lista de canciones en espera.\n` +
                     `⭐ \`!panel-valoracion\` → Publica el panel con el botón para que los usuarios valoren al Staff.\n` +
                     `🏆 \`!tops\` o \`!top-staff\` → Muestra el ranking con las mejores puntuaciones del equipo de Staff.\n` +
+                    `🔄 \`!sync-valoraciones\` → Escanea el canal de valoraciones e importa al Top cualquier valoración faltante.\n` +
                     `🚨 \`!sancionar @usuario <sanción> <motivo>\` o \`!panel-sanciones\` → Sistema de sanciones de Staff.\n` +
                     `🎉 \`!evento <detalles>\` o \`!panel-eventos\` → Sistema de publicación de eventos con flyer oficial.\n` +
                     `🎙️ \`!hablar\` o \`!ia-voz\` → Conecta al bot al canal de voz para mantener conversación por voz con la IA en vivo.\n` +
