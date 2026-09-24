@@ -1461,12 +1461,14 @@ async function analyzeTextForAI(text) {
     let learnedHumanBonus = 0;
     const lowerClean = cleanText.toLowerCase();
 
+    // Requerir coincidencia sustancial para patrones aprendidos históricos
     if (feedbackData.learnedClichés) {
         for (const [phrase, info] of Object.entries(feedbackData.learnedClichés)) {
-            if (info.count >= 2 && lowerClean.includes(phrase)) {
-                learnedAiBonus += Math.min(info.weight || 6, 12);
+            // Solo considerar si la frase tiene longitud suficiente y no es una simple coincidencia de palabras comunes
+            if (info.count >= 3 && phrase.length >= 15 && lowerClean.includes(phrase)) {
+                learnedAiBonus += Math.min(info.weight || 4, 8);
                 if (hardDetectedPatterns.length < 3) {
-                    hardDetectedPatterns.push(`Patrón IA histórico ("${phrase.slice(0, 25)}...")`);
+                    hardDetectedPatterns.push(`Patrón IA recurrente ("${phrase.slice(0, 22)}...")`);
                 }
             }
         }
@@ -1647,18 +1649,24 @@ async function analyzeTextForAI(text) {
     // ----------------------------------------------------
     let rawScore = 5; // Base mínima
 
-    if (hardDetectedPatterns.length > 0) {
-        rawScore += hardClichéScore + uniformityScore + learnedAiBonus;
+    // Sumar peso de clichés duros y uniformidad artificial
+    if (hardClichéScore > 0) {
+        rawScore += hardClichéScore + uniformityScore;
     }
+    rawScore += learnedAiBonus;
 
+    // Restar bonificaciones por rasgos humanos auténticos
     rawScore -= humanScoreBonus;
 
-    if (hardDetectedPatterns.length >= 2) {
+    // Calibración final por presencia de clichés arquetípicos
+    if (hardClichéScore >= 40) {
         rawScore = Math.max(rawScore, 85);
-    } else if (hardDetectedPatterns.length === 1) {
+    } else if (hardClichéScore >= 20) {
         rawScore = Math.max(rawScore, 40);
-    } else {
-        rawScore = Math.min(rawScore, 10);
+    } else if (humanScoreBonus > 15 && hardClichéScore === 0) {
+        rawScore = Math.min(rawScore, 8); // Claramente humano
+    } else if (hardClichéScore === 0) {
+        rawScore = Math.min(rawScore, 20);
     }
 
     let localAiScore = Math.min(Math.max(Math.round(rawScore), 2), 98);
