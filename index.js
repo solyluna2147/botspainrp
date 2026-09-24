@@ -255,10 +255,12 @@ async function syncDataFromMongo() {
         // 4. Auto-aprendizaje de Whitelists (AI Feedback)
         const aiDoc = await AiFeedbackModel.findOne({ docId: 'main' });
         if (aiDoc && aiDoc.data) {
+            aiFeedbackState = aiDoc.data;
             fs.writeFileSync(AI_FEEDBACK_FILE, JSON.stringify(aiDoc.data, null, 2), 'utf8');
             console.log(`🧠 [IA WHITELIST] Aprendizaje sincronizado desde la nube (${aiDoc.data.totalSamples || 0} solicitudes procesadas).`);
         } else if (fs.existsSync(AI_FEEDBACK_FILE)) {
             const localAi = JSON.parse(fs.readFileSync(AI_FEEDBACK_FILE, 'utf8'));
+            aiFeedbackState = localAi;
             await AiFeedbackModel.create({ docId: 'main', data: localAi }).catch(() => { });
         }
 
@@ -603,7 +605,13 @@ function extractCandidateAnswers(fullText) {
     return text;
 }
 
+let aiFeedbackState = null;
+
 function getAiFeedbackData() {
+    if (aiFeedbackState) {
+        return aiFeedbackState;
+    }
+
     const defaultData = {
         totalSamples: 0,
         approvedSamples: 0,
@@ -619,15 +627,18 @@ function getAiFeedbackData() {
     if (fs.existsSync(AI_FEEDBACK_FILE)) {
         try {
             const parsed = JSON.parse(fs.readFileSync(AI_FEEDBACK_FILE, 'utf8'));
-            return { ...defaultData, ...parsed, processedFormIds: parsed.processedFormIds || {} };
+            aiFeedbackState = { ...defaultData, ...parsed, processedFormIds: parsed.processedFormIds || {} };
+            return aiFeedbackState;
         } catch (e) {
             console.error('Error al leer ai_feedback.json:', e);
         }
     }
-    return defaultData;
+    aiFeedbackState = defaultData;
+    return aiFeedbackState;
 }
 
 function saveAiFeedbackData(data) {
+    aiFeedbackState = data;
     try {
         if (data.samples && data.samples.length > 500) {
             data.samples = data.samples.slice(-500);
