@@ -640,8 +640,8 @@ function getAiFeedbackData() {
 
 function saveAiFeedbackData(data) {
     try {
-        if (data.samples && data.samples.length > 100) {
-            data.samples = data.samples.slice(-100);
+        if (data.samples && data.samples.length > 500) {
+            data.samples = data.samples.slice(-500);
         }
         fs.writeFileSync(AI_FEEDBACK_FILE, JSON.stringify(data, null, 2), 'utf8');
     } catch (e) {
@@ -2481,19 +2481,35 @@ client.once(Events.ClientReady, async () => {
     }
 });
 
-// Función de Auto-Calibración que lee el historial real de solicitudes en el canal
+// Función de Auto-Calibración que lee el historial real de solicitudes en el canal (Hasta 300 formularios)
 async function autoBootstrapChannelHistory() {
     try {
         const channelId = botConfig.CHANNEL_SOLICITUDES_ID || '1517530849661288455';
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return;
 
-        console.log(`🧠 [AUTO-CALIBRACIÓN] Escaneando historial de WLs en #${channel.name} (${channelId})...`);
-        const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
-        if (!messages || messages.size === 0) return;
+        console.log(`🧠 [AUTO-CALIBRACIÓN] Escaneando hasta 300 WLs históricas en #${channel.name} (${channelId})...`);
+
+        // Recopilar hasta 300 mensajes mediante paginación (Discord API limita a 100 por petición)
+        let allMessages = [];
+        let lastId = null;
+
+        for (let i = 0; i < 3; i++) {
+            const options = { limit: 100 };
+            if (lastId) options.before = lastId;
+
+            const batch = await channel.messages.fetch(options).catch(() => null);
+            if (!batch || batch.size === 0) break;
+
+            allMessages.push(...Array.from(batch.values()));
+            lastId = batch.last()?.id;
+            if (batch.size < 100) break;
+        }
+
+        if (allMessages.length === 0) return;
 
         let learned = 0;
-        for (const [, msg] of messages) {
+        for (const msg of allMessages) {
             let fullMsgText = `${msg.content || ''}\n`;
             if (msg.embeds && msg.embeds.length > 0) {
                 for (const embed of msg.embeds) {
@@ -2519,7 +2535,7 @@ async function autoBootstrapChannelHistory() {
 
         const data = getAiFeedbackData();
         saveAiFeedbackData(data);
-        console.log(`✅ [AUTO-CALIBRACIÓN COMPLETADA] Formularios analizados: ${learned} | Clichés IA únicos: ${Object.keys(data.learnedClichés || {}).length} | Patrones humanos: ${Object.keys(data.learnedHumanPatterns || {}).length}`);
+        console.log(`✅ [AUTO-CALIBRACIÓN COMPLETADA] Formularios analizados: ${learned} de ${allMessages.length} mensajes leídos | Clichés IA únicos: ${Object.keys(data.learnedClichés || {}).length} | Patrones humanos: ${Object.keys(data.learnedHumanPatterns || {}).length}`);
     } catch (e) {
         console.error('⚠️ Error en autoBootstrapChannelHistory:', e.message);
     }
