@@ -1385,9 +1385,14 @@ async function analyzeTextForAI(text) {
         return {
             aiScore: 0,
             humanScore: 100,
+            localAiScore: 0,
+            localHumanScore: 100,
+            apiAiScore: null,
+            apiHumanScore: null,
             statusEmoji: '🟢',
             statusLabel: 'Texto Insuficiente / Sin Datos',
             wordCount: 0,
+            sentenceCount: 0,
             detectedPatterns: [],
             summaryNote: 'No hay suficiente texto para auditar.'
         };
@@ -1402,9 +1407,14 @@ async function analyzeTextForAI(text) {
         return {
             aiScore: 2,
             humanScore: 98,
+            localAiScore: 2,
+            localHumanScore: 98,
+            apiAiScore: null,
+            apiHumanScore: null,
             statusEmoji: '🟢',
             statusLabel: 'Texto Breve / Humano',
             wordCount,
+            sentenceCount: 1,
             detectedPatterns: ['Longitud breve'],
             summaryNote: 'El texto es breve pero presenta lenguaje espontáneo.'
         };
@@ -1429,7 +1439,10 @@ async function analyzeTextForAI(text) {
         { regex: /un faro de (esperanza|luz|justicia|integridad)/i, label: 'Metáfora estándar de IA', weight: 22 },
         { regex: /su vida dio un giro (de 180 grados|inesperado|dr[aá]stico)/i, label: 'Cliché narrativo de transición', weight: 18 },
         { regex: /marcar(on)? su infancia|dej[oó] una huella imborrable/i, label: 'Fórmula de trauma infantil de IA', weight: 18 },
-        { regex: /hacerse un nombre en la ciudad/i, label: 'Cliché de objetivo en GTA RP generado por IA', weight: 20 }
+        { regex: /hacerse un nombre en la ciudad/i, label: 'Cliché de objetivo en GTA RP generado por IA', weight: 20 },
+        { regex: /no fue un camino f[aá]cil|el camino no fue f[aá]cil/i, label: 'Cliché narrativo de superación', weight: 18 },
+        { regex: /aprendi[oó] a base de golpes|aprendi[oó] por las malas/i, label: 'Frase trillada de madurez de IA', weight: 16 },
+        { regex: /cada obst[aá]culo lo convirti[oó] en/i, label: 'Retórica de autoayuda de IA', weight: 20 }
     ];
 
     let hardClichéScore = 0;
@@ -1630,7 +1643,7 @@ async function analyzeTextForAI(text) {
     }
 
     // ----------------------------------------------------
-    // CAPA 5: Calibración y Fusión del Ensemble
+    // CAPA 5: Calibración y Fusión del Ensemble (Motor Interno vs APIs)
     // ----------------------------------------------------
     let rawScore = 5; // Base mínima
 
@@ -1648,39 +1661,46 @@ async function analyzeTextForAI(text) {
         rawScore = Math.min(rawScore, 10);
     }
 
-    let localScore = Math.min(Math.max(Math.round(rawScore), 2), 98);
-    let finalAiScore = localScore;
+    let localAiScore = Math.min(Math.max(Math.round(rawScore), 2), 98);
+    let localHumanScore = 100 - localAiScore;
+
+    let apiAiScore = null;
+    let apiHumanScore = null;
+    let finalAiScore = localAiScore;
 
     if (externalScores.length > 0) {
+        let totalApiWeighted = 0;
+        let totalApiWeight = 0;
+        for (const ext of externalScores) {
+            totalApiWeighted += ext.score * ext.weight;
+            totalApiWeight += ext.weight;
+        }
+        apiAiScore = Math.round(totalApiWeighted / totalApiWeight);
+        apiHumanScore = 100 - apiAiScore;
+
         const hfEntry = externalScores.find(e => e.name.toLowerCase().includes('huggingface'));
         const saplingEntry = externalScores.find(e => e.name.toLowerCase().includes('sapling'));
 
         // Caso Humano Inequívoco: HuggingFace u otra API da <=10% Y no hay clichés duros
         if (hfEntry && hfEntry.score <= 10 && hardDetectedPatterns.length === 0) {
-            finalAiScore = Math.min(hfEntry.score, localScore, 8);
+            finalAiScore = Math.min(hfEntry.score, localAiScore, 8);
         } else if ((hfEntry && hfEntry.score >= 75) || (saplingEntry && saplingEntry.score >= 75) || hardDetectedPatterns.length >= 2) {
             // Caso IA Inequívoco
             const maxScore = Math.max(
                 hfEntry ? hfEntry.score : 0,
                 saplingEntry ? saplingEntry.score : 0,
-                localScore
+                localAiScore
             );
             finalAiScore = Math.min(Math.max(maxScore, 86), 98);
         } else {
-            // Promedio ponderado
-            let totalWeighted = localScore * 1.0;
-            let totalWeight = 1.0;
-
-            for (const ext of externalScores) {
-                totalWeighted += ext.score * ext.weight;
-                totalWeight += ext.weight;
-            }
-
+            // Promedio equilibrado entre el motor interno del bot y las APIs
+            let totalWeighted = (localAiScore * 1.5) + totalApiWeighted;
+            let totalWeight = 1.5 + totalApiWeight;
             finalAiScore = Math.round(totalWeighted / totalWeight);
         }
 
         finalAiScore = Math.min(Math.max(finalAiScore, 2), 98);
-        console.log(`📊 [ENSEMBLE COMBINADO] Score final calibrado (${externalScores.length} APIs + Motor Local): ${finalAiScore}%`);
+        console.log(`📊 [AUDITORÍA IA COMBINADA] Local: ${localAiScore}% | API: ${apiAiScore}% | Final: ${finalAiScore}%`);
     }
 
     const aiScore = finalAiScore;
@@ -1705,6 +1725,10 @@ async function analyzeTextForAI(text) {
     return {
         aiScore,
         humanScore,
+        localAiScore,
+        localHumanScore,
+        apiAiScore,
+        apiHumanScore,
         statusEmoji,
         statusLabel,
         wordCount,
@@ -3942,7 +3966,13 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
 
             let descText = `👤 **Solicitante:** ${applicantMention}\n` +
                 `📊 **Probabilidad IA:** ${analysis.statusEmoji} \`${analysis.aiScore}%\` \`[${bar}]\`\n` +
+                `🧠 **Motor Local:** 🤖 \`${analysis.localAiScore}% IA\` • 👤 \`${analysis.localHumanScore}% Humano\`` +
+                (analysis.apiAiScore !== null ? ` | 🌐 **API:** \`${analysis.apiAiScore}% IA\`\n` : `\n`) +
                 `📄 **Diagnóstico:** ${analysis.statusLabel}`;
+
+            if (analysis.detectedPatterns && analysis.detectedPatterns.length > 0) {
+                descText += `\n🔍 **Patrones:** \`${analysis.detectedPatterns.join(' • ')}\``;
+            }
 
             if (analysis.quality && analysis.quality.qualityNotes && analysis.quality.qualityNotes.length > 0) {
                 descText += `\n📝 **Revisión Narrativa:** ⚠️ \`${analysis.quality.qualityNotes.join(' • ')}\``;
@@ -5340,14 +5370,20 @@ client.on('messageCreate', async (message) => {
                 iconURL = 'attachment://logo.png';
             }
 
+            let testDesc1 = `👤 **Solicitante:** ${message.author}\n` +
+                `📊 **Probabilidad IA:** ${analysis.statusEmoji} \`${analysis.aiScore}%\` \`[${bar}]\`\n` +
+                `🧠 **Motor Local:** 🤖 \`${analysis.localAiScore}% IA\` • 👤 \`${analysis.localHumanScore}% Humano\`` +
+                (analysis.apiAiScore !== null ? ` | 🌐 **API:** \`${analysis.apiAiScore}% IA\`\n` : `\n`) +
+                `📄 **Diagnóstico:** ${analysis.statusLabel}`;
+
+            if (analysis.detectedPatterns && analysis.detectedPatterns.length > 0) {
+                testDesc1 += `\n🔍 **Patrones:** \`${analysis.detectedPatterns.join(' • ')}\``;
+            }
+
             const testEmbed = new EmbedBuilder()
                 .setColor(embedColor)
                 .setAuthor({ name: 'AUDITORÍA DE WHITELIST • SPAIN RP', iconURL })
-                .setDescription(
-                    `👤 **Solicitante:** ${message.author}\n` +
-                    `📊 **Probabilidad IA:** ${analysis.statusEmoji} \`${analysis.aiScore}%\` \`[${bar}]\`\n` +
-                    `📄 **Diagnóstico:** ${analysis.statusLabel}`
-                );
+                .setDescription(testDesc1);
 
             return message.reply({ embeds: [testEmbed], files });
         }
@@ -5393,7 +5429,13 @@ client.on('messageCreate', async (message) => {
 
             let testDesc = `👤 **Solicitante:** ${message.author}\n` +
                 `📊 **Probabilidad IA:** ${analysis.statusEmoji} \`${analysis.aiScore}%\` \`[${bar}]\`\n` +
+                `🧠 **Motor Local:** 🤖 \`${analysis.localAiScore}% IA\` • 👤 \`${analysis.localHumanScore}% Humano\`` +
+                (analysis.apiAiScore !== null ? ` | 🌐 **API:** \`${analysis.apiAiScore}% IA\`\n` : `\n`) +
                 `📄 **Diagnóstico:** ${analysis.statusLabel}`;
+
+            if (analysis.detectedPatterns && analysis.detectedPatterns.length > 0) {
+                testDesc += `\n🔍 **Patrones:** \`${analysis.detectedPatterns.join(' • ')}\``;
+            }
 
             if (analysis.quality && analysis.quality.qualityNotes && analysis.quality.qualityNotes.length > 0) {
                 testDesc += `\n📝 **Revisión Narrativa:** ⚠️ \`${analysis.quality.qualityNotes.join(' • ')}\``;
@@ -5459,15 +5501,21 @@ client.on('messageCreate', async (message) => {
                 iconURL = 'attachment://logo.png';
             }
 
+            let simDesc = `👤 **Solicitante:** <@${mentionedUser.id}>\n` +
+                `📊 **Probabilidad IA:** ${analysis.statusEmoji} \`${analysis.aiScore}%\` \`[${bar}]\`\n` +
+                `🧠 **Motor Local:** 🤖 \`${analysis.localAiScore}% IA\` • 👤 \`${analysis.localHumanScore}% Humano\`` +
+                (analysis.apiAiScore !== null ? ` | 🌐 **API:** \`${analysis.apiAiScore}% IA\`\n` : `\n`) +
+                `📄 **Diagnóstico:** ${analysis.statusLabel}`;
+
+            if (analysis.detectedPatterns && analysis.detectedPatterns.length > 0) {
+                simDesc += `\n🔍 **Patrones:** \`${analysis.detectedPatterns.join(' • ')}\``;
+            }
+
             // 3. Crear la tarjeta de auditoría compacta
             const embedAuditoria = new EmbedBuilder()
                 .setColor(embedColor)
                 .setAuthor({ name: 'AUDITORÍA DE WHITELIST • SPAIN RP', iconURL })
-                .setDescription(
-                    `👤 **Solicitante:** <@${mentionedUser.id}>\n` +
-                    `📊 **Probabilidad IA:** ${analysis.statusEmoji} \`${analysis.aiScore}%\` \`[${bar}]\`\n` +
-                    `📄 **Diagnóstico:** ${analysis.statusLabel}`
-                );
+                .setDescription(simDesc);
 
             // Enviar ÚNICAMENTE la tarjeta de auditoría
             await message.channel.send({
