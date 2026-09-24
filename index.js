@@ -6,6 +6,7 @@ try {
 
 const {
     Client,
+    Events,
     GatewayIntentBits,
     EmbedBuilder,
     AttachmentBuilder,
@@ -2397,81 +2398,87 @@ function evaluateVoiceInterviewContent(transcripts) {
     };
 }
 
-client.once('ready', async () => {
-    console.log(`\n==================================================`);
-    console.log(`🤖  SPAIN RP - SISTEMA DE WHITELIST Y AUDITORÍA  🤖`);
-    console.log(`==================================================`);
-    console.log(`🟢 [ESTADO]      Bot conectado como: ${client.user.tag}`);
-    console.log(`👑 [CREADOR]     ID: ${OWNER_ID}`);
-    console.log(`📥 [SOLICITUDES] ${botConfig.CHANNEL_SOLICITUDES_ID ? `<#${botConfig.CHANNEL_SOLICITUDES_ID}>` : 'Todos los canales'}`);
-    console.log(`✅ [APROBADOS]   ${botConfig.CHANNEL_APROBADOS_ID ? `<#${botConfig.CHANNEL_APROBADOS_ID}>` : 'No configurado'}`);
-    console.log(`🎙️ [ENTREVISTAS] ${botConfig.CHANNEL_ENTREVISTAS_ID ? `<#${botConfig.CHANNEL_ENTREVISTAS_ID}>` : 'No configurado'}`);
-    console.log(`🎮 [FIVEM]       IP: ${botConfig.FIVEM_SERVER_IP} (CFX: ${botConfig.FIVEM_CFX_CODE})`);
-    console.log(`==================================================\n`);
-
-    // Función para actualizar la presencia del bot exclusivamente con los jugadores en tiempo real
-    const updateBotPresence = async () => {
-        const state = await fetchFiveMServerStatus();
-        if (state.online) {
-            client.user.setPresence({
-                activities: [{
-                    name: `${state.players}/${state.maxPlayers} Jugadores`,
-                    type: ActivityType.Watching
-                }],
-                status: 'online'
-            });
-        } else {
-            client.user.setPresence({
-                activities: [{
-                    name: 'Servidor en Mantenimiento',
-                    type: ActivityType.Watching
-                }],
-                status: 'dnd'
-            });
-        }
-    };
-
-    // 1. Actualización inicial de presencia
-    await updateBotPresence();
-
-    // 2. Comprobar y actualizar jugadores cada 15 segundos
-    setInterval(updateBotPresence, 15000);
-
-    // 3. Actualizar el panel del canal cada 60 segundos
-    if (botConfig.CHANNEL_STATUS_ID) {
-        await updateChannelStatusPanel();
-        setInterval(updateChannelStatusPanel, 60000);
-    }
-
-    // 4. Registrar Slash Commands (/admin, /config, etc.) para mensajes efímeros ("Solo tú puedes verlo")
+client.once(Events.ClientReady, async () => {
     try {
-        if (client.application) {
-            await client.application.commands.set([
-                {
-                    name: 'admin',
-                    description: '👑 Panel de configuración exclusivo del Creador (Solo tú puedes verlo)'
-                },
-                {
-                    name: 'config',
-                    description: '👑 Panel de configuración exclusivo del Creador (Solo tú puedes verlo)'
-                },
-                {
-                    name: 'notificarstream',
-                    description: '📢 Publica el panel con el botón de Notificar Directo'
-                },
-                {
-                    name: 'estado',
-                    description: '🌐 Muestra el estado en tiempo real del servidor FiveM'
-                }
-            ]);
-            console.log('✅ Slash Commands (/admin, /config, etc.) registrados exitosamente.');
-        }
-    } catch (e) {
-        console.error('Error al registrar Slash Commands:', e.message);
-    }
+        console.log(`\n==================================================`);
+        console.log(`🤖  SPAIN RP - SISTEMA DE WHITELIST Y AUDITORÍA  🤖`);
+        console.log(`==================================================`);
+        console.log(`🟢 [ESTADO]      Bot conectado como: ${client.user.tag}`);
+        console.log(`👑 [CREADOR]     ID: ${OWNER_ID}`);
+        console.log(`📥 [SOLICITUDES] ${botConfig.CHANNEL_SOLICITUDES_ID ? `<#${botConfig.CHANNEL_SOLICITUDES_ID}>` : 'Todos los canales'}`);
+        console.log(`✅ [APROBADOS]   ${botConfig.CHANNEL_APROBADOS_ID ? `<#${botConfig.CHANNEL_APROBADOS_ID}>` : 'No configurado'}`);
+        console.log(`🎙️ [ENTREVISTAS] ${botConfig.CHANNEL_ENTREVISTAS_ID ? `<#${botConfig.CHANNEL_ENTREVISTAS_ID}>` : 'No configurado'}`);
+        console.log(`🎮 [FIVEM]       IP: ${botConfig.FIVEM_SERVER_IP} (CFX: ${botConfig.FIVEM_CFX_CODE})`);
+        console.log(`==================================================\n`);
 
-    // 5. Auto-Calibración en background usando el historial del canal de Whitelist
-    setTimeout(autoBootstrapChannelHistory, 3000);
+        // Función para actualizar la presencia del bot exclusivamente con los jugadores en tiempo real
+        const updateBotPresence = async () => {
+            try {
+                const state = await fetchFiveMServerStatus();
+                if (state && state.online) {
+                    client.user.setPresence({
+                        activities: [{
+                            name: `${state.players}/${state.maxPlayers} Jugadores`,
+                            type: ActivityType.Watching
+                        }],
+                        status: 'online'
+                    });
+                } else {
+                    client.user.setPresence({
+                        activities: [{
+                            name: 'Servidor en Mantenimiento',
+                            type: ActivityType.Watching
+                        }],
+                        status: 'dnd'
+                    });
+                }
+            } catch (err) { }
+        };
+
+        // 1. Actualización inicial de presencia (en segundo plano)
+        updateBotPresence().catch(() => { });
+
+        // 2. Comprobar y actualizar jugadores cada 15 segundos
+        setInterval(updateBotPresence, 15000);
+
+        // 3. Actualizar el panel del canal cada 60 segundos
+        if (botConfig.CHANNEL_STATUS_ID) {
+            updateChannelStatusPanel().catch(() => { });
+            setInterval(() => updateChannelStatusPanel().catch(() => { }), 60000);
+        }
+
+        // 4. Registrar Slash Commands (/admin, /config, etc.) para mensajes efímeros ("Solo tú puedes verlo")
+        try {
+            if (client.application) {
+                await client.application.commands.set([
+                    {
+                        name: 'admin',
+                        description: '👑 Panel de configuración exclusivo del Creador (Solo tú puedes verlo)'
+                    },
+                    {
+                        name: 'config',
+                        description: '👑 Panel de configuración exclusivo del Creador (Solo tú puedes verlo)'
+                    },
+                    {
+                        name: 'notificarstream',
+                        description: '📢 Publica el panel con el botón de Notificar Directo'
+                    },
+                    {
+                        name: 'estado',
+                        description: '🌐 Muestra el estado en tiempo real del servidor FiveM'
+                    }
+                ]);
+                console.log('✅ Slash Commands (/admin, /config, etc.) registrados exitosamente.');
+            }
+        } catch (e) {
+            console.error('Error al registrar Slash Commands:', e.message);
+        }
+
+        // 5. Auto-Calibración en background usando el historial del canal de Whitelist
+        setTimeout(autoBootstrapChannelHistory, 3000);
+    } catch (readyErr) {
+        console.error('❌ Error en evento Ready:', readyErr);
+    }
 });
 
 // Función de Auto-Calibración que lee el historial real de solicitudes en el canal
@@ -7597,145 +7604,147 @@ client.on('guildMemberAdd', async (member) => {
 
 // ==========================================
 // 7. CONSOLA DE COMANDOS INTERACTIVA DESDE CMD / TERMINAL
-// ==========================================
 const readline = require('readline');
 
-if (process.stdin.isTTY || process.env.NODE_ENV !== 'production') {
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
-    });
+if (process.stdin.isTTY) {
+    try {
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+        });
 
-    rl.on('line', async (line) => {
-        const input = line.trim().toLowerCase();
-        if (!input) return;
+        rl.on('line', async (line) => {
+            const input = line.trim().toLowerCase();
+            if (!input) return;
 
-        // Comando para borrar mensajes del bot en el canal de WL
-        if (['limpiar', 'limpiar-wl', 'clear-wl', 'borrar-wl', 'borrar-bot', 'clean', 'cls'].includes(input)) {
-            console.log('\n🧹 [CMD] Buscando y eliminando todos los mensajes enviados por el bot en el canal de Whitelist...');
-            try {
-                const channelId = botConfig.CHANNEL_SOLICITUDES_ID || '1517530849661288455';
-                const channel = await client.channels.fetch(channelId).catch(() => null);
-                if (!channel) {
-                    console.log(`❌ [CMD] No se pudo acceder al canal de solicitudes (${channelId}).`);
-                    return;
-                }
-
-                const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
-                if (!messages || messages.size === 0) {
-                    console.log('ℹ️ [CMD] No hay mensajes en el canal.');
-                    return;
-                }
-
-                let deletedCount = 0;
-                for (const [, msg] of messages) {
-                    if (msg.author.id === client.user.id) {
-                        await msg.delete().catch(() => { });
-                        deletedCount++;
-                    }
-                }
-
-                console.log(`✅ [CMD] ¡Se han eliminado con éxito ${deletedCount} mensajes del bot en #${channel.name}!\n`);
-            } catch (err) {
-                console.error('❌ [CMD] Error al limpiar mensajes:', err.message);
-            }
-            return;
-        }
-
-        // Comando para limpiar en solicitudes y aprobados
-        if (['limpiar-todo', 'clear-all', 'borrar-todo'].includes(input)) {
-            console.log('\n🧹 [CMD] Limpiando mensajes del bot en todos los canales de Whitelist...');
-            const channelsToClean = [
-                botConfig.CHANNEL_SOLICITUDES_ID || '1517530849661288455',
-                botConfig.CHANNEL_APROBADOS_ID || '1550880724930797610'
-            ].filter(Boolean);
-
-            for (const cId of channelsToClean) {
+            // Comando para borrar mensajes del bot en el canal de WL
+            if (['limpiar', 'limpiar-wl', 'clear-wl', 'borrar-wl', 'borrar-bot', 'clean', 'cls'].includes(input)) {
+                console.log('\n🧹 [CMD] Buscando y eliminando todos los mensajes enviados por el bot en el canal de Whitelist...');
                 try {
-                    const channel = await client.channels.fetch(cId).catch(() => null);
-                    if (channel) {
-                        const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
-                        let count = 0;
-                        if (messages) {
-                            for (const [, msg] of messages) {
-                                if (msg.author.id === client.user.id) {
-                                    await msg.delete().catch(() => { });
-                                    count++;
+                    const channelId = botConfig.CHANNEL_SOLICITUDES_ID || '1517530849661288455';
+                    const channel = await client.channels.fetch(channelId).catch(() => null);
+                    if (!channel) {
+                        console.log(`❌ [CMD] No se pudo acceder al canal de solicitudes (${channelId}).`);
+                        return;
+                    }
+
+                    const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+                    if (!messages || messages.size === 0) {
+                        console.log('ℹ️ [CMD] No hay mensajes en el canal.');
+                        return;
+                    }
+
+                    let deletedCount = 0;
+                    for (const [, msg] of messages) {
+                        if (msg.author.id === client.user.id) {
+                            await msg.delete().catch(() => { });
+                            deletedCount++;
+                        }
+                    }
+
+                    console.log(`✅ [CMD] ¡Se han eliminado con éxito ${deletedCount} mensajes del bot en #${channel.name}!\n`);
+                } catch (err) {
+                    console.error('❌ [CMD] Error al limpiar mensajes:', err.message);
+                }
+                return;
+            }
+
+            // Comando para limpiar en solicitudes y aprobados
+            if (['limpiar-todo', 'clear-all', 'borrar-todo'].includes(input)) {
+                console.log('\n🧹 [CMD] Limpiando mensajes del bot en todos los canales de Whitelist...');
+                const channelsToClean = [
+                    botConfig.CHANNEL_SOLICITUDES_ID || '1517530849661288455',
+                    botConfig.CHANNEL_APROBADOS_ID || '1550880724930797610'
+                ].filter(Boolean);
+
+                for (const cId of channelsToClean) {
+                    try {
+                        const channel = await client.channels.fetch(cId).catch(() => null);
+                        if (channel) {
+                            const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+                            let count = 0;
+                            if (messages) {
+                                for (const [, msg] of messages) {
+                                    if (msg.author.id === client.user.id) {
+                                        await msg.delete().catch(() => { });
+                                        count++;
+                                    }
                                 }
                             }
+                            console.log(`✅ [CMD] Eliminados ${count} mensajes en #${channel.name}`);
                         }
-                        console.log(`✅ [CMD] Eliminados ${count} mensajes en #${channel.name}`);
-                    }
-                } catch (e) { }
+                    } catch (e) { }
+                }
+                console.log('✨ [CMD] Limpieza global completada.\n');
+                return;
             }
-            console.log('✨ [CMD] Limpieza global completada.\n');
-            return;
-        }
 
-        // Estadísticas de IA en tiempo real
-        if (['stats', 'ia-stats', 'estado-ia'].includes(input)) {
-            const data = getAiFeedbackData();
-            console.log(`\n📊 [CMD STATS IA] Muestras totales: ${data.totalSamples || 0} | Aprobadas: ${data.approvedSamples || 0} | Denegadas: ${data.deniedSamples || 0}`);
-            console.log(`🤖 Clichés IA calibrados: ${Object.keys(data.learnedClichés || {}).length} | Patrones humanos: ${Object.keys(data.learnedHumanPatterns || {}).length}\n`);
-            return;
-        }
+            // Estadísticas de IA en tiempo real
+            if (['stats', 'ia-stats', 'estado-ia'].includes(input)) {
+                const data = getAiFeedbackData();
+                console.log(`\n📊 [CMD STATS IA] Muestras totales: ${data.totalSamples || 0} | Aprobadas: ${data.approvedSamples || 0} | Denegadas: ${data.deniedSamples || 0}`);
+                console.log(`🤖 Clichés IA calibrados: ${Object.keys(data.learnedClichés || {}).length} | Patrones humanos: ${Object.keys(data.learnedHumanPatterns || {}).length}\n`);
+                return;
+            }
 
-        // Re-escanear historial bajo demanda
-        if (['scan', 'escanear'].includes(input)) {
-            console.log('\n🔄 [CMD] Iniciando escaneo de calibración histórica...');
-            await autoBootstrapChannelHistory();
-            return;
-        }
+            // Re-escanear historial bajo demanda
+            if (['scan', 'escanear'].includes(input)) {
+                console.log('\n🔄 [CMD] Iniciando escaneo de calibración histórica...');
+                await autoBootstrapChannelHistory();
+                return;
+            }
 
-        // Estado de entrevistas de voz activas
-        if (['entrevistas', 'voz', 'voice'].includes(input)) {
-            console.log(`\n🎙️ [CMD VOZ] Entrevistas de voz activas: ${activeVoiceInterviews.size}`);
-            activeVoiceInterviews.forEach((session, guildId) => {
-                const dur = Math.round((Date.now() - session.startTime) / 1000);
-                console.log(`  -> Guild ${guildId} | Postulante: ${session.targetTag} (${session.targetUserId}) | Duración: ${dur}s | Frases capturadas: ${session.transcripts.length}`);
-            });
-            console.log('');
-            return;
-        }
+            // Estado de entrevistas de voz activas
+            if (['entrevistas', 'voz', 'voice'].includes(input)) {
+                console.log(`\n🎙️ [CMD VOZ] Entrevistas de voz activas: ${activeVoiceInterviews.size}`);
+                activeVoiceInterviews.forEach((session, guildId) => {
+                    const dur = Math.round((Date.now() - session.startTime) / 1000);
+                    console.log(`  -> Guild ${guildId} | Postulante: ${session.targetTag} (${session.targetUserId}) | Duración: ${dur}s | Frases capturadas: ${session.transcripts.length}`);
+                });
+                console.log('');
+                return;
+            }
 
-        // Desconectar forzosamente al bot de canales de voz
-        if (['salir-voz', 'desconectar-voz', 'kick-voz'].includes(input)) {
-            activeVoiceInterviews.forEach((session, gId) => {
-                try { if (session.connection) session.connection.destroy(); } catch (e) { }
-            });
-            activeVoiceInterviews.clear();
-            console.log('👋 [CMD] Bot desconectado de todos los canales de voz.\n');
-            return;
-        }
+            // Desconectar forzosamente al bot de canales de voz
+            if (['salir-voz', 'desconectar-voz', 'kick-voz'].includes(input)) {
+                activeVoiceInterviews.forEach((session, gId) => {
+                    try { if (session.connection) session.connection.destroy(); } catch (e) { }
+                });
+                activeVoiceInterviews.clear();
+                console.log('👋 [CMD] Bot desconectado de todos los canales de voz.\n');
+                return;
+            }
 
-        // Ayuda
-        if (['ayuda', 'help', '?'].includes(input)) {
-            console.log('\n📋 [COMANDOS DISPONIBLES EN LA TERMINAL / CMD]:');
-            console.log('  • limpiar        -> Borra todos los mensajes que el bot envió en el canal de solicitudes');
-            console.log('  • limpiar-todo   -> Borra mensajes del bot en solicitudes y aprobados');
-            console.log('  • scan           -> Vuelve a escanear el historial para calibrar la IA');
-            console.log('  • stats          -> Muestra las estadísticas de aprendizaje del bot');
-            console.log('  • entrevistas    -> Muestra si hay entrevistas de voz activas');
-            console.log('  • salir-voz      -> Desconecta al bot de cualquier canal de voz');
-            console.log('  • salir          -> Apaga el bot de forma segura\n');
-            return;
-        }
+            // Ayuda
+            if (['ayuda', 'help', '?'].includes(input)) {
+                console.log('\n📋 [COMANDOS DISPONIBLES EN LA TERMINAL / CMD]:');
+                console.log('  • limpiar        -> Borra todos los mensajes que el bot envió en el canal de solicitudes');
+                console.log('  • limpiar-todo   -> Borra mensajes del bot en solicitudes y aprobados');
+                console.log('  • scan           -> Vuelve a escanear el historial para calibrar la IA');
+                console.log('  • stats          -> Muestra las estadísticas de aprendizaje del bot');
+                console.log('  • entrevistas    -> Muestra si hay entrevistas de voz activas');
+                console.log('  • salir-voz      -> Desconecta al bot de cualquier canal de voz');
+                console.log('  • salir          -> Apaga el bot de forma segura\n');
+                return;
+            }
 
-        if (['salir', 'exit', 'stop'].includes(input)) {
-            console.log('👋 [CMD] Apagando el bot...');
-            client.destroy();
-            process.exit(0);
-        }
-    });
+            if (['salir', 'exit', 'stop'].includes(input)) {
+                console.log('👋 [CMD] Apagando el bot...');
+                client.destroy();
+                process.exit(0);
+            }
+        });
+    } catch (e) { }
 }
 
 // Iniciar sesión en Discord
-if (!process.env.DISCORD_TOKEN) {
+const tokenToUse = (process.env.DISCORD_TOKEN || '').trim();
+if (!tokenToUse) {
     console.error('❌ [ERROR CRÍTICO] La variable de entorno DISCORD_TOKEN no está configurada en Render.');
 } else {
     console.log('🔑 [DISCORD] Conectando a la API de Discord...');
-    client.login(process.env.DISCORD_TOKEN).then(() => {
-        console.log('✅ [DISCORD] Token validado y sesión iniciada correctamente.');
+    client.login(tokenToUse).then(() => {
+        console.log('✅ [DISCORD] Sesión iniciada con éxito en la API de Discord.');
     }).catch(err => {
         console.error('❌ [ERROR LOGIN DISCORD]:', err.message);
     });
