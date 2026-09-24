@@ -717,28 +717,6 @@ function registerFeedbackOutcome(applicantKey, decisionType, text = '', shouldSa
         }
     }
 
-    // Recalcular patrones contrastivos: solo es cliché de IA si se repite en denegadas y NO en aprobadas
-    for (const [phrase, dCount] of Object.entries(data.deniedPhrasesCount)) {
-        const aCount = data.approvedPhrasesCount[phrase] || 0;
-        if (dCount >= 2 && aCount === 0) {
-            data.learnedClichés[phrase] = {
-                count: dCount,
-                weight: Math.min(6 + dCount * 2, 14) // Peso moderado acotado
-            };
-        } else {
-            delete data.learnedClichés[phrase];
-        }
-    }
-
-    for (const [phrase, aCount] of Object.entries(data.approvedPhrasesCount)) {
-        if (aCount >= 2) {
-            data.learnedHumanPatterns[phrase] = {
-                count: aCount,
-                weight: Math.min(4 + aCount * 2, 12)
-            };
-        }
-    }
-
     data.samples.push({
         applicant: applicantKey,
         decision: decisionType,
@@ -747,8 +725,36 @@ function registerFeedbackOutcome(applicantKey, decisionType, text = '', shouldSa
     });
 
     if (shouldSave) {
+        rebuildContrastivePatterns(data);
         saveAiFeedbackData(data);
         console.log(`🧠 [IA APRENDIZAJE] Calibrada decisión ${decisionType} para "${applicantKey}". Muestras: ${data.totalSamples}`);
+    }
+}
+
+// Recalcula y consolida clichés vs patrones humanos
+function rebuildContrastivePatterns(data) {
+    if (!data.learnedClichés) data.learnedClichés = {};
+    if (!data.learnedHumanPatterns) data.learnedHumanPatterns = {};
+
+    for (const [phrase, dCount] of Object.entries(data.deniedPhrasesCount || {})) {
+        const aCount = data.approvedPhrasesCount?.[phrase] || 0;
+        if (dCount >= 2 && aCount === 0) {
+            data.learnedClichés[phrase] = {
+                count: dCount,
+                weight: Math.min(6 + dCount * 2, 14)
+            };
+        } else {
+            delete data.learnedClichés[phrase];
+        }
+    }
+
+    for (const [phrase, aCount] of Object.entries(data.approvedPhrasesCount || {})) {
+        if (aCount >= 2) {
+            data.learnedHumanPatterns[phrase] = {
+                count: aCount,
+                weight: Math.min(4 + aCount * 2, 12)
+            };
+        }
     }
 }
 
@@ -2488,32 +2494,19 @@ client.once(Events.ClientReady, async () => {
     }
 });
 
-// Función de Auto-Calibración que lee el historial real de solicitudes en el canal (Hasta 300 formularios)
+// Función de Auto-Calibración que lee el historial real de solicitudes en el canal (100 formularios recientes)
 async function autoBootstrapChannelHistory() {
     try {
         const channelId = botConfig.CHANNEL_SOLICITUDES_ID || '1517530849661288455';
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return;
 
-        console.log(`🧠 [AUTO-CALIBRACIÓN] Escaneando hasta 300 WLs históricas en #${channel.name} (${channelId})...`);
+        console.log(`🧠 [AUTO-CALIBRACIÓN] Escaneando las 100 WLs más recientes en #${channel.name} (${channelId})...`);
 
-        // Recopilar hasta 300 mensajes mediante paginación (Discord API limita a 100 por petición)
-        let allMessages = [];
-        let lastId = null;
+        const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+        if (!messages || messages.size === 0) return;
 
-        for (let i = 0; i < 3; i++) {
-            const options = { limit: 100 };
-            if (lastId) options.before = lastId;
-
-            const batch = await channel.messages.fetch(options).catch(() => null);
-            if (!batch || batch.size === 0) break;
-
-            allMessages.push(...Array.from(batch.values()));
-            lastId = batch.last()?.id;
-            if (batch.size < 100) break;
-        }
-
-        if (allMessages.length === 0) return;
+        const allMessages = Array.from(messages.values());
 
         let learned = 0;
         for (const msg of allMessages) {
@@ -2547,6 +2540,7 @@ async function autoBootstrapChannelHistory() {
         }
 
         const data = getAiFeedbackData();
+        rebuildContrastivePatterns(data);
         saveAiFeedbackData(data);
         console.log(`✅ [AUTO-CALIBRACIÓN COMPLETADA] Formularios nuevos procesados: ${learned} de ${allMessages.length} leídos | Total en base: ${data.totalSamples || 0} | Clichés IA: ${Object.keys(data.learnedClichés || {}).length} | Patrones humanos: ${Object.keys(data.learnedHumanPatterns || {}).length}`);
     } catch (e) {
