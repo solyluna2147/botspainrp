@@ -576,9 +576,9 @@ function extractCandidateAnswers(fullText) {
     text = text.replace(/<@&\d+>/g, ' ');
     text = text.replace(/https?:\/\/\S+/gi, ' ');
     text = text.replace(/📋|🎭|❤️|💀|📖|🪪|👑|✅|❌|🟡|🟢|🔴|⚪|📊|📄|📝|⚠️/g, ' ');
-    text = text.replace(/Nueva Solicitud de (?:📋 )?Whitelist/gi, ' ');
-    text = text.replace(/Whitelist Solicitud (?:Pendiente|Aprobada|Denegada)/gi, ' ');
-    text = text.replace(/ha enviado una solicitud para (?:📋 )?Whitelist/gi, ' ');
+    text = text.replace(/Nueva Solicitud de (?:📋 )?Whitelist[^\n\r]*/gi, ' ');
+    text = text.replace(/Whitelist Solicitud (?:Pendiente|Aprobada|Denegada)[^\n\r]*/gi, ' ');
+    text = text.replace(/ha enviado una solicitud para (?:📋 )?Whitelist[^\n\r]*/gi, ' ');
     text = text.replace(/Solicitante[:\s*]+[^\n\r]+/gi, ' ');
     text = text.replace(/Decidido Por[:\s*]+[^\n\r]+/gi, ' ');
     text = text.replace(/Decisión[:\s*]+[^\n\r]+/gi, ' ');
@@ -589,27 +589,15 @@ function extractCandidateAnswers(fullText) {
     text = text.replace(/Estado[:\s*]+[^\n\r]+/gi, ' ');
     text = text.replace(/─{3,}/g, ' ');
 
-    // Extraer secciones de preguntas clave
-    const answers = [];
-    const rolMatch = text.match(/(?:¿?QUÉ\s+ES\s+EL\s+ROL\??|DEFINICIÓN\s+DE\s+ROL)[:\s]*([\s\S]+?)(?=\n\s*(?:VALORACIÓN|VIDA\s+ÚNICA|HISTORIA|DATOS\s+OOC|$))/i);
-    if (rolMatch && rolMatch[1].trim().length > 5) answers.push(rolMatch[1].trim());
-
-    const vidaMatch = text.match(/(?:VALORACIÓN\s+DE\s+VIDA)[:\s]*([\s\S]+?)(?=\n\s*(?:VIDA\s+ÚNICA|HISTORIA|DATOS\s+OOC|$))/i);
-    if (vidaMatch && vidaMatch[1].trim().length > 5) answers.push(vidaMatch[1].trim());
-
-    const histMatch = text.match(/(?:HISTORIA\s+DE\s+TU\s+PERSONAJE|HISTORIA)[:\s]*([\s\S]+?)(?=\n\s*(?:DATOS\s+OOC|$))/i);
-    if (histMatch && histMatch[1].trim().length > 10) answers.push(histMatch[1].trim());
-
-    if (answers.length > 0) {
-        return answers.join('\n\n').trim();
-    }
-
-    // Limpieza de etiquetas sueltas si no tenían saltos estructurados
+    // Limpieza de etiquetas sueltas
     text = text.replace(/¿?QUÉ ES EL ROL\??/gi, ' ');
+    text = text.replace(/DEFINICIÓN DE ROL/gi, ' ');
     text = text.replace(/VALORACIÓN DE VIDA/gi, ' ');
     text = text.replace(/VIDA ÚNICA - MUERTE PERMANENTE PKT/gi, ' ');
     text = text.replace(/HISTORIA DE TU PERSONAJE OBLIGATORIO/gi, ' ');
+    text = text.replace(/HISTORIA DE TU PERSONAJE/gi, ' ');
     text = text.replace(/DATOS OOC DEL JUGADOR OBLIGATORIO/gi, ' ');
+    text = text.replace(/DATOS OOC DEL JUGADOR/gi, ' ');
     text = text.replace(/\s+/g, ' ').trim();
 
     return text;
@@ -624,13 +612,14 @@ function getAiFeedbackData() {
         learnedHumanPatterns: {},
         deniedPhrasesCount: {},
         approvedPhrasesCount: {},
+        processedFormIds: {},
         samples: []
     };
 
     if (fs.existsSync(AI_FEEDBACK_FILE)) {
         try {
             const parsed = JSON.parse(fs.readFileSync(AI_FEEDBACK_FILE, 'utf8'));
-            return { ...defaultData, ...parsed };
+            return { ...defaultData, ...parsed, processedFormIds: parsed.processedFormIds || {} };
         } catch (e) {
             console.error('Error al leer ai_feedback.json:', e);
         }
@@ -660,9 +649,9 @@ function extractInformativeNGrams(text, n = 3) {
 
     for (let i = 0; i <= words.length - n; i++) {
         const slice = words.slice(i, i + n);
-        // Debe tener al menos 2 palabras que NO sean stopwords
+        // Debe tener al menos 1 palabra de contenido sustancial
         const nonStopCount = slice.filter(w => !SPANISH_STOP_WORDS.has(w)).length;
-        if (nonStopCount >= 2) {
+        if (nonStopCount >= 1) {
             ngrams.push(slice.join(' '));
         }
     }
@@ -670,12 +659,18 @@ function extractInformativeNGrams(text, n = 3) {
 }
 
 // Función que registra el resultado final de un Staff (Aprobada / Denegada) y retroalimenta contrastivamente
-function registerFeedbackOutcome(applicantKey, decisionType, text = '', shouldSave = true) {
+function registerFeedbackOutcome(applicantKey, decisionType, text = '', shouldSave = true, formKey = null) {
     if (!applicantKey) return;
 
     const data = getAiFeedbackData();
     const isApproved = decisionType === 'APROBADA';
     const isDenied = decisionType === 'DENEGADA';
+
+    if (formKey) {
+        if (!data.processedFormIds) data.processedFormIds = {};
+        if (data.processedFormIds[formKey]) return; // Ya aprendido, ignorar
+        data.processedFormIds[formKey] = true;
+    }
 
     let targetText = text;
     if (!targetText && pendingAuditsMap.has(applicantKey)) {
@@ -684,7 +679,7 @@ function registerFeedbackOutcome(applicantKey, decisionType, text = '', shouldSa
 
     // Limpiar texto para aislar respuestas
     const candidateOnly = extractCandidateAnswers(targetText);
-    if (!candidateOnly || candidateOnly.length < 20) return;
+    if (!candidateOnly || candidateOnly.length < 15) return;
 
     data.totalSamples = (data.totalSamples || 0) + 1;
     if (isApproved) data.approvedSamples = (data.approvedSamples || 0) + 1;
@@ -696,6 +691,7 @@ function registerFeedbackOutcome(applicantKey, decisionType, text = '', shouldSa
     if (!data.learnedHumanPatterns) data.learnedHumanPatterns = {};
 
     const ngrams = [
+        ...extractInformativeNGrams(candidateOnly, 2),
         ...extractInformativeNGrams(candidateOnly, 3),
         ...extractInformativeNGrams(candidateOnly, 4)
     ];
@@ -2527,15 +2523,21 @@ async function autoBootstrapChannelHistory() {
                 const decision = isAprob ? 'APROBADA' : 'DENEGADA';
                 const userMatch = fullMsgText.match(/<@!?(\d{17,20})>/) || fullMsgText.match(/Solicitante[:\s*]+@?([^\n\r]+)/i);
                 const userKey = userMatch ? (userMatch[1] ? `<@${userMatch[1]}>` : `@${userMatch[1]}`) : `Hist_${msg.id}`;
+                const formKey = `${msg.id}_${decision}`;
 
-                registerFeedbackOutcome(userKey, decision, fullMsgText, false);
+                const currentAiData = getAiFeedbackData();
+                if (currentAiData.processedFormIds && currentAiData.processedFormIds[formKey]) {
+                    continue; // Ya aprendida previamente, no duplicar
+                }
+
+                registerFeedbackOutcome(userKey, decision, fullMsgText, false, formKey);
                 learned++;
             }
         }
 
         const data = getAiFeedbackData();
         saveAiFeedbackData(data);
-        console.log(`✅ [AUTO-CALIBRACIÓN COMPLETADA] Formularios analizados: ${learned} de ${allMessages.length} mensajes leídos | Clichés IA únicos: ${Object.keys(data.learnedClichés || {}).length} | Patrones humanos: ${Object.keys(data.learnedHumanPatterns || {}).length}`);
+        console.log(`✅ [AUTO-CALIBRACIÓN COMPLETADA] Formularios nuevos procesados: ${learned} de ${allMessages.length} leídos | Total en base: ${data.totalSamples || 0} | Clichés IA: ${Object.keys(data.learnedClichés || {}).length} | Patrones humanos: ${Object.keys(data.learnedHumanPatterns || {}).length}`);
     } catch (e) {
         console.error('⚠️ Error en autoBootstrapChannelHistory:', e.message);
     }
@@ -3308,7 +3310,7 @@ function buildEventosPanelEmbed() {
     const logoPath = path.join(__dirname, 'assets', 'logo.png');
     const bannerPath = path.join(__dirname, 'assets', 'panel_eventos.png');
     const embed = new EmbedBuilder()
-        .setColor(0x00E5FF) // Azul Turquesa Neón VIP
+        .setColor(0xF1C40F) // Amarillo Oro / Dorado vibrante
         .setAuthor({
             name: 'SISTEMA DE EVENTOS | SPAIN RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -3548,7 +3550,7 @@ function buildEventoCardEmbed({ id, reporterId, reporterTag, title, description,
     const finalDescription = descSections.join('\n');
 
     const mainEmbed = new EmbedBuilder()
-        .setColor(0x00E5FF) // Turquesa neón
+        .setColor(0xF1C40F) // Amarillo Oro / Dorado vibrante
         .setAuthor({
             name: `🎉 | SISTEMA DE EVENTOS | SPAIN RP 👑`,
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
