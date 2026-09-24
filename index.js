@@ -475,6 +475,102 @@ function saveStaffRating({ userId, userName, staffId, staffTag, rating, comment 
     return { entry, stats: s };
 }
 
+function parseRatingFromMessage(msg) {
+    let userMention = null;
+    let userId = null;
+    let userName = 'Usuario';
+    let staffMention = null;
+    let staffId = null;
+    let staffTag = 'Staff';
+    let numRating = null;
+    let comment = '';
+    const timestamp = (msg.createdAt || new Date()).toISOString();
+
+    const fullContent = [
+        msg.content || '',
+        ...(msg.embeds || []).map(e => [
+            e.title || '',
+            e.description || '',
+            e.author?.name || '',
+            e.footer?.text || '',
+            ...(e.fields || []).map(f => `${f.name}: ${f.value}`)
+        ].join('\n'))
+    ].join('\n');
+
+    if (!fullContent) return null;
+
+    // 1. Extraer Staff
+    const staffIdMatch = fullContent.match(/Miembro del Staff Evaluado[^\n]*\n?>\s*<@!?(\d{17,20})>/i) ||
+        fullContent.match(/Staff Evaluado[^\n]*\n?>\s*<@!?(\d{17,20})>/i) ||
+        fullContent.match(/Staff[^\n]*:\s*<@!?(\d{17,20})>/i) ||
+        fullContent.match(/<@!?(\d{17,20})>\s*!/i);
+
+    if (staffIdMatch) {
+        staffId = staffIdMatch[1];
+    } else {
+        // Si no hay mención directa con formato, buscar cualquier mención en el embed
+        const allMentions = fullContent.match(/<@!?(\d{17,20})>/g);
+        if (allMentions && allMentions.length >= 2) {
+            // Normalmente la 1a es el usuario y la 2a el staff
+            staffId = allMentions[1].replace(/[<@!>]/g, '');
+        } else if (allMentions && allMentions.length === 1) {
+            staffId = allMentions[0].replace(/[<@!>]/g, '');
+        }
+    }
+
+    // 2. Extraer Usuario
+    const userIdMatch = fullContent.match(/Usuario que Valora[^\n]*\n?>\s*<@!?(\d{17,20})>/i) ||
+        fullContent.match(/Usuario[^\n]*\n?>\s*<@!?(\d{17,20})>/i);
+    if (userIdMatch) {
+        userId = userIdMatch[1];
+    } else {
+        const allMentions = fullContent.match(/<@!?(\d{17,20})>/g);
+        if (allMentions && allMentions.length >= 2) {
+            userId = allMentions[0].replace(/[<@!>]/g, '');
+        }
+    }
+
+    // 3. Extraer Nota (1 al 10)
+    const ratingMatch = fullContent.match(/Puntuaci[oó]n Otorgada[^\n]*\n?>\s*`?(\d{1,2})\/10`?/i) ||
+        fullContent.match(/Puntuaci[oó]n[^\n]*:\s*`?(\d{1,2})\/10`?/i) ||
+        fullContent.match(/`?(\d{1,2})\/10`?/i) ||
+        fullContent.match(/Nota[^\n]*:\s*(\d{1,2})/i);
+
+    if (ratingMatch) {
+        numRating = parseInt(ratingMatch[1], 10);
+    }
+
+    // 4. Extraer Comentario
+    const commentMatch = fullContent.match(/Opini[oó]n y Experiencia del Usuario[^\n]*\n?>\s*[\*"]*([\s\S]*?)[\*"]*\n\n📈/i) ||
+        fullContent.match(/Opini[oó]n y Experiencia del Usuario[^\n]*\n?>\s*[\*"]*([\s\S]*?)[\*"]*(?:\n\n|\n>|$)/i) ||
+        fullContent.match(/Comentario[^\n]*:\s*[\*"]*([^\n]+)/i);
+
+    if (commentMatch) {
+        comment = commentMatch[1].replace(/^[\*"\s]+|[\*"\s]+$/g, '').trim();
+    }
+
+    if (!staffId || !numRating || isNaN(numRating) || numRating < 1 || numRating > 10) {
+        return null;
+    }
+
+    const member = msg.guild?.members?.cache?.get(staffId);
+    if (member) staffTag = member.user?.tag || member.displayName;
+
+    const userMember = userId ? msg.guild?.members?.cache?.get(userId) : null;
+    if (userMember) userName = userMember.user?.tag || userMember.displayName;
+
+    return {
+        id: msg.id,
+        userId: userId || 'unknown',
+        userName,
+        staffId,
+        staffTag,
+        rating: numRating,
+        comment: comment || 'Sin comentario',
+        timestamp
+    };
+}
+
 async function syncStaffRatingsFromChannel(targetChannel = null) {
     try {
         const channelId = targetChannel?.id || botConfig.CHANNEL_VALORACIONES_ID;
@@ -483,7 +579,7 @@ async function syncStaffRatingsFromChannel(targetChannel = null) {
         const channel = targetChannel || await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return { success: false, error: 'No se pudo acceder al canal de valoraciones.' };
 
-        console.log(`🔍 [SYNC VALORACIONES] Escaneando historial del canal #${channel.name} (${channel.id})...`);
+        console.log(`🔍 [SYNC VALORACIONES] Escaneando historial completo del canal #${channel.name} (${channel.id})...`);
 
         let allMessages = [];
         let lastId = null;
@@ -504,69 +600,33 @@ async function syncStaffRatingsFromChannel(targetChannel = null) {
         let importedCount = 0;
 
         for (const msg of allMessages) {
-            if (!msg.embeds || msg.embeds.length === 0) continue;
-            for (const embed of msg.embeds) {
-                const desc = embed.description || '';
-                const authorName = embed.author?.name || '';
-                if (!authorName.includes('VALORACIONES') && !desc.includes('valoración para el Staff') && !desc.includes('Miembro del Staff Evaluado')) {
-                    continue;
+            const parsed = parseRatingFromMessage(msg);
+            if (!parsed) continue;
+
+            const isDuplicate = existingRatings.some(r => {
+                if (r.id === parsed.id) return true;
+                if (r.staffId === parsed.staffId && r.userId === parsed.userId && r.rating === parsed.rating && Math.abs(new Date(r.timestamp).getTime() - new Date(parsed.timestamp).getTime()) < 60000) {
+                    return true;
                 }
+                return false;
+            });
 
-                const userMatch = desc.match(/Usuario que Valora:\s*\n?>\s*<@!?(\d{17,20})>/i);
-                const staffMatch = desc.match(/Miembro del Staff Evaluado:\s*\n?>\s*<@!?(\d{17,20})>/i);
-                const ratingMatch = desc.match(/Puntuación Otorgada:\s*\n?>\s*`?(\d{1,2})\/10`?/i);
-                const commentMatch = desc.match(/Opinión y Experiencia del Usuario:\s*\n?>\s*[\*"]*([\s\S]*?)[\*"]*\n\n📈/i) ||
-                    desc.match(/Opinión y Experiencia del Usuario:\s*\n?>\s*([\s\S]*?)(?:\n\n|\n>|$)/i);
-
-                if (staffMatch && ratingMatch) {
-                    const userId = userMatch ? userMatch[1] : (msg.author?.id || 'unknown');
-                    const staffId = staffMatch[1];
-                    const numRating = parseInt(ratingMatch[1], 10);
-                    const comment = commentMatch ? commentMatch[1].replace(/^[\*"]+|[\*"]+$/g, '').trim() : '';
-                    const timestamp = (embed.timestamp ? new Date(embed.timestamp) : msg.createdAt).toISOString();
-
-                    const isDuplicate = existingRatings.some(r => {
-                        if (r.id === msg.id) return true;
-                        if (r.staffId === staffId && r.userId === userId && r.rating === numRating && Math.abs(new Date(r.timestamp).getTime() - new Date(timestamp).getTime()) < 60000) {
-                            return true;
-                        }
-                        return false;
-                    });
-
-                    if (!isDuplicate) {
-                        let staffTag = 'Staff';
-                        const member = channel.guild?.members?.cache?.get(staffId);
-                        if (member) staffTag = member.user?.tag || member.displayName;
-
-                        let userName = 'Usuario';
-                        const userMember = channel.guild?.members?.cache?.get(userId);
-                        if (userMember) userName = userMember.user?.tag || userMember.displayName;
-
-                        existingRatings.push({
-                            id: msg.id,
-                            userId,
-                            userName,
-                            staffId,
-                            staffTag,
-                            rating: numRating,
-                            comment: comment || 'Sin comentario',
-                            timestamp
-                        });
-
-                        if (!currentData.staffList.includes(staffId)) {
-                            currentData.staffList.push(staffId);
-                        }
-
-                        importedCount++;
-                    }
+            if (!isDuplicate) {
+                existingRatings.push(parsed);
+                if (!currentData.staffList.includes(parsed.staffId)) {
+                    currentData.staffList.push(parsed.staffId);
                 }
+                importedCount++;
             }
         }
 
         currentData.ratings = existingRatings;
         saveStaffRatingsData(currentData);
 
-        console.log(`✅ [SYNC VALORACIONES] Sincronización completada. ${importedCount} nuevas valoraciones recuperadas. Total en BD: ${existingRatings.length}`);
+        // Actualizar automáticamente el panel de Tops si existe
+        await updateStaffTopRankingPanel().catch(() => { });
+
+        console.log(`✅ [SYNC VALORACIONES] Sincronización completada. ${importedCount} nuevas valoraciones añadidas al Top. Total en BD: ${existingRatings.length}`);
         return { success: true, importedCount, totalRatings: existingRatings.length, stats: currentData.stats };
     } catch (err) {
         console.error('Error al sincronizar valoraciones desde el canal:', err);
@@ -2628,6 +2688,16 @@ client.once(Events.ClientReady, async () => {
 
         // 5. Auto-Calibración en background usando el historial del canal de Whitelist
         setTimeout(autoBootstrapChannelHistory, 3000);
+
+        // 6. Auto-Sincronización inicial del canal de valoraciones con el panel de Tops
+        setTimeout(async () => {
+            try {
+                console.log('⭐ [AUTO-SYNC] Ejecutando sincronización automática inicial de valoraciones y panel de Tops...');
+                await syncStaffRatingsFromChannel();
+            } catch (e) {
+                console.error('Error en sync inicial de valoraciones:', e);
+            }
+        }, 5000);
     } catch (readyErr) {
         console.error('❌ Error en evento Ready:', readyErr);
     }
@@ -3091,18 +3161,38 @@ function buildStaffTopRankingEmbed() {
 async function updateStaffTopRankingPanel() {
     try {
         const channelId = botConfig.CHANNEL_VALORACION_PANEL_ID;
-        const messageId = botConfig.MESSAGE_TOP_STAFF_ID;
-        if (!channelId || !messageId) return false;
+        if (!channelId) return false;
 
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return false;
 
-        const targetMessage = await channel.messages.fetch(messageId).catch(() => null);
+        let targetMessage = null;
+        if (botConfig.MESSAGE_TOP_STAFF_ID) {
+            targetMessage = await channel.messages.fetch(botConfig.MESSAGE_TOP_STAFF_ID).catch(() => null);
+        }
+
+        // Si no se encuentra por ID guardada, buscar activamente en los mensajes del canal
+        if (!targetMessage) {
+            const fetched = await channel.messages.fetch({ limit: 25 }).catch(() => null);
+            if (fetched) {
+                targetMessage = fetched.find(m =>
+                    m.author.id === client.user.id &&
+                    m.embeds.some(e =>
+                        (e.title && e.title.includes('Top Miembros del Equipo')) ||
+                        (e.author?.name && e.author.name.includes('RANKING DE ATENCIÓN DE STAFF'))
+                    )
+                );
+                if (targetMessage) {
+                    updateConfig('MESSAGE_TOP_STAFF_ID', targetMessage.id);
+                }
+            }
+        }
+
         if (!targetMessage) return false;
 
         const { topEmbed } = buildStaffTopRankingEmbed();
         await targetMessage.edit({ embeds: [topEmbed] }).catch(() => { });
-        console.log(`🏆 [RANKING AUTO-UPDATE] Mensaje de Top Staff (${messageId}) actualizado con éxito.`);
+        console.log(`🏆 [RANKING AUTO-UPDATE] Mensaje de Top Staff (${targetMessage.id}) en #${channel.name} actualizado con éxito.`);
         return true;
     } catch (e) {
         console.error('Error al actualizar panel de top staff:', e);
@@ -7002,6 +7092,26 @@ client.on('messageCreate', async (message) => {
 
             console.log(`✨ [TEST BIENVENIDA] Prueba de bienvenida enviada en #${message.channel.name} por ${message.author.tag}`);
             return;
+        }
+    }
+
+    // Si se envía un mensaje en el canal oficial de valoraciones (incluso por otros bots/admins), auto-sincronizar y actualizar el Top
+    if (botConfig.CHANNEL_VALORACIONES_ID && message.channel.id === botConfig.CHANNEL_VALORACIONES_ID) {
+        const parsed = parseRatingFromMessage(message);
+        if (parsed) {
+            const currentData = getStaffRatingsData();
+            const existingRatings = currentData.ratings || [];
+            const isDuplicate = existingRatings.some(r => r.id === parsed.id || (r.staffId === parsed.staffId && r.userId === parsed.userId && r.rating === parsed.rating && Math.abs(new Date(r.timestamp).getTime() - new Date(parsed.timestamp).getTime()) < 60000));
+            if (!isDuplicate) {
+                existingRatings.push(parsed);
+                if (!currentData.staffList.includes(parsed.staffId)) {
+                    currentData.staffList.push(parsed.staffId);
+                }
+                currentData.ratings = existingRatings;
+                saveStaffRatingsData(currentData);
+                await updateStaffTopRankingPanel().catch(() => { });
+                console.log(`⭐ [VALORACIÓN EN VIVO] Valoración registrada para Staff ${parsed.staffTag} (${parsed.rating}/10). Panel de Tops actualizado.`);
+            }
         }
     }
 
