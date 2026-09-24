@@ -7725,4 +7725,13 @@ if (process.stdin.isTTY || process.env.NODE_ENV !== 'production') {
 }
 
 // Iniciar sesión en Discord
-client.login(process.env.DISCORD_TOKEN);
+if (!process.env.DISCORD_TOKEN) {
+    console.error('❌ [ERROR CRÍTICO] La variable de entorno DISCORD_TOKEN no está configurada en Render.');
+} else {
+    console.log('🔑 [DISCORD] Conectando a la API de Discord...');
+    client.login(process.env.DISCORD_TOKEN).then(() => {
+        console.log('✅ [DISCORD] Token validado y sesión iniciada correctamente.');
+    }).catch(err => {
+        console.error('❌ [ERROR LOGIN DISCORD]:', err.message);
+    });
+}
