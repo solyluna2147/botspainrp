@@ -2647,14 +2647,14 @@ client.once(Events.ClientReady, async () => {
         console.log(`🎮 [FIVEM]       IP: ${botConfig.FIVEM_SERVER_IP} (CFX: ${botConfig.FIVEM_CFX_CODE})`);
         console.log(`==================================================\n`);
 
-        // Función para actualizar la presencia del bot exclusivamente con los jugadores en tiempo real
+        // Función para actualizar la presencia del bot (siempre en estado Online 🟢)
         const updateBotPresence = async () => {
             try {
                 const state = await fetchFiveMServerStatus();
                 if (state && state.online) {
                     client.user.setPresence({
                         activities: [{
-                            name: `${state.players}/${state.maxPlayers} Jugadores`,
+                            name: `${state.players}/${state.maxPlayers} Jugadores • SPAIN RP`,
                             type: ActivityType.Watching
                         }],
                         status: 'online'
@@ -2662,13 +2662,21 @@ client.once(Events.ClientReady, async () => {
                 } else {
                     client.user.setPresence({
                         activities: [{
-                            name: 'Servidor en Mantenimiento',
-                            type: ActivityType.Watching
+                            name: 'SPAIN RP 🇪🇸',
+                            type: ActivityType.Playing
                         }],
-                        status: 'dnd'
+                        status: 'online'
                     });
                 }
-            } catch (err) { }
+            } catch (err) {
+                client.user.setPresence({
+                    activities: [{
+                        name: 'SPAIN RP 🇪🇸',
+                        type: ActivityType.Playing
+                    }],
+                    status: 'online'
+                });
+            }
         };
 
         // 1. Actualización inicial de presencia (en segundo plano)
