@@ -158,11 +158,28 @@ const sancionSchema = new mongoose.Schema({
     timestamp: { type: Date, default: Date.now }
 }, { timestamps: true });
 
+const eventoSchema = new mongoose.Schema({
+    id: { type: String, unique: true },
+    reporterId: String,
+    reporterTag: String,
+    title: String,
+    description: String,
+    hora: String,
+    lugar: String,
+    organiza: String,
+    ping: String,
+    imageUrl: String,
+    channelId: String,
+    messageId: String,
+    timestamp: { type: Date, default: Date.now }
+}, { timestamps: true });
+
 const BotSettingModel = mongoose.model('BotSetting', botSettingSchema);
 const StaffRatingDataModel = mongoose.model('StaffRatingData', staffRatingDataSchema);
 const StreamerModel = mongoose.model('Streamer', streamerSchema);
 const AiFeedbackModel = mongoose.model('AiFeedback', aiFeedbackSchema);
 const SancionModel = mongoose.model('Sancion', sancionSchema);
+const EventoModel = mongoose.model('Evento', eventoSchema);
 
 let isMongoConnected = false;
 
@@ -239,6 +256,12 @@ async function syncDataFromMongo() {
             await AiFeedbackModel.create({ docId: 'main', data: localAi }).catch(() => { });
         }
 
+        // 5. Historial de Eventos
+        const eventosDb = await EventoModel.find().sort({ createdAt: -1 }).limit(500);
+        if (eventosDb.length > 0) {
+            fs.writeFileSync(EVENTOS_FILE, JSON.stringify(eventosDb, null, 2), 'utf8');
+        }
+
         console.log('🔄 [MONGODB ATLAS] Datos sincronizados correctamente desde la nube.');
     } catch (e) {
         console.error('Error al sincronizar desde MongoDB:', e);
@@ -261,6 +284,9 @@ function loadDynamicConfig() {
         CHANNEL_VALORACIONES_ID: process.env.CHANNEL_VALORACIONES_ID || '1552087605980561448',
         CHANNEL_SANCIONES_ID: process.env.CHANNEL_SANCIONES_ID || '',
         CHANNEL_SANCIONES_PANEL_ID: process.env.CHANNEL_SANCIONES_PANEL_ID || '',
+        CHANNEL_EVENTOS_ID: process.env.CHANNEL_EVENTOS_ID || '',
+        CHANNEL_EVENTOS_2_ID: process.env.CHANNEL_EVENTOS_2_ID || '',
+        CHANNEL_EVENTOS_PANEL_ID: process.env.CHANNEL_EVENTOS_PANEL_ID || '',
         CHANNEL_BIENVENIDAS_ID: process.env.CHANNEL_BIENVENIDAS_ID || '',
         ROLE_STAFF_ID: process.env.ROLE_STAFF_ID || '1538191116610838691',
         ROLE_STREAMER_ID: process.env.ROLE_STREAMER_ID || '',
@@ -2518,7 +2544,7 @@ async function sendApprovedNotification({ userMention, staffName = 'Equipo de St
     const embedAprobado = new EmbedBuilder()
         .setColor(0x2ECC71) // Verde esmeralda brillante
         .setAuthor({
-            name: 'SISTEMA DE WHITELIST | SPAIN RP \uD83C\uDDEA\uD83C\uDDF8',
+            name: 'SISTEMA DE WHITELIST | SPAIN RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail('attachment://logo.png')
@@ -2589,7 +2615,7 @@ async function sendDeniedNotification({ userMention, staffName = 'Equipo de Staf
     const embedDenegado = new EmbedBuilder()
         .setColor(0xE74C3C) // Rojo carmesí
         .setAuthor({
-            name: 'SISTEMA DE WHITELIST | SPAIN RP \uD83C\uDDEA\uD83C\uDDF8',
+            name: 'SISTEMA DE WHITELIST | SPAIN RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail('attachment://logo.png')
@@ -3199,6 +3225,341 @@ function buildSancionCardEmbed({ id, reporterId, reporterTag, targetId, targetTa
 }
 
 // ==========================================
+// SISTEMA DE EVENTOS OFICIALES (SPAIN RP)
+// ==========================================
+const EVENTOS_FILE = path.join(__dirname, 'eventos.json');
+const pendingEventosAwaitingImage = new Map(); // staffId -> { id, reporterId, reporterTag, title, description, hora, lugar, organiza, ping, channelId, expiresAt }
+
+function getEventosData() {
+    if (fs.existsSync(EVENTOS_FILE)) {
+        try {
+            return JSON.parse(fs.readFileSync(EVENTOS_FILE, 'utf8'));
+        } catch (e) {
+            console.error('Error al leer eventos.json:', e);
+        }
+    }
+    return [];
+}
+
+async function saveEventoRecord(eventoObj) {
+    const data = getEventosData();
+    const cleanRecord = {
+        id: eventoObj.id,
+        reporterId: eventoObj.reporterId,
+        reporterTag: eventoObj.reporterTag,
+        title: eventoObj.title,
+        description: eventoObj.description,
+        hora: eventoObj.hora,
+        lugar: eventoObj.lugar,
+        organiza: eventoObj.organiza,
+        ping: eventoObj.ping,
+        imageUrl: eventoObj.imageUrl,
+        channelId: eventoObj.channelId,
+        timestamp: new Date().toISOString()
+    };
+
+    data.push(cleanRecord);
+    try {
+        if (data.length > 500) {
+            data.splice(0, data.length - 500);
+        }
+        fs.writeFileSync(EVENTOS_FILE, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) {
+        console.error('Error al guardar eventos.json:', e);
+    }
+    if (isMongoConnected) {
+        try {
+            await EventoModel.create(cleanRecord);
+        } catch (e) {
+            console.error('Error guardando evento en Mongo:', e);
+        }
+    }
+}
+
+function buildEventosPanelEmbed() {
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const bannerPath = path.join(__dirname, 'assets', 'panel_eventos.png');
+    const embed = new EmbedBuilder()
+        .setColor(0x00E5FF) // Azul Turquesa Neón VIP
+        .setAuthor({
+            name: 'SISTEMA DE EVENTOS | SPAIN RP',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setTitle('🎉 GESTIÓN Y PUBLICACIÓN OFICIAL DE EVENTOS')
+        .setDescription(
+            `Bienvenido al **Panel Oficial de Publicación de Eventos** para el equipo de Staff de **SPAIN RP** 🇪🇸.\n\n` +
+            `Este sistema permite anunciar quedadas, exhibiciones, carreras, fiestas y eventos especiales de la ciudad con una maquetación automática y diseño prémium.\n\n` +
+            `📋 **¿Cómo publicar un nuevo evento?**\n` +
+            `> 1️⃣ Pulsa el botón **"📢 Publicar Evento"** aquí abajo.\n` +
+            `> 2️⃣ Pega todo el **texto con la información** (el bot detectará y maquetará el título, hora, lugar, organizador y actividades automáticamente).\n` +
+            `> 3️⃣ Envía el **cartel / flyer / foto** en el chat cuando el bot te lo solicite.\n\n` +
+            `💡 *El bot publicará el anuncio automáticamente en los canales oficiales de eventos con mención @everyone y formato de lujo.*`
+        )
+        .setFooter({
+            text: 'SPAIN RP • Sistema Oficial de Eventos Staff',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    if (fs.existsSync(bannerPath)) {
+        embed.setImage('attachment://panel_eventos.png');
+    }
+
+    return embed;
+}
+
+function buildEventosPanelRow() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('btn_abrir_modal_evento')
+            .setLabel('Publicar Evento')
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji('📢')
+    );
+}
+
+function buildEventoCardEmbed({ id, reporterId, reporterTag, title, description, hora, lugar, organiza, ping, imageUrl, imageAttachment, mediaFiles = [] }) {
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const files = [];
+    if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+
+    const canalGeneral = `<#${botConfig.CHANNEL_GENERAL_ID || '1517530849032016002'}>`;
+
+    // Procesar y reestructurar el texto libre que introduce el Staff de forma dinámica e inteligente
+    const rawText = (description || '').trim();
+    let extractedTitle = (title || '').trim();
+    let extractedIntro = [];
+    let extractedHora = (hora || '').trim();
+    let extractedLugar = (lugar || '').trim();
+    let extractedOrganiza = (organiza || '').trim();
+    let extractedDressCode = '';
+    let extractedFecha = '';
+    let extractedPremio = '';
+    let extractedPoints = [];
+    let extractedOutro = [];
+    let eventTitleClean = extractedTitle;
+
+    if (rawText) {
+        // Sanitizar menciones como @everyone, @here o roles para que no se dupliquen dentro del texto del embed
+        let sanitizedText = rawText.replace(/@(everyone|here|<@&?\d+>)/gi, '').trim();
+        let lines = sanitizedText.split('\n').map(l => l.trim()).filter(Boolean);
+
+        // Si no se proporcionó título separado, detectar si la primera línea es un encabezado/título
+        if (!extractedTitle && lines.length > 0) {
+            const firstLine = lines[0];
+            const isTitleCandidate = /^(?:[🚗🏎️🔥🏁🇯🇵👑⚡⭐🎉🥂💃🕺🎭🏆🥊🔫💰📍📌💎🍸]|\s)*(?:QUEDADA|EXHIBICI[OÓ]N|EVENTO|CARRERA|FIESTA|TORNEO|RUTA|ROBO|BATALLA|CONCENTRACI[OÓ]N|TEQU[IÍ]\-LA\-LA|DISCOTECA|GALA|INAUGURACI[OÓ]N|NOCHE|PRESENTA|B[UÚ]SQUEDA)/i.test(firstLine) ||
+                (firstLine.length < 75 && !/^(?:hora|lugar|organiza|fecha|dress|c[oó]digo|¡|¿|\-|\•|\*)/i.test(firstLine) && !firstLine.includes('...'));
+
+            if (isTitleCandidate) {
+                extractedTitle = firstLine.replace(/^[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]+|[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ!?]+$/gi, '').trim();
+                lines = lines.slice(1);
+            }
+        }
+
+        eventTitleClean = extractedTitle || 'EVENTO OFICIAL DE LA COMUNIDAD';
+
+        for (let i = 0; i < lines.length; i++) {
+            let line = lines[i];
+
+            // Ignorar repeticiones exactas del título o líneas vacías
+            const cleanLineLower = line.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const titleLower = eventTitleClean.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (cleanLineLower === titleLower && cleanLineLower.length > 5) {
+                continue;
+            }
+
+            // Detectar si la línea es un campo de datos clave (clave: valor)
+            const isHora = /^(?:[\p{Extended_Pictographic}\s])*(?:hora|horario)[:\s]+/ui.test(line) || /^(?:hora|horario)[:\s]+/i.test(line);
+            const isLugar = /^(?:[\p{Extended_Pictographic}\s])*(?:lugar|ubicaci[oó]n|quedada|punto\s+de\s+salida|sitio)[:\s]+/ui.test(line);
+            const isDestino = /^(?:[\p{Extended_Pictographic}\s])*(?:destino)[:\s]+/ui.test(line);
+            const isPremio = /^(?:[\p{Extended_Pictographic}\s])*(?:premio|bote|recompensa)[:\s]+/ui.test(line);
+            const isOrganiza = /^(?:[\p{Extended_Pictographic}\s])*(?:organiza|organizador|organizaci[oó]n)[:\s]+/ui.test(line);
+            const isDress = /^(?:[\p{Extended_Pictographic}\s])*(?:dress\s*code|dresscode|vestimenta)[:\s]+/ui.test(line);
+            const isFecha = /^(?:[\p{Extended_Pictographic}\s])*(?:fecha|d[ií]a)[:\s]+/ui.test(line);
+
+            if (isHora) {
+                let cleanVal = line.replace(/^(?:[\p{Extended_Pictographic}\s])*(?:hora|horario)[:\s]*/ui, '').trim();
+                if (!extractedHora && cleanVal) extractedHora = cleanVal;
+            } else if (isLugar) {
+                let cleanVal = line.replace(/^(?:[\p{Extended_Pictographic}\s])*(?:lugar|ubicaci[oó]n|quedada|punto\s+de\s+salida|sitio)[:\s]*/ui, '').trim();
+                if (!extractedLugar && cleanVal) extractedLugar = cleanVal;
+            } else if (isDestino) {
+                let cleanVal = line.replace(/^(?:[\p{Extended_Pictographic}\s])*(?:destino)[:\s]*/ui, '').trim();
+                if (cleanVal) extractedLugar = extractedLugar ? `${extractedLugar} ➔ ${cleanVal}` : cleanVal;
+            } else if (isPremio) {
+                let cleanVal = line.replace(/^(?:[\p{Extended_Pictographic}\s])*(?:premio|bote|recompensa)[:\s]*/ui, '').trim();
+                if (!extractedPremio && cleanVal) extractedPremio = cleanVal;
+            } else if (isOrganiza) {
+                let cleanVal = line.replace(/^(?:[\p{Extended_Pictographic}\s])*(?:organiza|organizador|organizaci[oó]n)[:\s]*/ui, '').trim();
+                if (!extractedOrganiza && cleanVal) extractedOrganiza = cleanVal;
+            } else if (isDress) {
+                let cleanVal = line.replace(/^(?:[\p{Extended_Pictographic}\s])*(?:dress\s*code|dresscode|vestimenta)[:\s]*/ui, '').trim();
+                if (!extractedDressCode && cleanVal) extractedDressCode = cleanVal;
+            } else if (isFecha) {
+                let cleanVal = line.replace(/^(?:[\p{Extended_Pictographic}\s])*(?:fecha|d[ií]a)[:\s]*/ui, '').trim();
+                if (!extractedFecha && cleanVal) extractedFecha = cleanVal;
+            } else if (/^(?:[📍📌]|\s)*(?:TEQU[IÍ]\-LA\-LA|TALLER|BAHAMA|CASINO|MAFIA|GANG|POLIC[IÍ]A|BENNYS)/i.test(line) && !extractedLugar) {
+                extractedLugar = line.replace(/^(?:[📍📌🗺️]|\s)*/, '').trim();
+            } else if (/^(?:[📅🗓️]|\s)*(?:LUNES|MARTES|MI[EÉ]RCOLES|JUEVES|VIERNES|S[AÁ]BADO|DOMINGO)\s+\d+/i.test(line) && !extractedFecha) {
+                extractedFecha = line.replace(/^(?:[📅🗓️]|\s)*/, '').trim();
+            } else if (/arranca el motor|prepara tu coche|prepara tu 4x4|re[uú]ne a tu gente|ven a presumir|no te lo pierdas|te esperamos|prepara tu m[aá]quina|que empiece la fiesta|que empiece la guerra|no faltes|salvar la noche|etiqueta a tu|ser[aá]s t[uú]|corre\.\s*esc[oó]ndete/i.test(line)) {
+                // Llamada a la acción / Cierre del staff
+                let cleanOutro = line.replace(/^[•\-\*🔥\s]+|[🔥\s]+$/gi, '').trim();
+                if (cleanOutro) extractedOutro.push(cleanOutro);
+            } else if (/^(?:[•\-\*]|\s)*(?:[\p{Extended_Pictographic}\s])*(?:¿QU[EÉ]\s+OS\s+ESPERA\??|¿DE\s+QU[EÉ]\s+BANDO\s+VAS\??|ACTIVIDADES|PREMIOS|PROGRAMA|REQUISITOS|DETALLES|NORMAS|REGLAS)/ui.test(line)) {
+                // Es un subtítulo o encabezado de sección
+                let headerText = line.replace(/^[•\-\*]\s*/, '').trim();
+                extractedPoints.push(`**${headerText}**`);
+            } else if (line.includes('.') && line.length > 20 && !line.includes(':') && !line.startsWith('•') && !line.startsWith('-')) {
+                // Es una frase o lema narrativo completo (ej. "🔪 UNA ISLA. UN ASESINO. 50.000 €...") -> Pasa al texto de bienvenida / intro
+                extractedIntro.push(line);
+            } else if (/^(?:\p{Extended_Pictographic}|[•\-\*]|\d+\.)/u.test(line)) {
+                // Línea con viñeta / regla / detalle puntual
+                let pt = line.replace(/^[•\-\*]\s*/, '').trim();
+                extractedPoints.push(pt);
+            } else {
+                extractedIntro.push(line);
+            }
+        }
+    }
+
+    if (!eventTitleClean) eventTitleClean = 'EVENTO OFICIAL DE LA COMUNIDAD';
+
+    // Determinar emoji según temática del evento
+    let titleEmojiLeft = '🎉🔥';
+    let titleEmojiRight = '🔥✨';
+    const combinedFullText = `${eventTitleClean} ${rawText}`.toLowerCase();
+    if (combinedFullText.includes('coche') || combinedFullText.includes('motor') || combinedFullText.includes('carrera') || combinedFullText.includes('quedada') || combinedFullText.includes('taller') || combinedFullText.includes('pit stop')) {
+        titleEmojiLeft = '🚗🔥';
+        titleEmojiRight = '🔥🏁';
+    } else if (combinedFullText.includes('tequ') || combinedFullText.includes('fiesta') || combinedFullText.includes('noche') || combinedFullText.includes('disco') || combinedFullText.includes('copa') || combinedFullText.includes('shot') || combinedFullText.includes('ángel') || combinedFullText.includes('demonio')) {
+        titleEmojiLeft = '🍸🔥';
+        titleEmojiRight = '🔥🥂';
+    } else if (combinedFullText.includes('torneo') || combinedFullText.includes('boxeo') || combinedFullText.includes('lucha') || combinedFullText.includes('batalla') || combinedFullText.includes('superviviente') || combinedFullText.includes('asesino') || combinedFullText.includes('cacer') || combinedFullText.includes('isla')) {
+        titleEmojiLeft = '🔪🔥';
+        titleEmojiRight = '🔥🏆';
+    } else if (combinedFullText.includes('robo') || combinedFullText.includes('atraco') || combinedFullText.includes('polic') || combinedFullText.includes('mafia')) {
+        titleEmojiLeft = '💰🔥';
+        titleEmojiRight = '🔥🔫';
+    }
+
+    // Construcción limpia y elegante con bloques Discord
+    let descSections = [];
+    descSections.push(`\u200B`);
+
+    // 1. Introducción / Bienvenida al evento
+    if (extractedIntro.length > 0) {
+        descSections.push(extractedIntro.join('\n\n'));
+    }
+
+    // 2. Bloque de Datos (Fecha, Hora, Lugar, Premio, Organiza, Dress Code)
+    let infoFields = [];
+    if (extractedFecha) infoFields.push(`> 📅 **FECHA:** \`${extractedFecha}\``);
+    if (extractedHora) infoFields.push(`> 🕐 **HORA:** \`${extractedHora}\``);
+    if (extractedLugar) infoFields.push(`> 📍 **LUGAR:** ${extractedLugar}`);
+    if (extractedPremio) infoFields.push(`> 💰 **PREMIO:** \`${extractedPremio}\``);
+    if (extractedOrganiza) infoFields.push(`> 👑 **ORGANIZA:** ${extractedOrganiza}`);
+    if (extractedDressCode) infoFields.push(`> 👔 **DRESS CODE:** ${extractedDressCode}`);
+
+    if (infoFields.length > 0) {
+        descSections.push(`\n📌 **| Información del Evento:**\n${infoFields.join('\n')}`);
+    }
+
+    // 3. Actividades / Puntos clave / Secciones de Detalles
+    if (extractedPoints.length > 0) {
+        let currentSectionHeader = '✨ **| Detalles y Actividades:**';
+        let sectionsMap = [];
+        let currentItems = [];
+
+        for (let pt of extractedPoints) {
+            if (pt.startsWith('**') && pt.endsWith('**')) {
+                // Si ya teníamos items acumulados, guardamos la sección anterior
+                if (currentItems.length > 0) {
+                    sectionsMap.push({ header: currentSectionHeader, items: currentItems });
+                    currentItems = [];
+                }
+                // Limpiar el texto del nuevo encabezado y asegurar formato idéntico: EMOJI **| TÍTULO:**
+                let rawH = pt.replace(/^\*\*|\*\*$/g, '').trim();
+                let emojiMatch = rawH.match(/^(\p{Extended_Pictographic}+)\s*(.*)$/u);
+                if (emojiMatch) {
+                    let em = emojiMatch[1];
+                    let textH = emojiMatch[2].replace(/^\|\s*/, '').trim();
+                    if (!textH.endsWith(':') && !textH.endsWith('?')) textH += ':';
+                    currentSectionHeader = `${em} **| ${textH}**`;
+                } else {
+                    let textH = rawH.replace(/^\|\s*/, '').trim();
+                    if (!textH.endsWith(':') && !textH.endsWith('?')) textH += ':';
+                    currentSectionHeader = `✨ **| ${textH}**`;
+                }
+            } else {
+                currentItems.push(pt);
+            }
+        }
+
+        if (currentItems.length > 0) {
+            sectionsMap.push({ header: currentSectionHeader, items: currentItems });
+        }
+
+        for (let sec of sectionsMap) {
+            let itemsText = sec.items.map(p => `> • ${p}`).join('\n');
+            descSections.push(`\n${sec.header}\n${itemsText}`);
+        }
+    }
+
+    // 4. Frase de llamada a la acción
+    if (extractedOutro.length > 0) {
+        descSections.push(`\n🔥 ${extractedOutro.join('\n🔥 ')}`);
+    } else {
+        descSections.push(`\n🔥 ¡No faltes y ven a disfrutar del evento con toda la comunidad!`);
+    }
+
+    // 5. Cierre oficial
+    descSections.push(`\n🌍 **| Comenta y comparte el evento con la comunidad:**\n> ${canalGeneral} ❗\n\n🇪🇸 **| ¡Disfruta de SPAIN RP! |** 🇪🇸`);
+
+    const finalDescription = descSections.join('\n');
+
+    const mainEmbed = new EmbedBuilder()
+        .setColor(0x00E5FF) // Turquesa neón
+        .setAuthor({
+            name: `🎉 | SISTEMA DE EVENTOS | SPAIN RP 👑`,
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setTitle(`${titleEmojiLeft} ${eventTitleClean.toUpperCase()} ${titleEmojiRight}`)
+        .setDescription(finalDescription)
+        .setFooter({
+            text: `SPAIN RP • Evento Oficial de la Comunidad`,
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    const embeds = [mainEmbed];
+
+    const imageFiles = Array.isArray(mediaFiles) ? mediaFiles.filter(f => !f.name.endsWith('.mp4') && !f.name.endsWith('.mov')) : [];
+
+    if (imageFiles.length > 0) {
+        imageFiles.forEach(f => files.push(f));
+        mainEmbed.setImage(`attachment://${imageFiles[0].name}`);
+
+        if (imageFiles.length > 1) {
+            for (let i = 1; i < imageFiles.length && i < 10; i++) {
+                const extraEmbed = new EmbedBuilder()
+                    .setImage(`attachment://${imageFiles[i].name}`);
+                embeds.push(extraEmbed);
+            }
+        }
+    } else if (imageAttachment) {
+        files.push(imageAttachment);
+        mainEmbed.setImage(`attachment://${imageAttachment.name}`);
+    } else if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
+        mainEmbed.setImage(imageUrl);
+    }
+
+    return { embeds, embed: mainEmbed, files, pingText: ping || '@everyone' };
+}
+
+// ==========================================
 // 4. PROCESAMIENTO DE SOLICITUDES DEL BOT KING
 // ==========================================
 async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
@@ -3638,6 +3999,105 @@ client.on('messageCreate', async (message) => {
             }
         }
 
+        // Comprobar si este Staff tiene un evento pendiente de subir cartel / flyer
+        if (pendingEventosAwaitingImage.has(message.author.id)) {
+            const pending = pendingEventosAwaitingImage.get(message.author.id);
+            console.log(`\n🎉 [EVENTO PENDIENTE] Mensaje recibido de Staff ${message.author.tag} (${message.author.id})`);
+            console.log(`   -> Adjuntos detectados: ${message.attachments.size} | Contenido de texto: "${message.content}"`);
+
+            if (Date.now() < pending.expiresAt) {
+                const attachments = Array.from(message.attachments.values());
+                let imgUrl = null;
+
+                if (message.content.match(/^https?:\/\/\S+/i)) {
+                    imgUrl = message.content.trim();
+                    console.log(`   -> 🔗 Flyer/Cartel detectado desde enlace web: ${imgUrl}`);
+                }
+
+                const isNoPhoto = message.content.toLowerCase().includes('sin foto') || message.content.toLowerCase().includes('nofoto') || message.content.toLowerCase().includes('sin cartel');
+
+                if (attachments.length > 0 || imgUrl || isNoPhoto) {
+                    const mediaFiles = [];
+                    for (let i = 0; i < attachments.length; i++) {
+                        const att = attachments[i];
+                        try {
+                            console.log(`   -> 📥 Descargando flyer ${i + 1}/${attachments.length}: ${att.name}...`);
+                            const res = await fetch(att.url);
+                            if (res.ok) {
+                                const arrayBuffer = await res.arrayBuffer();
+                                const buffer = Buffer.from(arrayBuffer);
+                                const ext = path.extname(att.name) || '.png';
+                                const safeName = `evento_${i + 1}${ext}`;
+                                mediaFiles.push(new AttachmentBuilder(buffer, { name: safeName }));
+                                console.log(`      ✅ Flyer #${i + 1} (${safeName}) cargado en memoria (${buffer.length} bytes).`);
+                            }
+                        } catch (e) {
+                            console.error(`      ❌ Error al descargar adjunto de evento ${i + 1} (${att.name}):`, e.message);
+                        }
+                    }
+
+                    pendingEventosAwaitingImage.delete(message.author.id);
+
+                    const eventoObj = {
+                        id: pending.id,
+                        reporterId: pending.reporterId,
+                        reporterTag: pending.reporterTag,
+                        title: pending.title,
+                        description: pending.description,
+                        hora: pending.hora,
+                        lugar: pending.lugar,
+                        organiza: pending.organiza,
+                        ping: pending.ping || '@everyone',
+                        imageUrl: imgUrl,
+                        mediaFiles,
+                        channelId: message.channel.id
+                    };
+
+                    await saveEventoRecord(eventoObj);
+
+                    const { embeds, embed, files, pingText } = buildEventoCardEmbed(eventoObj);
+                    const primaryChanId = (botConfig.CHANNEL_EVENTOS_ID && botConfig.CHANNEL_EVENTOS_ID.trim()) ? botConfig.CHANNEL_EVENTOS_ID.trim() : message.channel.id;
+                    const secondaryChanId = (botConfig.CHANNEL_EVENTOS_2_ID && botConfig.CHANNEL_EVENTOS_2_ID.trim()) ? botConfig.CHANNEL_EVENTOS_2_ID.trim() : null;
+
+                    const targetChannels = [];
+                    const primaryChan = message.guild.channels.cache.get(primaryChanId) || await client.channels.fetch(primaryChanId).catch(() => null);
+                    if (primaryChan) targetChannels.push(primaryChan);
+                    else targetChannels.push(message.channel);
+
+                    if (secondaryChanId && secondaryChanId !== primaryChanId) {
+                        const secChan = message.guild.channels.cache.get(secondaryChanId) || await client.channels.fetch(secondaryChanId).catch(() => null);
+                        if (secChan) targetChannels.push(secChan);
+                    }
+
+                    console.log(`\n📢 [EVENTOS DESTINO] Publicando evento #${pending.id} en ${targetChannels.length} canal(es): ${targetChannels.map(c => `#${c.name}`).join(', ')}`);
+
+                    let sentMessage = null;
+                    for (const chan of targetChannels) {
+                        try {
+                            const sm = await chan.send({ content: pingText || '@everyone', embeds: embeds || [embed], files });
+                            if (sm && sm.id) {
+                                sentMessage = sm;
+                                console.log(`✅ [EVENTO PUBLICADO] Evento #${pending.id} anunciado con éxito en #${chan.name} (${chan.id}).`);
+                            }
+                        } catch (sendErr) {
+                            console.error(`❌ [ERROR ENVIAR EVENTO A DISCORD EN #${chan.name}]:`, sendErr);
+                        }
+                    }
+
+                    if (sentMessage && sentMessage.id) {
+                        await message.delete().catch(() => { });
+                    }
+
+                    return;
+                } else {
+                    console.log('   ⚠️ El mensaje del staff no contenía una imagen válida ni "sin foto". Sigue esperando...');
+                }
+            } else {
+                console.log('   ⏰ El tiempo de espera de 60s expiró para este evento.');
+                pendingEventosAwaitingImage.delete(message.author.id);
+            }
+        }
+
         const content = message.content.trim();
         const args = content.split(/\s+/);
         const command = args[0].toLowerCase();
@@ -3662,6 +4122,9 @@ client.on('messageCreate', async (message) => {
             '!panel-sanciones', '!panelsanciones', '!enviar-panel-sanciones', '!sancionar', '!sancion', '!sanciones', '!historial',
             '!setcanal-sanciones', '!setcanal-sancion', '!canalsanciones', '!fijar-sanciones',
             '!setcanal-panel-sanciones', '!setcanal-panelsanciones', '!canalpanelsanciones', '!fijar-panel-sanciones',
+            '!panel-evento', '!panel-eventos', '!panelevento', '!paneleventos', '!enviar-panel-eventos', '!evento', '!eventos',
+            '!setcanal-eventos', '!setcanal-evento', '!canaleventos', '!fijar-eventos',
+            '!setcanal-panel-eventos', '!setcanal-paneleventos', '!canalpaneleventos', '!fijar-panel-eventos',
             '!setcanal', '!fijar-canal', '!canal'
         ];
 
@@ -4056,6 +4519,59 @@ client.on('messageCreate', async (message) => {
             return;
         }
 
+        // ==========================================
+        // SISTEMA DE EVENTOS STAFF (!evento / !eventos)
+        // ==========================================
+        // COMANDO MANUAL: !evento <Título | Hora | Lugar | Organiza | Descripción> (con flyer adjunto opcional)
+        if (['!evento', '!eventos', '!crearevento', '!anunciarevinto', '!anunciarevents'].includes(command)) {
+            await message.delete().catch(() => { });
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+
+            const fullText = args.slice(1).join(' ').trim();
+            if (!fullText) {
+                const helpMsg = await message.channel.send({
+                    content: '⚠️ **Uso:** `!evento <Título> | <Hora> | <Lugar> | <Organiza> | <Descripción>` *(Adjunta el cartel al enviar el mensaje)*\n📌 *Ejemplo:* `!evento Quedada JDM | 18:00 | Taller Pit Stop | Taller Pit Stop | Gran exhibición de coches retro y japoneses!`'
+                }).catch(() => null);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 8000);
+                return;
+            }
+
+            const parts = fullText.split('|').map(p => p.trim());
+            const title = parts[0] || 'Evento Oficial SPAIN RP';
+            const hora = parts[1] || '';
+            const lugar = parts[2] || '';
+            const organiza = parts[3] || 'Staff SPAIN RP';
+            const description = parts.slice(4).join(' | ') || (parts.length === 1 ? parts[0] : '');
+
+            const attachment = message.attachments.first();
+            const imageUrl = attachment ? attachment.url : null;
+            const eventoId = Date.now().toString().slice(-4);
+
+            const eventoObj = {
+                id: eventoId,
+                reporterId: message.author.id,
+                reporterTag: message.author.tag || message.author.username,
+                title,
+                description,
+                hora,
+                lugar,
+                organiza,
+                ping: '@everyone',
+                imageUrl,
+                channelId: message.channel.id
+            };
+
+            await saveEventoRecord(eventoObj);
+
+            const { embeds, embed, files, pingText } = buildEventoCardEmbed(eventoObj);
+            const targetChannelId = (botConfig.CHANNEL_EVENTOS_ID && botConfig.CHANNEL_EVENTOS_ID.trim()) ? botConfig.CHANNEL_EVENTOS_ID.trim() : message.channel.id;
+            const targetChannel = await client.channels.fetch(targetChannelId).catch(() => message.channel);
+
+            await targetChannel.send({ content: pingText || '@everyone', embeds: embeds || [embed], files }).catch(e => console.error('Error al enviar evento:', e));
+            return;
+        }
+
         // COMANDO: !tops / !top-staff / !ranking-staff / !panel-tops (Envía o actualiza el mensaje fijo que NUNCA se borra)
         if (['!tops', '!top-staff', '!ranking-staff', '!stats-staff', '!valoraciones', '!topstaff', '!panel-tops', '!fijar-tops'].includes(command)) {
             await message.delete().catch(() => { });
@@ -4171,6 +4687,8 @@ client.on('messageCreate', async (message) => {
                     `📜 \`!queue\` o \`!cola\` → Muestra la lista de canciones en espera.\n` +
                     `⭐ \`!panel-valoracion\` → Publica el panel con el botón para que los usuarios valoren al Staff.\n` +
                     `🏆 \`!tops\` o \`!top-staff\` → Muestra el ranking con las mejores puntuaciones del equipo de Staff.\n` +
+                    `🚨 \`!sancionar @usuario <sanción> <motivo>\` o \`!panel-sanciones\` → Sistema de sanciones de Staff.\n` +
+                    `🎉 \`!evento <detalles>\` o \`!panel-eventos\` → Sistema de publicación de eventos con flyer oficial.\n` +
                     `🎙️ \`!hablar\` o \`!ia-voz\` → Conecta al bot al canal de voz para mantener conversación por voz con la IA en vivo.\n` +
                     `🎙️ \`!entrevista @usuario\` → Inicia la auditoría de WL Oral con transcripción y ficha de evaluación.\n` +
                     `🛑 \`!callar\` o \`!salir-voz\` → Desconecta al bot del canal de voz.\n` +
@@ -4255,6 +4773,11 @@ client.on('messageCreate', async (message) => {
                     `> 📜 **Normativas:** ${formatChannel(botConfig.CHANNEL_NORMATIVAS_ID)}\n` +
                     `> 🎫 **Tickets / Soporte:** ${formatChannel(botConfig.CHANNEL_TICKETS_ID)}\n` +
                     `> 💬 **General:** ${formatChannel(botConfig.CHANNEL_GENERAL_ID)}\n\n` +
+                    `🚨 **CANALES DE MODERACIÓN & EVENTOS:**\n` +
+                    `> ⚖️ **Sanciones:** ${formatChannel(botConfig.CHANNEL_SANCIONES_ID)}\n` +
+                    `> 📋 **Panel Sanciones:** ${formatChannel(botConfig.CHANNEL_SANCIONES_PANEL_ID)}\n` +
+                    `> 🎉 **Eventos Oficiales:** ${formatChannel(botConfig.CHANNEL_EVENTOS_ID)}\n` +
+                    `> 📢 **Panel Eventos:** ${formatChannel(botConfig.CHANNEL_EVENTOS_PANEL_ID)}\n\n` +
                     `🛡️ **ROLES:**\n` +
                     `> 👑 **Staff WL:** ${formatRole(botConfig.ROLE_STAFF_ID)}\n` +
                     `> 🟣 **Streamer:** ${formatRole(botConfig.ROLE_STREAMER_ID)}\n\n` +
@@ -4271,6 +4794,9 @@ client.on('messageCreate', async (message) => {
                     `• \`!setcanal streampanel <#canal o ID>\` *(Donde va el botón)*\n` +
                     `• \`!setcanal streamaviso <#canal o ID>\` *(Donde se publica el directo)*\n` +
                     `• \`!setcanal status <#canal o ID>\` *(Panel de jugadores)*\n` +
+                    `• \`!setcanal eventos <#canal o ID>\` *(Donde se publican los eventos)*\n` +
+                    `• \`!setcanal paneleventos <#canal o ID>\` *(Donde va el botón de eventos)*\n` +
+                    `• \`!setcanal sanciones <#canal o ID>\`\n` +
                     `• \`!setcanal normativas <#canal o ID>\`\n` +
                     `• \`!setcanal tickets <#canal o ID>\`\n` +
                     `• \`!setcanal general <#canal o ID>\`\n` +
@@ -4363,13 +4889,19 @@ client.on('messageCreate', async (message) => {
                 'valoraciones': 'CHANNEL_VALORACIONES_ID',
                 'valoracion': 'CHANNEL_VALORACIONES_ID',
                 'sanciones': 'CHANNEL_SANCIONES_ID',
-                'sancion': 'CHANNEL_SANCIONES_ID'
+                'sancion': 'CHANNEL_SANCIONES_ID',
+                'eventos': 'CHANNEL_EVENTOS_ID',
+                'evento': 'CHANNEL_EVENTOS_ID',
+                'paneleventos': 'CHANNEL_EVENTOS_PANEL_ID',
+                'panelevento': 'CHANNEL_EVENTOS_PANEL_ID',
+                'panel-eventos': 'CHANNEL_EVENTOS_PANEL_ID',
+                'panel-evento': 'CHANNEL_EVENTOS_PANEL_ID'
             };
 
             const configKey = channelKeyMap[tipo];
             if (!configKey) {
                 return message.reply({
-                    content: `❌ Tipo de canal no válido: \`${tipo}\`.\nOpciones: \`bienvenidas\`, \`solicitudes\`, \`aprobados\`, \`denegados\`, \`entrevistas\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\`, \`valoraciones\`, \`sanciones\``
+                    content: `❌ Tipo de canal no válido: \`${tipo}\`.\nOpciones: \`bienvenidas\`, \`solicitudes\`, \`aprobados\`, \`denegados\`, \`entrevistas\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\`, \`valoraciones\`, \`sanciones\`, \`eventos\`, \`paneleventos\``
                 });
             }
 
@@ -6081,6 +6613,140 @@ client.on('messageCreate', async (message) => {
         }
 
         // ====================================================
+        // COMANDOS DE CONFIGURACIÓN DE CANAL PARA EVENTOS
+        // ====================================================
+
+        // 1. Configurar dónde se PUBLICAN los eventos oficiales (Canal 1 Principal)
+        if (['!setcanal-eventos', '!setcanal-evento', '!canaleventos', '!fijar-eventos'].includes(command) ||
+            (['!setcanal', '!fijar-canal', '!canal'].includes(command) && ['evento', 'eventos', 'anuncios-eventos', 'canal-eventos', 'eventos1', 'evento1'].includes(args[1]?.toLowerCase()))) {
+            await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
+
+            const rawChannelId = args.slice(1).join(' ').match(/\d{17,20}/)?.[0];
+            let targetChannel = message.mentions.channels.first();
+
+            if (!targetChannel && rawChannelId) {
+                targetChannel = message.guild.channels.cache.get(rawChannelId) ||
+                    await client.channels.fetch(rawChannelId).catch(() => null);
+            }
+            if (!targetChannel) targetChannel = message.channel;
+
+            await updateConfig('CHANNEL_EVENTOS_ID', targetChannel.id);
+
+            const confEmbed = new EmbedBuilder()
+                .setColor(0x00E5FF)
+                .setTitle('🎉 Canal Principal de Eventos Configurado')
+                .setDescription(`✅ Los anuncios oficiales de eventos se publicarán ahora en el **Canal 1**: <#${targetChannel.id}> (\`${targetChannel.id}\`)`)
+                .setFooter({ text: 'SPAIN RP • Configuración Oficial de Eventos' })
+                .setTimestamp();
+
+            const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
+            if (confMsg) setTimeout(() => confMsg.delete().catch(() => { }), 8000);
+            console.log(`🔧 [CONFIG] Canal 1 de eventos fijado en #${targetChannel.name || targetChannel.id} (${targetChannel.id}) por ${message.author.tag}`);
+            return;
+        }
+
+        // 1.2 Configurar el SEGUNDO CANAL donde se duplican los eventos oficiales (Canal 2 Secundario)
+        if (['!setcanal-eventos2', '!setcanal-evento2', '!canaleventos2', '!fijar-eventos2'].includes(command) ||
+            (['!setcanal', '!fijar-canal', '!canal'].includes(command) && ['evento2', 'eventos2', 'anuncios-eventos2', 'canal-eventos2', 'segundo-eventos'].includes(args[1]?.toLowerCase()))) {
+            await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
+
+            const rawChannelId = args.slice(1).join(' ').match(/\d{17,20}/)?.[0];
+            let targetChannel = message.mentions.channels.first();
+
+            if (!targetChannel && rawChannelId) {
+                targetChannel = message.guild.channels.cache.get(rawChannelId) ||
+                    await client.channels.fetch(rawChannelId).catch(() => null);
+            }
+            if (!targetChannel) targetChannel = message.channel;
+
+            await updateConfig('CHANNEL_EVENTOS_2_ID', targetChannel.id);
+
+            const confEmbed = new EmbedBuilder()
+                .setColor(0x00E5FF)
+                .setTitle('🎉 Segundo Canal de Eventos Configurado (Dual-Channel)')
+                .setDescription(`✅ Los anuncios de eventos se enviarán **también** al **Canal 2**: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n*(Ahora cada evento se publicará a la vez en ambos canales).*`)
+                .setFooter({ text: 'SPAIN RP • Publicación Simultánea de Eventos' })
+                .setTimestamp();
+
+            const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
+            if (confMsg) setTimeout(() => confMsg.delete().catch(() => { }), 8000);
+            console.log(`🔧 [CONFIG] Canal 2 de eventos fijado en #${targetChannel.name || targetChannel.id} (${targetChannel.id}) por ${message.author.tag}`);
+            return;
+        }
+
+        // 2. Configurar dónde se fija o envía el PANEL para que el Staff publique eventos
+        if (['!setcanal-panel-eventos', '!setcanal-paneleventos', '!canalpaneleventos', '!fijar-panel-eventos'].includes(command) ||
+            (['!setcanal', '!fijar-canal', '!canal'].includes(command) && ['panel-evento', 'panel-eventos', 'paneleventos', 'panelevento', 'formulario-eventos'].includes(args[1]?.toLowerCase()))) {
+            await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
+
+            const rawChannelId = args.slice(1).join(' ').match(/\d{17,20}/)?.[0];
+            let targetChannel = message.mentions.channels.first();
+
+            if (!targetChannel && rawChannelId) {
+                targetChannel = message.guild.channels.cache.get(rawChannelId) ||
+                    await client.channels.fetch(rawChannelId).catch(() => null);
+            }
+            if (!targetChannel) targetChannel = message.channel;
+
+            await updateConfig('CHANNEL_EVENTOS_PANEL_ID', targetChannel.id);
+
+            const confEmbed = new EmbedBuilder()
+                .setColor(0x00E5FF)
+                .setTitle('📋 Canal del Panel de Eventos Configurado')
+                .setDescription(`✅ El canal asignado para el Panel interactivo de Eventos es: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n💡 *Puedes enviar el panel allí escribiendo **\`!panel-eventos\`**.*`)
+                .setFooter({ text: 'SPAIN RP • Configuración Oficial de Eventos' })
+                .setTimestamp();
+
+            const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
+            if (confMsg) setTimeout(() => confMsg.delete().catch(() => { }), 8000);
+            console.log(`🔧 [CONFIG] Canal del panel de eventos fijado en #${targetChannel.name || targetChannel.id} (${targetChannel.id}) por ${message.author.tag}`);
+            return;
+        }
+
+        // 3. COMANDO: !panel-eventos / !paneleventos / !enviar-panel-eventos (Envía el panel interactivo de eventos)
+        if (['!panel-eventos', '!panel-evento', '!paneleventos', '!panelevento', '!enviar-panel-eventos'].includes(command)) {
+            await message.delete().catch(() => { });
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+
+            const rawChannelId = args.slice(1).join(' ').match(/\d{17,20}/)?.[0];
+            let targetChannel = message.mentions.channels.first();
+
+            if (!targetChannel && rawChannelId) {
+                targetChannel = message.guild.channels.cache.get(rawChannelId) ||
+                    await client.channels.fetch(rawChannelId).catch(() => null);
+            }
+
+            if (!targetChannel) targetChannel = message.channel;
+
+            const embed = buildEventosPanelEmbed();
+            const row = buildEventosPanelRow();
+            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const bannerPath = path.join(__dirname, 'assets', 'panel_eventos.png');
+            const files = [];
+            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+            if (fs.existsSync(bannerPath)) files.push(new AttachmentBuilder(bannerPath, { name: 'panel_eventos.png' }));
+
+            await targetChannel.send({
+                embeds: [embed],
+                components: [row],
+                files
+            }).catch(e => console.error('Error al enviar panel de eventos:', e));
+
+            console.log(`🎉 [PANEL EVENTOS] Panel interactivo de eventos enviado con éxito a #${targetChannel.name} por ${message.author.tag}`);
+            return;
+        }
+
+        // ====================================================
         // COMANDOS DE BIENVENIDAS: !setcanal-bienvenidas / !test-bienvenida
         // ====================================================
         if (['!setcanal-bienvenidas', '!setcanal-bienvenida', '!canal-bienvenidas', '!fijar-bienvenidas'].includes(command)) {
@@ -6448,6 +7114,36 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ----------------------------------------------------
+    // BOTÓN: ABRIR MODAL DE PUBLICAR EVENTO STAFF
+    // ----------------------------------------------------
+    if (interaction.customId === 'btn_abrir_modal_evento') {
+        const hasStaff = await isStaffMember(interaction.member, interaction.guild, interaction.user.id);
+        if (!hasStaff) {
+            return interaction.reply({
+                content: '❌ Solo los miembros del equipo de **Staff** pueden publicar eventos.',
+                ephemeral: true
+            });
+        }
+
+        const modal = new ModalBuilder()
+            .setCustomId('modal_evento_staff')
+            .setTitle('PUBLICAR EVENTO');
+
+        const inputDescription = new TextInputBuilder()
+            .setCustomId('input_evento_desc')
+            .setLabel('📝 Mensaje del Evento')
+            .setPlaceholder('Pega aquí todo el texto del evento tal cual. El bot lo reestructurará automáticamente.')
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(inputDescription)
+        );
+
+        return interaction.showModal(modal);
+    }
+
+    // ----------------------------------------------------
     // BOTÓN: VER TOP / RANKING DE STAFF
     // ----------------------------------------------------
     if (interaction.customId === 'btn_ver_top_staff') {
@@ -6752,6 +7448,51 @@ client.on('interactionCreate', async (interaction) => {
             console.error('Error al procesar modal de sancion:', err);
             await interaction.editReply({
                 content: '❌ Ocurrió un error al procesar el acta de sanción.'
+            }).catch(() => { });
+            setTimeout(() => {
+                interaction.deleteReply().catch(() => { });
+            }, 3000);
+            return;
+        }
+    }
+
+    // ----------------------------------------------------
+    // PROCESAMIENTO: MODAL PUBLICAR EVENTO STAFF
+    // ----------------------------------------------------
+    if (interaction.customId === 'modal_evento_staff') {
+        await interaction.deferReply({ ephemeral: true }).catch(() => { });
+
+        try {
+            const description = interaction.fields.getTextInputValue('input_evento_desc').trim();
+            const eventoId = Date.now().toString().slice(-4);
+
+            pendingEventosAwaitingImage.set(interaction.user.id, {
+                id: eventoId,
+                reporterId: interaction.user.id,
+                reporterTag: interaction.user.tag || interaction.user.username,
+                title: '',
+                description,
+                ping: '@everyone',
+                channelId: interaction.channelId,
+                expiresAt: Date.now() + 60000 // 60 segundos
+            });
+
+            console.log(`\n⏳ [EVENTO EN ESPERA DE FLYER] Staff ${interaction.user.tag} (${interaction.user.id}) ha rellenado el formulario de evento #${eventoId}. Esperando cartel en el chat...`);
+
+            await interaction.editReply({
+                content: `🚗 **¡Mensaje del evento registrado!**\n\n` +
+                    `👉 **Ahora pega o sube el cartel / flyer / foto del evento en este chat** en los próximos **60 segundos** para publicarlo automáticamente.\n` +
+                    `*(Si no tienes cartel, escribe \`sin foto\` y se publicará de inmediato).*`
+            }).catch(() => { });
+
+            setTimeout(() => {
+                interaction.deleteReply().catch(() => { });
+            }, 15000);
+            return;
+        } catch (err) {
+            console.error('Error al procesar modal de evento:', err);
+            await interaction.editReply({
+                content: '❌ Ocurrió un error al procesar el evento.'
             }).catch(() => { });
             setTimeout(() => {
                 interaction.deleteReply().catch(() => { });
