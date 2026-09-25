@@ -2907,31 +2907,30 @@ client.once(Events.ClientReady, async () => {
             setInterval(() => updateChannelStatusPanel().catch(() => { }), 60000);
         }
 
-        // 4. Registrar Slash Commands (/admin, /config, etc.) para mensajes efímeros ("Solo tú puedes verlo")
-        try {
-            if (client.application) {
-                await client.application.commands.set([
-                    {
-                        name: 'admin',
-                        description: '👑 Panel de configuración exclusivo del Creador (Solo tú puedes verlo)'
-                    },
-                    {
-                        name: 'config',
-                        description: '👑 Panel de configuración exclusivo del Creador (Solo tú puedes verlo)'
-                    },
-                    {
-                        name: 'notificarstream',
-                        description: '📢 Publica el panel con el botón de Notificar Directo'
-                    },
-                    {
-                        name: 'estado',
-                        description: '🌐 Muestra el estado en tiempo real del servidor FiveM'
-                    }
-                ]);
+        // 4. Registrar Slash Commands (/admin, /config, etc.) en segundo plano
+        if (client.application) {
+            client.application.commands.set([
+                {
+                    name: 'admin',
+                    description: '👑 Panel de configuración exclusivo del Creador (Solo tú puedes verlo)'
+                },
+                {
+                    name: 'config',
+                    description: '👑 Panel de configuración exclusivo del Creador (Solo tú puedes verlo)'
+                },
+                {
+                    name: 'notificarstream',
+                    description: '📢 Publica el panel con el botón de Notificar Directo'
+                },
+                {
+                    name: 'estado',
+                    description: '🌐 Muestra el estado en tiempo real del servidor FiveM'
+                }
+            ]).then(() => {
                 console.log('✅ Slash Commands (/admin, /config, etc.) registrados exitosamente.');
-            }
-        } catch (e) {
-            console.error('Error al registrar Slash Commands:', e.message);
+            }).catch(e => {
+                console.warn('ℹ️ [SLASH COMMANDS] Ya registrados o pospuestos por rate-limit:', e.message);
+            });
         }
 
         console.log(`\n🟢 [SISTEMA LISTO] Bot conectado y 100% operativo en Spain RP. ¡Listo para recibir comandos! 🚀\n`);
