@@ -6975,27 +6975,30 @@ client.on('messageCreate', async (message) => {
             return;
         }
 
-        // COMANDO: !delstreamer @usuario [twitch/tiktok/todo]
+        // COMANDO: !delstreamer @usuario [twitch/tiktok/todo] o !delstreamer ID
         if (['!delstreamer', '!eliminarstreamer', '!quitarstreamer'].includes(command)) {
             await message.delete().catch(() => { });
             if (message.author.id !== OWNER_ID) {
                 return sendDeniedAccessMessage(message);
             }
 
-            const targetUser = message.mentions.users.first() || { id: args[0]?.replace(/[<@!>]/g, '') };
-            if (!targetUser || !targetUser.id) {
-                const helpMsg = await message.channel.send('⚠️ **Uso:** `!delstreamer @usuario`').catch(() => null);
+            const rawIdArg = args.slice(1).find(a => !a.startsWith('!'));
+            const targetUser = message.mentions.users.first();
+            const targetId = targetUser ? targetUser.id : (rawIdArg ? rawIdArg.replace(/[<@!>]/g, '') : null);
+
+            if (!targetId) {
+                const helpMsg = await message.channel.send('⚠️ **Uso:** `!delstreamer @usuario` o `!delstreamer <ID_Usuario>`').catch(() => null);
                 if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 5000);
                 return;
             }
 
-            const removed = removeStreamer(targetUser.id);
+            const removed = removeStreamer(targetId);
             const msg = removed
-                ? `🗑️ Streamer <@${targetUser.id}> eliminado de la base de datos de directos.`
-                : `⚠️ El usuario <@${targetUser.id}> no estaba registrado.`;
+                ? `🗑️ Streamer \`${targetId}\` (<@${targetId}>) eliminado de la base de datos de directos.`
+                : `⚠️ El usuario con ID \`${targetId}\` no estaba registrado.`;
 
             const resMsg = await message.channel.send(msg).catch(() => null);
-            if (resMsg) setTimeout(() => resMsg.delete().catch(() => { }), 5000);
+            if (resMsg) setTimeout(() => resMsg.delete().catch(() => { }), 6000);
             return;
         }
 
