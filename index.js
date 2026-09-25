@@ -3081,6 +3081,7 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
     const logoPath = path.join(__dirname, 'assets', 'logo.png');
     const imgDirectoPath = path.join(__dirname, 'assets', 'directo.png');
     const imgTiktokPath = path.join(__dirname, 'assets', 'tiktok.png');
+    const imgKickPath = path.join(__dirname, 'assets', 'kick.png');
     const imgTwitchPath = path.join(__dirname, 'assets', 'stream.png');
     const files = [];
 
@@ -3088,11 +3089,15 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
         files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
     }
 
-    const isTikTok = platform.toLowerCase().includes('tiktok');
-    const isTwitch = platform.toLowerCase().includes('twitch');
+    const normPlatform = (platform || 'Twitch').toLowerCase();
+    const isKick = normPlatform.includes('kick') || (streamUrl && streamUrl.includes('kick.com'));
+    const isTikTok = !isKick && (normPlatform.includes('tiktok') || (streamUrl && streamUrl.includes('tiktok.com')));
+    const isTwitch = !isKick && !isTikTok;
 
-    // Adjuntar banner según plataforma (Twitch: stream.png morado | TikTok: tiktok.png rosa | General: directo.png)
-    if (isTikTok && fs.existsSync(imgTiktokPath)) {
+    // Adjuntar banner según plataforma (Kick: kick.png | TikTok: tiktok.png | Twitch: stream.png | General: directo.png)
+    if (isKick && fs.existsSync(imgKickPath)) {
+        files.push(new AttachmentBuilder(imgKickPath, { name: 'kick.png' }));
+    } else if (isTikTok && fs.existsSync(imgTiktokPath)) {
         files.push(new AttachmentBuilder(imgTiktokPath, { name: 'tiktok.png' }));
     } else if (isTwitch && fs.existsSync(imgTwitchPath)) {
         files.push(new AttachmentBuilder(imgTwitchPath, { name: 'twitch.png' }));
@@ -3100,14 +3105,16 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
         files.push(new AttachmentBuilder(imgDirectoPath, { name: 'directo.png' }));
     }
 
-    // Configuración visual por plataforma (Twitch: Morado | TikTok: Rosa Fucsia)
-    const platformColor = isTikTok ? 0xFE2C55 : (isTwitch ? 0x9146FF : 0x00E785);
-    const platformEmoji = isTikTok ? '🌸' : (isTwitch ? '🟣' : '🟢');
-    const platformName = isTikTok ? 'TikTok LIVE' : (isTwitch ? 'Twitch' : platform);
-    const platformButtonLabel = isTikTok ? '🌸 Ver TikTok LIVE' : (isTwitch ? '🟣 Ver Directo en Twitch' : '▶️ Ver Directo en Vivo');
-    const notificationHeadline = isTikTok
-        ? `# 🌸 ¡${userMention} ESTÁ EN DIRECTO EN TIKTOK!\n# ¡Entra al LIVE y apoya el stream en SPAIN RP!`
-        : `# 🟣 ¡${userMention} ESTÁ EN DIRECTO EN TWITCH!\n# ¡Entra a apoyar el stream en SPAIN RP!`;
+    // Configuración visual por plataforma (Kick: Verde Neón | TikTok: Rosa Fucsia | Twitch: Morado)
+    const platformColor = isKick ? 0x53FC18 : (isTikTok ? 0xFE2C55 : 0x9146FF);
+    const platformEmoji = isKick ? '🟢' : (isTikTok ? '🌸' : '🟣');
+    const platformName = isKick ? 'Kick' : (isTikTok ? 'TikTok LIVE' : 'Twitch');
+    const platformButtonLabel = isKick ? '🟢 Ver Directo en Kick' : (isTikTok ? '🌸 Ver TikTok LIVE' : '🟣 Ver Directo en Twitch');
+    const notificationHeadline = isKick
+        ? `# 🟢 ¡${userMention} ESTÁ EN DIRECTO EN KICK!\n# ¡Entra a apoyar el stream en SPAIN RP!`
+        : (isTikTok
+            ? `# 🌸 ¡${userMention} ESTÁ EN DIRECTO EN TIKTOK!\n# ¡Entra al LIVE y apoya el stream en SPAIN RP!`
+            : `# 🟣 ¡${userMention} ESTÁ EN DIRECTO EN TWITCH!\n# ¡Entra a apoyar el stream en SPAIN RP!`);
 
     const cleanTitle = streamTitle && streamTitle.trim() ? streamTitle.trim() : `Roleplay en vivo en SPAIN RP 🇪🇸 (${platformName})`;
     const validStreamUrl = streamUrl.startsWith('http') ? streamUrl : `https://${streamUrl}`;
@@ -3143,7 +3150,9 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
         })
         .setTimestamp();
 
-    if (isTikTok && fs.existsSync(imgTiktokPath)) {
+    if (isKick && fs.existsSync(imgKickPath)) {
+        embedStream.setImage('attachment://kick.png');
+    } else if (isTikTok && fs.existsSync(imgTiktokPath)) {
         embedStream.setImage('attachment://tiktok.png');
     } else if (isTwitch && fs.existsSync(imgTwitchPath)) {
         embedStream.setImage('attachment://twitch.png');
