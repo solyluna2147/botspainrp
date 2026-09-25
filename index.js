@@ -327,6 +327,7 @@ function loadDynamicConfig() {
 let botConfig = loadDynamicConfig();
 
 async function updateConfig(key, value) {
+    if (botConfig[key] === value) return;
     botConfig[key] = value;
     try {
         fs.writeFileSync(CONFIG_FILE, JSON.stringify(botConfig, null, 2), 'utf8');
@@ -2854,17 +2855,11 @@ client.once(Events.ClientReady, async () => {
         }
 
         // 5. Auto-Calibración en background usando el historial del canal de Whitelist
-        setTimeout(autoBootstrapChannelHistory, 3000);
-
-        // 6. Auto-Sincronización inicial del canal de valoraciones con el panel de Tops
         setTimeout(async () => {
-            try {
-                console.log('⭐ [AUTO-SYNC] Ejecutando sincronización automática inicial de valoraciones y panel de Tops...');
-                await syncStaffRatingsFromChannel();
-            } catch (e) {
-                console.error('Error en sync inicial de valoraciones:', e);
-            }
-        }, 5000);
+            await autoBootstrapChannelHistory().catch(() => {});
+            await syncStaffRatingsFromChannel().catch(() => {});
+            console.log(`\n🟢 [SISTEMA LISTO] Bot conectado y 100% operativo en Spain RP. ¡Listo para recibir comandos! 🚀\n`);
+        }, 3000);
     } catch (readyErr) {
         console.error('❌ Error en evento Ready:', readyErr);
     }
@@ -5050,23 +5045,20 @@ client.on('messageCreate', async (message) => {
             return;
         }
 
-        // COMANDO: !tops / !top-staff / !ranking-staff / !panel-tops (Envía el Ranking de Valoraciones)
+        // COMANDO: !tops / !top-staff / !ranking-staff / !panel-tops (Envía el Ranking de Valoraciones de forma instantánea)
         if (['!tops', '!top-staff', '!ranking-staff', '!stats-staff', '!valoraciones', '!topstaff', '!panel-tops', '!fijar-tops', '!ranking'].includes(command)) {
             await message.delete().catch(() => { });
             try {
-                // Sincronizar automáticamente cualquier valoración que falte por registrar en el canal de valoraciones
-                await syncStaffRatingsFromChannel().catch(e => console.error('Error en syncStaffRatingsFromChannel durante !tops:', e));
-
                 const targetChannel = message.channel;
                 const { topEmbed, files } = buildStaffTopRankingEmbed();
 
                 const sentMsg = await targetChannel.send({ embeds: [topEmbed], files });
-                updateConfig('CHANNEL_VALORACION_PANEL_ID', targetChannel.id);
-                updateConfig('MESSAGE_TOP_STAFF_ID', sentMsg.id);
-                console.log(`🏆 [PANEL TOP STAFF] Mensaje publicado en #${targetChannel.name} (Msg ID: ${sentMsg.id})`);
+                await updateConfig('CHANNEL_VALORACION_PANEL_ID', targetChannel.id);
+                await updateConfig('MESSAGE_TOP_STAFF_ID', sentMsg.id);
+                console.log(`🏆 [PANEL TOP STAFF] Mensaje publicado al instante en #${targetChannel.name} (Msg ID: ${sentMsg.id})`);
                 return;
             } catch (err) {
-                console.error('Error al gestionar panel permanente de tops:', err);
+                console.error('Error al enviar panel instantáneo de tops:', err);
                 return;
             }
         }
@@ -8171,9 +8163,10 @@ client.on('interactionCreate', async (interaction) => {
 
 // Cuando el bot oficial de solicitudes edita el mensaje (Envío instantáneo)
 client.on('messageUpdate', async (oldMessage, newMessage) => {
-    console.log(`✏️ [MSG EDITADO] Canal: #${newMessage.channel ? newMessage.channel.name : 'N/A'} (${newMessage.channel ? newMessage.channel.id : 'N/A'}) | Autor: ${newMessage.author ? newMessage.author.tag : 'N/A'}`);
-
     if (newMessage.author && newMessage.author.id === client.user.id) return;
+    if (newMessage.channel && newMessage.channel.id === botConfig.CHANNEL_SOLICITUDES_ID) {
+        console.log(`✏️ [WL ACTUALIZADA] Formulario actualizado en #${newMessage.channel.name} por ${newMessage.author ? newMessage.author.tag : 'Usuario'}`);
+    }
     await handleWhitelistMessage(newMessage, 'messageUpdate (instantáneo)');
 });
 
