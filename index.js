@@ -189,22 +189,40 @@ const EventoModel = mongoose.model('Evento', eventoSchema);
 
 let isMongoConnected = false;
 
-// Conectar a MongoDB Atlas si existe MONGODB_URI
-if (process.env.MONGODB_URI) {
-    try {
-        const dns = require('dns');
-        dns.setServers(['8.8.8.8', '1.1.1.1']);
-    } catch (e) { }
+// Función de arranque unificado y secuencial (MongoDB -> Discord Login)
+async function startBot() {
+    // 1. Conectar a MongoDB Atlas si existe MONGODB_URI
+    if (process.env.MONGODB_URI) {
+        try {
+            const dns = require('dns');
+            dns.setServers(['8.8.8.8', '1.1.1.1']);
+        } catch (e) { }
 
-    mongoose.connect(process.env.MONGODB_URI, {
-        serverSelectionTimeoutMS: 5000
-    }).then(async () => {
-        isMongoConnected = true;
-        console.log('🍃 [MONGODB ATLAS] Conexión establecida con éxito en la nube (SpainRP DB).');
-        await syncDataFromMongo();
-    }).catch(err => {
-        console.warn('⚠️ [MONGODB ATLAS] No se pudo conectar a MongoDB. Se usarán archivos JSON locales:', err.message);
-    });
+        try {
+            await mongoose.connect(process.env.MONGODB_URI, {
+                serverSelectionTimeoutMS: 4000
+            });
+            isMongoConnected = true;
+            console.log('🍃 [MONGODB ATLAS] Conexión establecida con éxito en la nube (SpainRP DB).');
+            await syncDataFromMongo();
+        } catch (err) {
+            console.warn('⚠️ [MONGODB ATLAS] No se pudo conectar a MongoDB. Se usarán archivos JSON locales:', err.message);
+        }
+    }
+
+    // 2. Iniciar sesión en Discord
+    const tokenToUse = (process.env.DISCORD_TOKEN || '').trim();
+    if (!tokenToUse) {
+        console.error('❌ [ERROR CRÍTICO] La variable de entorno DISCORD_TOKEN no está configurada en Render.');
+    } else {
+        console.log('🔑 [DISCORD] Conectando a la API de Discord...');
+        try {
+            await client.login(tokenToUse);
+            console.log('✅ [DISCORD] Sesión iniciada con éxito en la API de Discord.');
+        } catch (err) {
+            console.error('❌ [ERROR LOGIN DISCORD]:', err.message);
+        }
+    }
 }
 
 // Sincronizar datos de Mongo al iniciar
@@ -8384,15 +8402,5 @@ if (process.stdin.isTTY) {
     } catch (e) { }
 }
 
-// Iniciar sesión en Discord
-const tokenToUse = (process.env.DISCORD_TOKEN || '').trim();
-if (!tokenToUse) {
-    console.error('❌ [ERROR CRÍTICO] La variable de entorno DISCORD_TOKEN no está configurada en Render.');
-} else {
-    console.log('🔑 [DISCORD] Conectando a la API de Discord...');
-    client.login(tokenToUse).then(() => {
-        console.log('✅ [DISCORD] Sesión iniciada con éxito en la API de Discord.');
-    }).catch(err => {
-        console.error('❌ [ERROR LOGIN DISCORD]:', err.message);
-    });
-}
+// Iniciar el bot y la sincronización con la base de datos
+startBot();
