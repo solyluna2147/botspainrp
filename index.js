@@ -110,7 +110,22 @@ const client = new Client({
         timeout: 30000,
         retries: 5,
         makeRequest: async (url, init) => {
-            return await fetch(url, init);
+            console.log(`📡 [DISCORD REST REQUEST] ${init?.method || 'GET'} ${url}`);
+            try {
+                const res = await fetch(url, init);
+                console.log(`📡 [DISCORD REST RESPONSE] Status ${res.status} para ${url}`);
+                return res;
+            } catch (err) {
+                console.error(`❌ [DISCORD REST ERROR] ${err.message} para ${url}`);
+                throw err;
+            }
+        }
+    },
+    ws: {
+        buildStrategy: (manager) => {
+            const { SimpleShardingStrategy } = require('@discordjs/ws');
+            console.log('⚡ [DISCORD WS STRATEGY] Estrategia de WebSocket inicializada.');
+            return new SimpleShardingStrategy(manager);
         }
     }
 });
