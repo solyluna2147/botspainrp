@@ -220,18 +220,24 @@ async function syncDataFromMongo() {
 
         // 2. Staff Ratings
         const staffDoc = await StaffRatingDataModel.findOne({ docId: 'main' });
+        let localRatings = getStaffRatingsData();
         if (staffDoc) {
             const statsObj = {};
             if (staffDoc.stats) {
                 staffDoc.stats.forEach((val, key) => { statsObj[key] = val; });
             }
+            const combinedStaffList = Array.from(new Set([
+                ...(localRatings.staffList || []),
+                ...(staffDoc.staffList || [])
+            ]));
             const dataToSave = {
-                staffList: staffDoc.staffList || ['418558256840179722'],
-                ratings: staffDoc.ratings || [],
+                staffList: combinedStaffList.length > 0 ? combinedStaffList : ['418558256840179722'],
+                ratings: staffDoc.ratings || localRatings.ratings || [],
                 stats: statsObj
             };
             recalculateStaffRatings(dataToSave);
             fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(dataToSave, null, 2), 'utf8');
+            await StaffRatingDataModel.findOneAndUpdate({ docId: 'main' }, { staffList: dataToSave.staffList }, { upsert: true }).catch(() => { });
         } else {
             // Subir datos iniciales locales a Mongo si está vacío
             const localData = getStaffRatingsData();
@@ -7627,7 +7633,10 @@ client.on('interactionCreate', async (interaction) => {
         for (const sId of staffIds) {
             let label = `Staff (${sId})`;
             let description = 'Equipo de Staff • SPAIN RP';
-            const member = interaction.guild?.members?.cache?.get(sId);
+            let member = interaction.guild?.members?.cache?.get(sId);
+            if (!member && interaction.guild) {
+                member = await interaction.guild.members.fetch(sId).catch(() => null);
+            }
             if (member) {
                 label = member.displayName || member.user.username;
                 description = `@${member.user.tag || member.user.username}`;
@@ -7663,10 +7672,10 @@ client.on('interactionCreate', async (interaction) => {
             ephemeral: true
         }).catch(() => { });
 
-        // Auto-eliminar el selector efímero tras 6 segundos (así si cancela o no hace nada, desaparece solo de inmediato)
+        // Auto-eliminar el selector efímero tras 60 segundos si no responde
         setTimeout(() => {
             interaction.deleteReply().catch(() => { });
-        }, 6000);
+        }, 60000);
         return;
     }
 
