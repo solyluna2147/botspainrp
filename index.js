@@ -1,8 +1,4 @@
 require('dotenv').config();
-const dns = require('dns');
-try {
-    dns.setServers(['8.8.8.8', '1.1.1.1']);
-} catch (e) { }
 
 const {
     Client,
@@ -193,10 +189,6 @@ let isMongoConnected = false;
 async function startBot() {
     // 1. Conectar a MongoDB Atlas si existe MONGODB_URI
     if (process.env.MONGODB_URI) {
-        try {
-            const dns = require('dns');
-            dns.setServers(['8.8.8.8', '1.1.1.1']);
-        } catch (e) { }
 
         try {
             await mongoose.connect(process.env.MONGODB_URI, {
@@ -2788,7 +2780,7 @@ function evaluateVoiceInterviewContent(transcripts) {
     };
 }
 
-client.once(Events.ClientReady, async () => {
+client.once('ready', async () => {
     try {
         console.log(`\n==================================================`);
         console.log(`🤖  SPAIN RP - SISTEMA DE WHITELIST Y AUDITORÍA  🤖`);
