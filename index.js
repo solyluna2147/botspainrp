@@ -7582,19 +7582,34 @@ client.on('interactionCreate', async (interaction) => {
                 if (activePlatform.toLowerCase().includes('kick')) platEmoji = '🟢';
                 else if (activePlatform.toLowerCase().includes('tiktok')) platEmoji = '⚫';
 
-                return interaction.editReply({
+                await interaction.editReply({
                     content: `✅ **¡Tu directo de ${activePlatform} ${platEmoji} ha sido anunciado con éxito en <#${targetChannelId}>!**\n🏷️ **Título:** \`"${liveTitle}"\`\n🔗 **Canal:** <${targetStreamUrl}>\n¡Mucho éxito en tu transmisión! 🚀`
                 }).catch(() => { });
+
+                setTimeout(() => {
+                    interaction.deleteReply().catch(() => { });
+                }, 3000);
+                return;
             } else {
-                return interaction.editReply({
+                await interaction.editReply({
                     content: `❌ Hubo un error al publicar el anuncio en el canal <#${targetChannelId}>. Verifica permisos del bot.`
                 }).catch(() => { });
+
+                setTimeout(() => {
+                    interaction.deleteReply().catch(() => { });
+                }, 5000);
+                return;
             }
         } catch (err) {
             console.error('Error al procesar botón de stream:', err);
-            return interaction.editReply({
+            await interaction.editReply({
                 content: '⚠️ Ocurrió un problema al enviar la notificación. Por favor inténtalo de nuevo.'
             }).catch(() => { });
+
+            setTimeout(() => {
+                interaction.deleteReply().catch(() => { });
+            }, 4000);
+            return;
         }
     }
 
