@@ -669,6 +669,11 @@ function saveStreamer(userId, streamerObj) {
         if (streamerObj.twitchTitle !== undefined) updatedProfile.twitchTitle = streamerObj.twitchTitle;
     }
 
+    if (streamerObj.kickUrl) {
+        updatedProfile.kickUrl = streamerObj.kickUrl;
+        if (streamerObj.kickTitle !== undefined) updatedProfile.kickTitle = streamerObj.kickTitle;
+    }
+
     if (streamerObj.tiktokUrl) {
         updatedProfile.tiktokUrl = streamerObj.tiktokUrl;
         if (streamerObj.tiktokTitle !== undefined) updatedProfile.tiktokTitle = streamerObj.tiktokTitle;
@@ -676,7 +681,10 @@ function saveStreamer(userId, streamerObj) {
 
     if (streamerObj.url) {
         const urlLower = streamerObj.url.toLowerCase();
-        if (urlLower.includes('tiktok.com')) {
+        if (urlLower.includes('kick.com')) {
+            updatedProfile.kickUrl = streamerObj.url;
+            if (streamerObj.title) updatedProfile.kickTitle = streamerObj.title;
+        } else if (urlLower.includes('tiktok.com')) {
             updatedProfile.tiktokUrl = streamerObj.url;
             if (streamerObj.title) updatedProfile.tiktokTitle = streamerObj.title;
         } else if (urlLower.includes('twitch.tv')) {
@@ -1143,6 +1151,104 @@ async function updateChannelStatusPanel() {
     }
 }
 
+// Función para enviar la notificación personalizada del directo al canal de streamers
+async function sendStreamerNotification({ userMention, streamUrl, streamTitle, platform = 'Twitch', avatarUrl = null }) {
+    const channelId = botConfig.CHANNEL_STREAMERS_ID || '1517530849032016006';
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+    if (!channel) return { success: false, error: 'Canal de streamers no encontrado' };
+
+    const normPlatform = (platform || 'Twitch').toLowerCase();
+    const isKick = normPlatform.includes('kick') || (streamUrl && streamUrl.includes('kick.com'));
+    const isTikTok = normPlatform.includes('tiktok') || (streamUrl && streamUrl.includes('tiktok.com'));
+    const isTwitch = !isKick && !isTikTok;
+
+    let bannerFileName = 'stream.png';
+    let embedColor = 0x9B59B6; // Morado Twitch
+    let platformDisplayName = 'Twitch';
+    let buttonEmoji = '🟣';
+
+    if (isKick) {
+        bannerFileName = 'kick.png';
+        embedColor = 0x53FC18; // Verde Neón Oficial de Kick
+        platformDisplayName = 'Kick';
+        buttonEmoji = '🟢';
+    } else if (isTikTok) {
+        bannerFileName = 'tiktok.png';
+        embedColor = 0xFE2C55; // Rosa/Rojo TikTok
+        platformDisplayName = 'TikTok LIVE';
+        buttonEmoji = '⚫';
+    }
+
+    const bannerPath = path.join(__dirname, 'assets', bannerFileName);
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const files = [];
+
+    if (fs.existsSync(bannerPath)) {
+        files.push(new AttachmentBuilder(bannerPath, { name: bannerFileName }));
+    }
+    if (fs.existsSync(logoPath)) {
+        files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+    }
+
+    const embed = new EmbedBuilder()
+        .setColor(embedColor)
+        .setAuthor({
+            name: `🔴 DIRECTO EN ${platformDisplayName.toUpperCase()} • SPAIN RP 🇪🇸`,
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTitle(`🔥 ¡${platformDisplayName} en Directo!`)
+        .setDescription(
+            `\u200B\n` +
+            `👋 ¡Atención <@&${botConfig.ROLE_STREAMER_ID || ''}> y comunidad!\n\n` +
+            `👤 **Creador de Contenido:**\n` +
+            `> ${userMention} ❗\n\n` +
+            `🎮 **Emisión y Rol:**\n` +
+            `> **${streamTitle || 'Roleplay en directo en SPAIN RP 🇪🇸'}**\n\n` +
+            `📺 **Plataforma:** \`${platformDisplayName}\`\n\n` +
+            `🌐 **Enlace del Directo:**\n` +
+            `> 🔗 **[Haz clic aquí para ver el directo](${streamUrl})**\n\n` +
+            `🇪🇸 **¡Pásate a apoyar a nuestro creador y disfruta del mejor rol!** 🇪🇸`
+        )
+        .setFooter({
+            text: `SPAIN RP • Notificaciones de ${platformDisplayName}`,
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    if (avatarUrl) {
+        embed.setThumbnail(avatarUrl);
+    } else if (fs.existsSync(logoPath)) {
+        embed.setThumbnail('attachment://logo.png');
+    }
+
+    if (fs.existsSync(bannerPath)) {
+        embed.setImage(`attachment://${bannerFileName}`);
+    }
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setLabel(`Ver Directo en ${platformDisplayName}`)
+            .setStyle(ButtonStyle.Link)
+            .setURL(streamUrl)
+            .setEmoji(buttonEmoji)
+    );
+
+    try {
+        const pingText = botConfig.CHANNEL_GENERAL_ID ? `📢 ¡Nuevo directo en **${platformDisplayName}**! ${userMention}` : `📢 ${userMention}`;
+        await channel.send({
+            content: pingText,
+            embeds: [embed],
+            components: [row],
+            files
+        });
+        console.log(`📡 [STREAM NOTIFICADO] Notificación de ${platformDisplayName} enviada para ${userMention}`);
+        return { success: true };
+    } catch (err) {
+        console.error('Error al enviar mensaje de streamer:', err);
+        return { success: false, error: err.message };
+    }
+}
+
 // Función para construir el Embed del Panel de Streamers (con Logo y Banner oficial)
 function buildStreamPanelEmbed() {
     const logoPath = path.join(__dirname, 'assets', 'logo.png');
@@ -1163,11 +1269,12 @@ function buildStreamPanelEmbed() {
         .setDescription(
             `\u200B\n` +
             `✨ ¡Bienvenido al **Panel Oficial de Creadores y Streamers** de **SPAIN RP** 🇪🇸!\n\n` +
-            `Si eres Creador de Contenido oficial del servidor, puedes avisar a toda la comunidad cuando comiences directo en **Twitch o TikTok** con un solo clic.\n\n` +
+            `Si eres Creador de Contenido oficial del servidor, puedes avisar a toda la comunidad cuando comiences directo en **Twitch, Kick o TikTok** con un solo clic.\n\n` +
             `📢 **| ¿Cómo publicar tu directo?**\n` +
             `> Haz clic en el botón de tu plataforma:\n` +
-            `> • 🎥 **\`Notificar Twitch\`** (Botón Morado) para emisiones en Twitch.\n` +
-            `> • 🎥 **\`Notificar TikTok\`** (Botón Rosa) para emisiones en TikTok LIVE.\n\n` +
+            `> • 🟣 **\`Notificar Twitch\`** (Botón Morado) para emisiones en Twitch.\n` +
+            `> • 🟢 **\`Notificar Kick\`** (Botón Verde) para emisiones en Kick.\n` +
+            `> • ⚫ **\`Notificar TikTok\`** (Botón Rosa) para emisiones en TikTok LIVE.\n\n` +
             `📍 **| Canal de publicación oficial:**\n` +
             `> ${canalStreamers} ❗\n\n` +
             `⚠️ **| Normativas de los Streamers:**\n` +
@@ -1197,12 +1304,17 @@ function buildStreamPanelRow() {
             .setCustomId('btn_notificar_twitch')
             .setLabel('Notificar Twitch')
             .setStyle(ButtonStyle.Primary)
-            .setEmoji('🎥'),
+            .setEmoji('🟣'),
+        new ButtonBuilder()
+            .setCustomId('btn_notificar_kick')
+            .setLabel('Notificar Kick')
+            .setStyle(ButtonStyle.Success)
+            .setEmoji('🟢'),
         new ButtonBuilder()
             .setCustomId('btn_notificar_tiktok')
             .setLabel('Notificar TikTok')
             .setStyle(ButtonStyle.Danger)
-            .setEmoji('🎥')
+            .setEmoji('⚫')
     );
 }
 
@@ -4679,20 +4791,20 @@ client.on('messageCreate', async (message) => {
         // ----------------------------------------------------
         if (['!addstreamer', '!setstreamer'].includes(command)) {
             const targetUser = message.mentions.users.first();
-            const link = args.find(arg => arg.startsWith('http') || arg.includes('twitch.tv') || arg.includes('kick.com') || arg.includes('youtube.com'));
+            const link = args.find(arg => arg.startsWith('http') || arg.includes('twitch.tv') || arg.includes('kick.com') || arg.includes('youtube.com') || arg.includes('tiktok.com'));
 
             if (!targetUser || !link) {
                 return message.reply({
-                    content: `❌ **Uso incorrecto:** \`!addstreamer @usuario <enlace_del_canal> [Título por defecto]\`\n📌 *Ejemplo:* \`!addstreamer @pepe https://twitch.tv/pepe Rol de Policía en Spain RP\``
+                    content: `❌ **Uso incorrecto:** \`!addstreamer @usuario <enlace_del_canal> [Título por defecto]\`\n📌 *Ejemplos:* \n• Kick: \`!addstreamer @usuario https://kick.com/canal Rol en Kick Spain RP\`\n• Twitch: \`!addstreamer @usuario https://twitch.tv/canal Rol en Spain RP\`\n• TikTok: \`!addstreamer @usuario https://www.tiktok.com/@canal/live Directo en TikTok\``
                 });
             }
 
             const titleParts = args.filter(arg => !arg.includes(targetUser.id) && arg !== link && !arg.startsWith('!'));
-            const defaultTitle = titleParts.length > 0 ? titleParts.join(' ') : 'Roleplay en directo en SPAIN RP \uD83C\uDDEA\uD83C\uDDF8';
+            const defaultTitle = titleParts.length > 0 ? titleParts.join(' ') : 'Roleplay en directo en SPAIN RP 🇪🇸';
 
             let platform = 'Twitch';
             if (link.includes('kick.com')) platform = 'Kick';
-            else if (link.includes('youtube.com')) platform = 'YouTube';
+            else if (link.includes('youtube.com') || link.includes('youtu.be')) platform = 'YouTube';
             else if (link.includes('tiktok.com')) platform = 'TikTok';
 
             saveStreamer(targetUser.id, {
@@ -7308,15 +7420,19 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ----------------------------------------------------
-    // BOTONES: NOTIFICAR DIRECTO (TWITCH / TIKTOK / GENERAL)
+    // BOTONES: NOTIFICAR DIRECTO (TWITCH / KICK / TIKTOK / GENERAL)
     // ----------------------------------------------------
-    if (['btn_notificar_directo', 'btn_notificar_twitch', 'btn_notificar_tiktok'].includes(interaction.customId)) {
+    if (['btn_notificar_directo', 'btn_notificar_twitch', 'btn_notificar_kick', 'btn_notificar_tiktok'].includes(interaction.customId)) {
         // Responder a Discord DE INMEDIATO (dentro de los 3 segundos reglamentarios de la API de Discord)
         await interaction.deferReply({ ephemeral: true }).catch(() => { });
 
         try {
             const userId = interaction.user.id;
-            const requestedPlatform = interaction.customId === 'btn_notificar_tiktok' ? 'TikTok' : (interaction.customId === 'btn_notificar_twitch' ? 'Twitch' : null);
+            let requestedPlatform = null;
+            if (interaction.customId === 'btn_notificar_kick') requestedPlatform = 'Kick';
+            else if (interaction.customId === 'btn_notificar_tiktok') requestedPlatform = 'TikTok';
+            else if (interaction.customId === 'btn_notificar_twitch') requestedPlatform = 'Twitch';
+
             const streamersData = getStreamersData();
             let streamerInfo = streamersData[userId] || {};
 
@@ -7324,12 +7440,14 @@ client.on('interactionCreate', async (interaction) => {
             let activePlatform = requestedPlatform || 'Twitch';
 
             // 1. Buscar en perfil guardado según la plataforma solicitada
-            if (requestedPlatform === 'TikTok') {
+            if (requestedPlatform === 'Kick') {
+                targetStreamUrl = streamerInfo.kickUrl || (streamerInfo.url && streamerInfo.url.includes('kick.com') ? streamerInfo.url : null);
+            } else if (requestedPlatform === 'TikTok') {
                 targetStreamUrl = streamerInfo.tiktokUrl || (streamerInfo.url && streamerInfo.url.includes('tiktok.com') ? streamerInfo.url : null);
             } else if (requestedPlatform === 'Twitch') {
-                targetStreamUrl = streamerInfo.twitchUrl || (streamerInfo.url && (streamerInfo.url.includes('twitch.tv') || !streamerInfo.url.includes('tiktok.com')) ? streamerInfo.url : null);
+                targetStreamUrl = streamerInfo.twitchUrl || (streamerInfo.url && (streamerInfo.url.includes('twitch.tv') || (!streamerInfo.url.includes('kick.com') && !streamerInfo.url.includes('tiktok.com'))) ? streamerInfo.url : null);
             } else {
-                targetStreamUrl = streamerInfo.url || streamerInfo.twitchUrl || streamerInfo.tiktokUrl;
+                targetStreamUrl = streamerInfo.url || streamerInfo.kickUrl || streamerInfo.twitchUrl || streamerInfo.tiktokUrl;
                 activePlatform = streamerInfo.platform || 'Twitch';
             }
 
@@ -7341,13 +7459,16 @@ client.on('interactionCreate', async (interaction) => {
                 );
 
                 if (streamingActivity && streamingActivity.url) {
-                    if (requestedPlatform === 'TikTok' && streamingActivity.url.includes('tiktok.com')) {
+                    if (requestedPlatform === 'Kick' && streamingActivity.url.includes('kick.com')) {
                         targetStreamUrl = streamingActivity.url;
-                    } else if (requestedPlatform === 'Twitch' && (streamingActivity.url.includes('twitch.tv') || !streamingActivity.url.includes('tiktok.com'))) {
+                    } else if (requestedPlatform === 'TikTok' && streamingActivity.url.includes('tiktok.com')) {
+                        targetStreamUrl = streamingActivity.url;
+                    } else if (requestedPlatform === 'Twitch' && (streamingActivity.url.includes('twitch.tv') || (!streamingActivity.url.includes('kick.com') && !streamingActivity.url.includes('tiktok.com')))) {
                         targetStreamUrl = streamingActivity.url;
                     } else if (!requestedPlatform) {
                         targetStreamUrl = streamingActivity.url;
-                        if (streamingActivity.url.includes('tiktok.com')) activePlatform = 'TikTok';
+                        if (streamingActivity.url.includes('kick.com')) activePlatform = 'Kick';
+                        else if (streamingActivity.url.includes('tiktok.com')) activePlatform = 'TikTok';
                     }
                 }
             }
@@ -7360,8 +7481,8 @@ client.on('interactionCreate', async (interaction) => {
                 }).catch(() => { });
             }
 
-            // Obtener el título en tiempo real desde la plataforma (Twitch/TikTok/Discord) o título guardado
-            const defaultPlatformTitle = requestedPlatform === 'TikTok' ? streamerInfo.tiktokTitle : (requestedPlatform === 'Twitch' ? streamerInfo.twitchTitle : streamerInfo.title);
+            // Obtener el título en tiempo real desde la plataforma (Twitch/Kick/TikTok/Discord) o título guardado
+            const defaultPlatformTitle = requestedPlatform === 'Kick' ? streamerInfo.kickTitle : (requestedPlatform === 'TikTok' ? streamerInfo.tiktokTitle : (requestedPlatform === 'Twitch' ? streamerInfo.twitchTitle : streamerInfo.title));
             const liveTitle = await fetchLiveStreamTitle(targetStreamUrl, interaction.member, defaultPlatformTitle || streamerInfo.title);
 
             // Enviar notificación personalizada al canal oficial de streams
@@ -7376,7 +7497,10 @@ client.on('interactionCreate', async (interaction) => {
             const targetChannelId = botConfig.CHANNEL_STREAMERS_ID || '1517530849032016006';
 
             if (result && result.success) {
-                const platEmoji = activePlatform.toLowerCase().includes('tiktok') ? '⚫' : '🟣';
+                let platEmoji = '🟣';
+                if (activePlatform.toLowerCase().includes('kick')) platEmoji = '🟢';
+                else if (activePlatform.toLowerCase().includes('tiktok')) platEmoji = '⚫';
+
                 return interaction.editReply({
                     content: `✅ **¡Tu directo de ${activePlatform} ${platEmoji} ha sido anunciado con éxito en <#${targetChannelId}>!**\n🏷️ **Título:** \`"${liveTitle}"\`\n🔗 **Canal:** <${targetStreamUrl}>\n¡Mucho éxito en tu transmisión! 🚀`
                 }).catch(() => { });
