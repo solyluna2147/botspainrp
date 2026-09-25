@@ -802,6 +802,8 @@ let liveStatusMessageRef = null;
 
 // Set en memoria para evitar reprocesar mensajes duplicados de Whitelist
 const processedMessages = new Set();
+const welcomedMembersSet = new Map(); // memberId -> timestamp (evita duplicar bienvenidas)
+const recentWlDecisionsSet = new Map(); // userKey_decision -> timestamp (evita duplicar aprobados/denegados)
 
 // ==========================================
 // SISTEMA DE RETROALIMENTACIÓN Y APRENDIZAJE CONTINUO DE IA (CONTRASTIVO & FORENSE)
@@ -3251,6 +3253,17 @@ function buildWelcomeEmbed(member, guild) {
 
 async function sendWelcomeMessage(member) {
     try {
+        const memberId = member.id || member.user?.id;
+        if (!memberId) return;
+
+        // Evitar duplicar bienvenidas del mismo usuario en los últimos 10 minutos
+        const lastWelcome = welcomedMembersSet.get(memberId);
+        if (lastWelcome && (Date.now() - lastWelcome) < 10 * 60 * 1000) {
+            console.log(`ℹ️ [BIENVENIDAS] Bienvenida para ${member.user?.tag || memberId} ignorada por ser duplicada reciente.`);
+            return;
+        }
+        welcomedMembersSet.set(memberId, Date.now());
+
         const guild = member.guild;
         const targetChannelId = botConfig.CHANNEL_BIENVENIDAS_ID;
         if (!targetChannelId) return;
@@ -4305,14 +4318,24 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
         console.error('Error al limpiar mensaje de auditoría:', cleanErr);
     }
 
-    // 5. Enviar notificación usando la función reutilizable
+    // 5. Enviar notificación usando la función reutilizable con protección estricta anti-duplicados
     try {
+        const userDecisionKey = `${userMention}_${decisionType}`;
+        const lastUserDecision = recentWlDecisionsSet.get(userDecisionKey);
+        if (lastUserDecision && (Date.now() - lastUserDecision) < 5 * 60 * 1000) {
+            console.log(`ℹ️ [WL RESULTADOS] Notificación (${decisionType}) para ${userMention} ignorada por ser duplicada reciente.`);
+            processedMessages.add(cacheKey);
+            return;
+        }
+
         if (isAprobada) {
+            processedMessages.add(cacheKey);
+            recentWlDecisionsSet.set(userDecisionKey, Date.now());
             await sendApprovedNotification({ userMention, staffName });
-            processedMessages.add(cacheKey);
         } else if (isDenegada) {
-            await sendDeniedNotification({ userMention, staffName });
             processedMessages.add(cacheKey);
+            recentWlDecisionsSet.set(userDecisionKey, Date.now());
+            await sendDeniedNotification({ userMention, staffName });
         }
     } catch (error) {
         console.error('Error al enviar la notificación al canal de resultados:', error);
