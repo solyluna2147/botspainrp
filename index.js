@@ -192,14 +192,12 @@ const EventoModel = mongoose.model('Evento', eventoSchema);
 
 let isMongoConnected = false;
 
-// Función de arranque unificado y secuencial (MongoDB -> Discord Login)
-async function startBot() {
-    // 1. Conectar a MongoDB Atlas si existe MONGODB_URI
+// Función de arranque de base de datos
+async function initDatabase() {
     if (process.env.MONGODB_URI) {
-
         try {
             await mongoose.connect(process.env.MONGODB_URI, {
-                serverSelectionTimeoutMS: 4000
+                serverSelectionTimeoutMS: 5000
             });
             isMongoConnected = true;
             console.log('🍃 [MONGODB ATLAS] Conexión establecida con éxito en la nube (SpainRP DB).');
@@ -208,20 +206,20 @@ async function startBot() {
             console.warn('⚠️ [MONGODB ATLAS] No se pudo conectar a MongoDB. Se usarán archivos JSON locales:', err.message);
         }
     }
+}
 
-    // 2. Iniciar sesión en Discord
-    const tokenToUse = (process.env.DISCORD_TOKEN || '').trim();
-    if (!tokenToUse) {
-        console.error('❌ [ERROR CRÍTICO] La variable de entorno DISCORD_TOKEN no está configurada en Render.');
-    } else {
-        console.log('🔑 [DISCORD] Conectando a la API de Discord...');
-        try {
-            await client.login(tokenToUse);
-            console.log('✅ [DISCORD] Sesión iniciada con éxito en la API de Discord.');
-        } catch (err) {
-            console.error('❌ [ERROR LOGIN DISCORD]:', err.message);
-        }
-    }
+// Iniciar base de datos en segundo plano
+initDatabase().catch(err => console.error('Error al inicializar base de datos:', err));
+
+// Iniciar sesión en Discord de inmediato
+const tokenToUse = (process.env.DISCORD_TOKEN || '').trim();
+if (!tokenToUse) {
+    console.error('❌ [ERROR CRÍTICO] La variable de entorno DISCORD_TOKEN no está configurada.');
+} else {
+    console.log('🔑 [DISCORD] Conectando a la API de Discord...');
+    client.login(tokenToUse)
+        .then(() => console.log('✅ [DISCORD] Autenticación completada en Discord.'))
+        .catch(err => console.error('❌ [ERROR LOGIN DISCORD]:', err.message));
 }
 
 // Sincronizar datos de Mongo al iniciar
@@ -8400,6 +8398,3 @@ if (process.stdin.isTTY) {
         });
     } catch (e) { }
 }
-
-// Iniciar el bot y la sincronización con la base de datos
-startBot();
