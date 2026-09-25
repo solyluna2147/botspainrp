@@ -192,6 +192,32 @@ const EventoModel = mongoose.model('Evento', eventoSchema);
 
 let isMongoConnected = false;
 
+// Logs de depuración detallados del cliente Discord
+client.on('debug', info => {
+    if (info.includes('heartbeat') || info.includes('Heartbeat')) return; // Silenciar heartbeats repetitivos
+    console.log(`🔍 [DISCORD DEBUG] ${info}`);
+});
+
+client.on('warn', warning => {
+    console.warn(`⚠️ [DISCORD WARN] ${warning}`);
+});
+
+client.on('error', error => {
+    console.error(`❌ [DISCORD ERROR] ${error?.message || error}`);
+});
+
+client.on('shardReady', (shardId) => {
+    console.log(`🌐 [DISCORD SHARD] Shard #${shardId} conectado y listo.`);
+});
+
+client.on('shardDisconnect', (event, shardId) => {
+    console.warn(`⚠️ [DISCORD SHARD] Shard #${shardId} desconectado (Código: ${event?.code || 'N/A'}).`);
+});
+
+client.on('shardReconnecting', (shardId) => {
+    console.log(`🔄 [DISCORD SHARD] Shard #${shardId} reconectando...`);
+});
+
 // Función de arranque de base de datos
 async function initDatabase() {
     if (process.env.MONGODB_URI) {
@@ -217,9 +243,10 @@ if (!tokenToUse) {
     console.error('❌ [ERROR CRÍTICO] La variable de entorno DISCORD_TOKEN no está configurada.');
 } else {
     console.log('🔑 [DISCORD] Conectando a la API de Discord...');
+    console.log(`🔑 [DISCORD] Longitud del Token: ${tokenToUse.length} caracteres.`);
     client.login(tokenToUse)
-        .then(() => console.log('✅ [DISCORD] Autenticación completada en Discord.'))
-        .catch(err => console.error('❌ [ERROR LOGIN DISCORD]:', err.message));
+        .then(() => console.log('✅ [DISCORD] Promesa client.login resuelta con éxito.'))
+        .catch(err => console.error('❌ [ERROR LOGIN DISCORD]:', err.message || err));
 }
 
 // Sincronizar datos de Mongo al iniciar
