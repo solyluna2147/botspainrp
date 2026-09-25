@@ -1982,15 +1982,15 @@ async function fetchLiveStreamTitle(streamUrl, member = null, fallbackTitle = ''
 
 // Helper para verificar si un miembro tiene permisos de Staff (independientemente de cuántos otros roles tenga)
 async function isStaffMember(member, guild = null, userId = null) {
-    if (!member && guild && userId) {
-        member = await guild.members.fetch(userId).catch(() => null);
-    }
-    if (!member) return false;
-
-    // El Creador siempre tiene permisos absolutos
-    if (member.id === OWNER_ID || userId === OWNER_ID) {
+    const actualUserId = userId || member?.id || member?.user?.id;
+    if (actualUserId === OWNER_ID) {
         return true;
     }
+
+    if (!member && guild && actualUserId) {
+        member = await guild.members.fetch(actualUserId).catch(() => null);
+    }
+    if (!member) return false;
 
     // Si tiene permisos de administrador en el servidor
     if (member.permissions && member.permissions.has('Administrator')) {
@@ -2854,12 +2854,7 @@ client.once(Events.ClientReady, async () => {
             console.error('Error al registrar Slash Commands:', e.message);
         }
 
-        // 5. Auto-Calibración en background usando el historial del canal de Whitelist
-        setTimeout(async () => {
-            await autoBootstrapChannelHistory().catch(() => {});
-            await syncStaffRatingsFromChannel().catch(() => {});
-            console.log(`\n🟢 [SISTEMA LISTO] Bot conectado y 100% operativo en Spain RP. ¡Listo para recibir comandos! 🚀\n`);
-        }, 3000);
+        console.log(`\n🟢 [SISTEMA LISTO] Bot conectado y 100% operativo en Spain RP. ¡Listo para recibir comandos! 🚀\n`);
     } catch (readyErr) {
         console.error('❌ Error en evento Ready:', readyErr);
     }
@@ -4327,6 +4322,10 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
 client.on('messageCreate', async (message) => {
     // Si el mensaje es enviado por un usuario real (Staff / Admin)
     if (!message.author.bot) {
+        if (message.content && message.content.startsWith('!')) {
+            console.log(`💬 [COMANDO RECIBIDO] "${message.content}" de ${message.author.tag} (${message.author.id}) en #${message.channel.name || message.channel.id}`);
+        }
+
         // Comprobar si este Staff tiene una sanción pendiente de subir captura
         if (pendingSancionesAwaitingImage.has(message.author.id)) {
             const pending = pendingSancionesAwaitingImage.get(message.author.id);
