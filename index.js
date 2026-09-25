@@ -440,6 +440,10 @@ function saveStaffRatingsData(data) {
             { upsert: true }
         ).catch(e => console.error('Error guardando ratings completos en Mongo:', e));
     }
+    // Auto-actualizar el mensaje fijado en Discord de inmediato
+    if (typeof updateStaffTopRankingPanel === 'function') {
+        updateStaffTopRankingPanel().catch(() => { });
+    }
 }
 
 function saveStaffRating({ userId, userName, staffId, staffTag, rating, comment }) {
@@ -3343,39 +3347,64 @@ function buildStaffTopRankingEmbed() {
 
 async function updateStaffTopRankingPanel() {
     try {
-        const channelId = botConfig.CHANNEL_VALORACION_PANEL_ID;
-        if (!channelId) return false;
-
-        const channel = await client.channels.fetch(channelId).catch(() => null);
-        if (!channel) return false;
-
+        const { topEmbed } = buildStaffTopRankingEmbed();
         let targetMessage = null;
-        if (botConfig.MESSAGE_TOP_STAFF_ID) {
-            targetMessage = await channel.messages.fetch(botConfig.MESSAGE_TOP_STAFF_ID).catch(() => null);
+
+        // 1. Intentar por canal y mensaje guardados
+        if (botConfig.CHANNEL_VALORACION_PANEL_ID) {
+            const channel = await client.channels.fetch(botConfig.CHANNEL_VALORACION_PANEL_ID).catch(() => null);
+            if (channel) {
+                if (botConfig.MESSAGE_TOP_STAFF_ID) {
+                    targetMessage = await channel.messages.fetch(botConfig.MESSAGE_TOP_STAFF_ID).catch(() => null);
+                }
+                if (!targetMessage) {
+                    const fetched = await channel.messages.fetch({ limit: 30 }).catch(() => null);
+                    if (fetched) {
+                        targetMessage = fetched.find(m =>
+                            m.author.id === client.user.id &&
+                            m.embeds.some(e =>
+                                (e.title && e.title.includes('Top Miembros del Equipo')) ||
+                                (e.author?.name && e.author.name.includes('RANKING DE ATENCIÓN DE STAFF'))
+                            )
+                        );
+                        if (targetMessage) {
+                            updateConfig('MESSAGE_TOP_STAFF_ID', targetMessage.id);
+                        }
+                    }
+                }
+            }
         }
 
-        // Si no se encuentra por ID guardada, buscar activamente en los mensajes del canal
+        // 2. Si no se encontró, buscar en todos los canales de texto de los servidores del bot
         if (!targetMessage) {
-            const fetched = await channel.messages.fetch({ limit: 25 }).catch(() => null);
-            if (fetched) {
-                targetMessage = fetched.find(m =>
-                    m.author.id === client.user.id &&
-                    m.embeds.some(e =>
-                        (e.title && e.title.includes('Top Miembros del Equipo')) ||
-                        (e.author?.name && e.author.name.includes('RANKING DE ATENCIÓN DE STAFF'))
-                    )
-                );
-                if (targetMessage) {
-                    updateConfig('MESSAGE_TOP_STAFF_ID', targetMessage.id);
+            for (const guild of client.guilds.cache.values()) {
+                for (const channel of guild.channels.cache.filter(c => c.isTextBased()).values()) {
+                    try {
+                        const fetched = await channel.messages.fetch({ limit: 15 }).catch(() => null);
+                        if (fetched) {
+                            targetMessage = fetched.find(m =>
+                                m.author.id === client.user.id &&
+                                m.embeds.some(e =>
+                                    (e.title && e.title.includes('Top Miembros del Equipo')) ||
+                                    (e.author?.name && e.author.name.includes('RANKING DE ATENCIÓN DE STAFF'))
+                                )
+                            );
+                            if (targetMessage) {
+                                updateConfig('CHANNEL_VALORACION_PANEL_ID', channel.id);
+                                updateConfig('MESSAGE_TOP_STAFF_ID', targetMessage.id);
+                                break;
+                            }
+                        }
+                    } catch (e) { }
                 }
+                if (targetMessage) break;
             }
         }
 
         if (!targetMessage) return false;
 
-        const { topEmbed } = buildStaffTopRankingEmbed();
         await targetMessage.edit({ embeds: [topEmbed] }).catch(() => { });
-        console.log(`🏆 [RANKING AUTO-UPDATE] Mensaje de Top Staff (${targetMessage.id}) en #${channel.name} actualizado con éxito.`);
+        console.log(`🏆 [RANKING AUTO-SYNC] Mensaje de Top Staff (${targetMessage.id}) editado y sincronizado con éxito.`);
         return true;
     } catch (e) {
         console.error('Error al actualizar panel de top staff:', e);
