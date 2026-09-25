@@ -3347,7 +3347,6 @@ function buildStaffTopRankingEmbed() {
 
 async function updateStaffTopRankingPanel() {
     try {
-        const { topEmbed } = buildStaffTopRankingEmbed();
         let targetMessage = null;
 
         // 1. Intentar por canal y mensaje guardados
@@ -5140,6 +5139,41 @@ client.on('messageCreate', async (message) => {
             removeStaffMemberFromRating(targetUser.id);
             const successMsg = await message.channel.send(`🗑️ Staff <@${targetUser.id}> retirado de la lista del menú de valoraciones.`).catch(() => null);
             if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 6000);
+            return;
+        }
+
+        // COMANDO: !delvaloracion @usuario o !delvaloracion <ID> (Elimina las valoraciones/reseñas de un Staff y auto-actualiza Tops)
+        if (['!delvaloracion', '!delvaloraciones', '!borrarvaloracion', '!borrarvaloraciones', '!eliminarvaloracion', '!limpiarvaloracion'].includes(command)) {
+            await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
+
+            const rawIdArg = args.slice(1).find(a => !a.startsWith('!'));
+            const targetUser = message.mentions.users.first();
+            const targetId = targetUser ? targetUser.id : (rawIdArg ? rawIdArg.replace(/[<@!>]/g, '') : null);
+
+            if (!targetId) {
+                const helpMsg = await message.channel.send('⚠️ **Uso:** `!delvaloracion @usuario` o `!delvaloracion <ID_Staff>`').catch(() => null);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 5000);
+                return;
+            }
+
+            const currentData = getStaffRatingsData();
+            const prevRatingsCount = (currentData.ratings || []).filter(r => r.staffId === targetId).length;
+
+            currentData.ratings = (currentData.ratings || []).filter(r => r.staffId !== targetId);
+            if (currentData.stats && currentData.stats[targetId]) {
+                delete currentData.stats[targetId];
+            }
+
+            saveStaffRatingsData(currentData);
+            await updateStaffTopRankingPanel().catch(() => { });
+
+            const successMsg = await message.channel.send({
+                content: `🗑️ **Valoraciones eliminadas:** Se han purgado las **${prevRatingsCount}** reseña(s) de <@${targetId}> (\`${targetId}\`).\n🏆 *El ranking de Tops ha sido actualizado automáticamente.*`
+            }).catch(() => null);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 7000);
             return;
         }
 
