@@ -429,6 +429,20 @@ function removeStaffMemberFromRating(staffId) {
 
 function recalculateStaffRatings(data) {
     const newStats = {};
+    const allStaffIds = Array.from(new Set([
+        ...(data.staffList || []),
+        ...Object.keys(data.stats || {})
+    ]));
+
+    for (const sId of allStaffIds) {
+        newStats[sId] = {
+            staffTag: data.stats?.[sId]?.staffTag || 'Staff',
+            totalRatings: 0,
+            sumRatings: 0,
+            average: 0
+        };
+    }
+
     for (const r of (data.ratings || [])) {
         const staffId = r.staffId || 'staff_general';
         if (!newStats[staffId]) {
@@ -3297,12 +3311,20 @@ function buildStaffTopRankingEmbed() {
     const ratingsData = getStaffRatingsData();
     const stats = ratingsData.stats || {};
     const validStaffList = ratingsData.staffList || [];
-    const staffList = Object.keys(stats)
-        .filter(id => validStaffList.length === 0 || validStaffList.includes(id))
-        .map(id => ({ id, ...stats[id] }));
+    
+    // Obtener todos los IDs de staff (staffList completo + cualquier otro en stats)
+    const allIds = Array.from(new Set([...validStaffList, ...Object.keys(stats)]));
+    const staffList = allIds.map(id => {
+        const s = stats[id] || { staffTag: 'Staff', totalRatings: 0, sumRatings: 0, average: 0 };
+        return { id, ...s };
+    });
 
-    // Ordenar por promedio y luego por cantidad de valoraciones
-    staffList.sort((a, b) => b.average - a.average || b.totalRatings - a.totalRatings);
+    // Ordenar: primero los que tienen valoraciones (mayor promedio, luego más valoraciones), luego los sin valoraciones
+    staffList.sort((a, b) => {
+        if (b.totalRatings > 0 && a.totalRatings === 0) return 1;
+        if (a.totalRatings > 0 && b.totalRatings === 0) return -1;
+        return (b.average - a.average) || (b.totalRatings - a.totalRatings);
+    });
 
     const logoPath = path.join(__dirname, 'assets', 'logo.png');
     const topsBannerPath = path.join(__dirname, 'assets', 'panel_tops.png');
@@ -3312,15 +3334,17 @@ function buildStaffTopRankingEmbed() {
 
     let desc = '';
     if (staffList.length === 0) {
-        desc = `\u200B\n📭 *Todavía no se han registrado valoraciones de Staff en el servidor.*`;
+        desc = `\u200B\n📭 *Todavía no se han registrado miembros del Staff en el sistema.*`;
     } else {
         desc = `\u200B\n`;
-        staffList.slice(0, 10).forEach((s, idx) => {
+        staffList.slice(0, 25).forEach((s, idx) => {
             const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `\`#${idx + 1}\``));
             const member = client.guilds.cache.first()?.members?.cache?.get(s.id);
             const userMentionOrName = member ? `<@${s.id}>` : (s.staffTag && s.staffTag !== 'Staff' ? `**@${s.staffTag}**` : `<@${s.id}>`);
-            desc += `${medal} ${userMentionOrName} • **${s.average}/10** ⭐\n\n` +
-                `> 💬 **Reseñas:** \`${s.totalRatings}\` votos recibidos\n\n` +
+            const ratingDisplay = s.totalRatings > 0 ? `**${s.average}/10** ⭐` : `*Sin valoraciones*`;
+            const votesDisplay = s.totalRatings > 0 ? `\`${s.totalRatings}\` votos recibidos` : `\`0\` valoraciones`;
+            desc += `${medal} ${userMentionOrName} • ${ratingDisplay}\n\n` +
+                `> 💬 **Reseñas:** ${votesDisplay}\n\n` +
                 `────────────────────────────\n\n`;
         });
         // Quitar la última línea divisoria si termina en ella
@@ -7888,19 +7912,28 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId === 'btn_ver_top_staff') {
         const ratingsData = getStaffRatingsData();
         const stats = ratingsData.stats || {};
-        const staffList = Object.keys(stats).map(id => ({ id, ...stats[id] }));
+        const validStaffList = ratingsData.staffList || [];
+        const allIds = Array.from(new Set([...validStaffList, ...Object.keys(stats)]));
+        const staffList = allIds.map(id => {
+            const s = stats[id] || { staffTag: 'Staff', totalRatings: 0, sumRatings: 0, average: 0 };
+            return { id, ...s };
+        });
 
-        staffList.sort((a, b) => b.average - a.average || b.totalRatings - a.totalRatings);
+        staffList.sort((a, b) => {
+            if (b.totalRatings > 0 && a.totalRatings === 0) return 1;
+            if (a.totalRatings > 0 && b.totalRatings === 0) return -1;
+            return (b.average - a.average) || (b.totalRatings - a.totalRatings);
+        });
 
         let desc = '';
         if (staffList.length === 0) {
-            desc = '📭 *Todavía no se han registrado valoraciones de Staff en el servidor.*';
+            desc = '📭 *Todavía no se han registrado miembros de Staff en el servidor.*';
         } else {
-            staffList.slice(0, 10).forEach((s, idx) => {
+            staffList.slice(0, 25).forEach((s, idx) => {
                 const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `\`#${idx + 1}\``));
-                const fullStars = Math.min(Math.max(Math.round(s.average / 2), 1), 5);
-                const stars = '⭐'.repeat(fullStars);
-                desc += `${medal} <@${s.id}> • **${s.average}/10** ${stars}\n> 💬 Reseñas: \`${s.totalRatings}\` votos recibidos\n\n`;
+                const ratingDisplay = s.totalRatings > 0 ? `**${s.average}/10** ⭐` : `*Sin valoraciones*`;
+                const votesDisplay = s.totalRatings > 0 ? `\`${s.totalRatings}\` votos recibidos` : `\`0\` valoraciones`;
+                desc += `${medal} <@${s.id}> • ${ratingDisplay}\n> 💬 Reseñas: ${votesDisplay}\n\n`;
             });
         }
 
