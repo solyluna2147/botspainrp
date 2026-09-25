@@ -108,34 +108,7 @@ const client = new Client({
         Partials.Reaction,
         Partials.User,
         Partials.GuildMember
-    ],
-    rest: {
-        timeout: 30000,
-        retries: 5,
-        makeRequest: async (url, init) => {
-            return await fetch(url, init);
-        }
-    },
-    ws: {
-        buildStrategy: (manager) => {
-            const { SimpleShardingStrategy } = require('@discordjs/ws');
-            console.log('⚡ [DISCORD WS STRATEGY] Conexión directa ultra-rápida a WebSocket (Bypass Rate-Limit).');
-            manager.gatewayInformation = {
-                data: {
-                    url: 'wss://gateway.discord.gg',
-                    shards: 1,
-                    session_start_limit: {
-                        total: 1000,
-                        remaining: 999,
-                        reset_after: 0,
-                        max_concurrency: 1
-                    }
-                },
-                expiresAt: Date.now() + 86400000
-            };
-            return new SimpleShardingStrategy(manager);
-        }
-    }
+    ]
 });
 
 // ==========================================
