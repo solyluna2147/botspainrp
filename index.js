@@ -3308,7 +3308,9 @@ function buildStaffTopRankingEmbed() {
         desc = `\u200B\n`;
         staffList.slice(0, 10).forEach((s, idx) => {
             const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `\`#${idx + 1}\``));
-            desc += `${medal} <@${s.id}> • **${s.average}/10** ⭐\n\n` +
+            const member = client.guilds.cache.first()?.members?.cache?.get(s.id);
+            const userMentionOrName = member ? `<@${s.id}>` : (s.staffTag && s.staffTag !== 'Staff' ? `**@${s.staffTag}**` : `<@${s.id}>`);
+            desc += `${medal} ${userMentionOrName} • **${s.average}/10** ⭐\n\n` +
                 `> 💬 **Reseñas:** \`${s.totalRatings}\` votos recibidos\n\n` +
                 `────────────────────────────\n\n`;
         });
@@ -5132,9 +5134,15 @@ client.on('messageCreate', async (message) => {
             if (staffList.length === 0) {
                 desc = 'ℹ️ No hay Staffs registrados. Usa `!addstaff @usuario`';
             } else {
-                staffList.forEach((sId, i) => {
-                    desc += `> \`#${i + 1}\` <@${sId}> (\`${sId}\`)\n`;
-                });
+                for (let i = 0; i < staffList.length; i++) {
+                    const sId = staffList[i];
+                    let member = message.guild?.members?.cache?.get(sId);
+                    if (!member && message.guild) {
+                        member = await message.guild.members.fetch(sId).catch(() => null);
+                    }
+                    const mentionText = member ? `<@${sId}>` : `\`Staff (${sId})\``;
+                    desc += `> \`#${i + 1}\` ${mentionText} (\`${sId}\`)\n`;
+                }
             }
 
             const staffListEmbed = new EmbedBuilder()
@@ -5480,6 +5488,7 @@ client.on('messageCreate', async (message) => {
             await message.reply({ content: '🔄 **Reenviando y actualizando paneles automáticos...**' });
             if (botConfig.CHANNEL_STREAM_PANEL_ID) await ensureStreamPanel().catch(() => { });
             if (botConfig.CHANNEL_STATUS_ID) await updateChannelStatusPanel().catch(() => { });
+            await updateStaffTopRankingPanel().catch(() => { });
             return;
         }
 
