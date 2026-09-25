@@ -243,15 +243,25 @@ async function syncDataFromMongo() {
             }).catch(() => { });
         }
 
-        // 3. Streamers
+        // 3. Streamers (Fusión bidireccional entre local y Mongo)
         const streamers = await StreamerModel.find();
-        if (streamers.length > 0) {
-            const streamersMap = {};
-            for (const st of streamers) {
-                streamersMap[st.userId] = st.data;
-            }
-            fs.writeFileSync(STREAMERS_FILE, JSON.stringify(streamersMap, null, 2), 'utf8');
+        let localStreamers = {};
+        if (fs.existsSync(STREAMERS_FILE)) {
+            try {
+                localStreamers = JSON.parse(fs.readFileSync(STREAMERS_FILE, 'utf8'));
+            } catch (e) { }
         }
+        const mergedStreamers = { ...localStreamers };
+        if (streamers.length > 0) {
+            for (const st of streamers) {
+                mergedStreamers[st.userId] = { ...(mergedStreamers[st.userId] || {}), ...st.data };
+            }
+        }
+        for (const [uid, stData] of Object.entries(mergedStreamers)) {
+            await StreamerModel.findOneAndUpdate({ userId: uid }, { userId: uid, data: stData }, { upsert: true }).catch(() => { });
+        }
+        fs.writeFileSync(STREAMERS_FILE, JSON.stringify(mergedStreamers, null, 2), 'utf8');
+        console.log(`📺 [STREAMERS] Sincronizados ${Object.keys(mergedStreamers).length} streamers con la base de datos.`);
 
         // 4. Auto-aprendizaje de Whitelists (AI Feedback)
         const aiDoc = await AiFeedbackModel.findOne({ docId: 'main' });
@@ -6866,6 +6876,57 @@ client.on('messageCreate', async (message) => {
             return;
         }
 
+        if (['!addkick', '!agregarkick', '!nuevokick', '!setkick'].includes(command)) {
+            await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
+
+            const targetUser = message.mentions.users.first();
+            const cleanArgs = args.filter(a => !a.startsWith('<@') && a !== command && !a.startsWith('!'));
+            const urlArg = cleanArgs.find(a => a.startsWith('http') || a.includes('kick.com') || a.includes('.com/')) || cleanArgs[0];
+
+            if (!targetUser || !urlArg) {
+                const helpMsg = await message.channel.send({
+                    content: '🟢 **Uso correcto:** `!addkick @usuario <enlace_o_usuario_kick> [título opcional]`\n*Ejemplo:* `!addkick @Alvin https://kick.com/alvin_rp`'
+                }).catch(() => null);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 6000);
+                return;
+            }
+
+            let fullUrl = urlArg.startsWith('http') ? urlArg : `https://kick.com/${urlArg.replace(/^@/, '')}`;
+            const customTitle = cleanArgs.filter(a => a !== urlArg).join(' ').trim();
+
+            saveStreamer(targetUser.id, {
+                kickUrl: fullUrl,
+                kickTitle: customTitle || null,
+                name: targetUser.username
+            });
+
+            const successEmbed = new EmbedBuilder()
+                .setColor(0x53FC18) // Verde Kick
+                .setAuthor({
+                    name: 'SISTEMA DE STREAMERS | KICK • SPAIN RP 🇪🇸',
+                    iconURL: client.user.displayAvatarURL()
+                })
+                .setTitle('🟢 ¡Canal de Kick Registrado con Éxito!')
+                .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+                .setDescription(
+                    `✨ Se ha configurado el canal oficial de **Kick** para el streamer.\n\n` +
+                    `👤 **Streamer:** <@${targetUser.id}>\n` +
+                    `📺 **Plataforma:** \`Kick\`\n` +
+                    `🔗 **Canal:** [${fullUrl}](${fullUrl})\n` +
+                    (customTitle ? `🏷️ **Título por defecto:** *"${customTitle}"*\n` : '') +
+                    `\n> 💡 *Al pulsar **"Notificar Kick"** en el panel se publicará este canal.*`
+                )
+                .setFooter({ text: 'SPAIN RP • Creadores de Contenido Oficiales' })
+                .setTimestamp();
+
+            const successMsg = await message.channel.send({ embeds: [successEmbed] }).catch(() => null);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 10000);
+            return;
+        }
+
         // COMANDO GENERAL: !addstreamer @usuario <url_canal>
         if (['!addstreamer', '!agregarstreamer', '!nuevostreamer'].includes(command)) {
             await message.delete().catch(() => { });
@@ -6878,20 +6939,22 @@ client.on('messageCreate', async (message) => {
 
             if (!targetUser || remainingArgs.length === 0) {
                 const helpMsg = await message.channel.send({
-                    content: '⚠️ **Uso:**\n• `!addtwitch @usuario <url_twitch>` (Para Twitch)\n• `!addtiktok @usuario <url_tiktok>` (Para TikTok)\n• `!addstreamer @usuario <url>` (Detecta automáticamente)'
+                    content: '⚠️ **Uso:**\n• `!addtwitch @usuario <url_twitch>` (Para Twitch)\n• `!addkick @usuario <url_kick>` (Para Kick)\n• `!addtiktok @usuario <url_tiktok>` (Para TikTok)\n• `!addstreamer @usuario <url>` (Detecta automáticamente)'
                 }).catch(() => null);
                 if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 6000);
                 return;
             }
 
             const rawInput = remainingArgs[0];
-            let fullUrl = rawInput.startsWith('http') ? rawInput : (rawInput.includes('tiktok') ? `https://www.tiktok.com/@${rawInput.replace(/^@/, '')}` : `https://twitch.tv/${rawInput.replace(/^@/, '')}`);
+            let fullUrl = rawInput.startsWith('http') ? rawInput : (rawInput.includes('tiktok') ? `https://www.tiktok.com/@${rawInput.replace(/^@/, '')}` : (rawInput.includes('kick') ? `https://kick.com/${rawInput.replace(/^@/, '')}` : `https://twitch.tv/${rawInput.replace(/^@/, '')}`));
             let isTikTok = fullUrl.includes('tiktok.com');
-            let isTwitch = fullUrl.includes('twitch.tv') || !isTikTok;
-            let platform = isTikTok ? 'TikTok' : 'Twitch';
+            let isKick = fullUrl.includes('kick.com');
+            let isTwitch = fullUrl.includes('twitch.tv') || (!isTikTok && !isKick);
+            let platform = isTikTok ? 'TikTok' : (isKick ? 'Kick' : 'Twitch');
 
             saveStreamer(targetUser.id, {
                 tiktokUrl: isTikTok ? fullUrl : undefined,
+                kickUrl: isKick ? fullUrl : undefined,
                 twitchUrl: isTwitch ? fullUrl : undefined,
                 name: targetUser.username
             });
@@ -6934,18 +6997,27 @@ client.on('messageCreate', async (message) => {
             const keys = Object.keys(streamers);
 
             if (keys.length === 0) {
-                const emptyMsg = await message.channel.send('ℹ️ No hay streamers registrados manualmente aún. Usa `!addtwitch @usuario <url>` o `!addtiktok @usuario <url>`').catch(() => null);
+                const emptyMsg = await message.channel.send('ℹ️ No hay streamers registrados manualmente aún. Usa `!addtwitch`, `!addkick` o `!addtiktok`').catch(() => null);
                 if (emptyMsg) setTimeout(() => emptyMsg.delete().catch(() => { }), 6000);
                 return;
             }
 
             let desc = '';
             for (const uid of keys) {
-                const st = streamers[uid];
+                const st = streamers[uid] || {};
                 let platformsText = [];
                 if (st.twitchUrl) platformsText.push(`🟣 **Twitch:** [Ver Canal](${st.twitchUrl})`);
+                if (st.kickUrl) platformsText.push(`🟢 **Kick:** [Ver Canal](${st.kickUrl})`);
                 if (st.tiktokUrl) platformsText.push(`🌸 **TikTok:** [Ver LIVE](${st.tiktokUrl})`);
-                if (platformsText.length === 0 && st.url) platformsText.push(`🔗 [${st.platform || 'Canal'}](${st.url})`);
+                if (st.url && !st.twitchUrl && !st.kickUrl && !st.tiktokUrl) {
+                    if (st.url.includes('kick.com')) platformsText.push(`🟢 **Kick:** [Ver Canal](${st.url})`);
+                    else if (st.url.includes('tiktok.com')) platformsText.push(`🌸 **TikTok:** [Ver LIVE](${st.url})`);
+                    else if (st.url.includes('twitch.tv')) platformsText.push(`🟣 **Twitch:** [Ver Canal](${st.url})`);
+                    else platformsText.push(`🔗 [${st.platform || 'Canal'}](${st.url})`);
+                }
+                if (platformsText.length === 0) {
+                    platformsText.push(`🔗 *Canal configurado* (${st.name || 'Sin enlace directo'})`);
+                }
 
                 desc += `> 👤 <@${uid}>\n> ${platformsText.join('\n> ')}\n\n`;
             }
@@ -6954,7 +7026,7 @@ client.on('messageCreate', async (message) => {
                 .setColor(0x9B59B6)
                 .setTitle('🟣 Base de Datos de Creadores y Streamers (SPAIN RP)')
                 .setDescription(desc)
-                .setFooter({ text: 'SPAIN RP • Usa !addtwitch o !addtiktok para registrar plataformas' })
+                .setFooter({ text: 'SPAIN RP • Usa !addtwitch, !addkick o !addtiktok' })
                 .setTimestamp();
 
             const listMsg = await message.channel.send({ embeds: [listEmbed] }).catch(() => null);
