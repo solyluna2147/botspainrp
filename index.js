@@ -112,8 +112,20 @@ const client = new Client({
         makeRequest: async (url, init) => {
             console.log(`📡 [DISCORD REST REQUEST] ${init?.method || 'GET'} ${url}`);
             try {
-                const res = await fetch(url, init);
+                let res = await fetch(url, init);
                 console.log(`📡 [DISCORD REST RESPONSE] Status ${res.status} para ${url}`);
+                if (res.status === 429) {
+                    const retryAfterHeader = res.headers.get('retry-after') || res.headers.get('Retry-After');
+                    let waitTimeMs = retryAfterHeader ? parseFloat(retryAfterHeader) * 1000 : 5000;
+                    try {
+                        const json = await res.clone().json();
+                        if (json && json.retry_after) waitTimeMs = Math.ceil(json.retry_after * 1000);
+                    } catch (e) { }
+                    console.warn(`⏳ [DISCORD RATE LIMIT 429] Esperando ${Math.ceil(waitTimeMs / 1000)}s antes de reintentar la conexión...`);
+                    await new Promise(r => setTimeout(r, waitTimeMs + 500));
+                    res = await fetch(url, init);
+                    console.log(`📡 [DISCORD REST REINTENTO] Status ${res.status} para ${url}`);
+                }
                 return res;
             } catch (err) {
                 console.error(`❌ [DISCORD REST ERROR] ${err.message} para ${url}`);
