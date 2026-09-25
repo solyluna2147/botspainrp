@@ -4841,36 +4841,69 @@ client.on('messageCreate', async (message) => {
         }
 
         // ----------------------------------------------------
+        // ----------------------------------------------------
         // COMANDO: !addstreamer / !setstreamer (Registra un streamer)
         // ----------------------------------------------------
-        if (['!addstreamer', '!setstreamer'].includes(command)) {
-            const targetUser = message.mentions.users.first();
-            const link = args.find(arg => arg.startsWith('http') || arg.includes('twitch.tv') || arg.includes('kick.com') || arg.includes('youtube.com') || arg.includes('tiktok.com'));
+        if (['!addstreamer', '!setstreamer', '!agregarstreamer', '!nuevostreamer'].includes(command)) {
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) {
+                return sendDeniedAccessMessage(message);
+            }
 
-            if (!targetUser || !link) {
+            const targetUser = message.mentions.users.first() || { id: args[1]?.replace(/[<@!>]/g, '') };
+            const cleanArgs = args.slice(1).filter(arg => !arg.startsWith('<@') && arg !== targetUser.id);
+            const link = cleanArgs.find(arg => arg.startsWith('http') || arg.includes('twitch.tv') || arg.includes('kick.com') || arg.includes('youtube.com') || arg.includes('tiktok.com')) || cleanArgs[0];
+
+            if (!targetUser || !targetUser.id || !link) {
                 return message.reply({
-                    content: `❌ **Uso incorrecto:** \`!addstreamer @usuario <enlace_del_canal> [Título por defecto]\`\n📌 *Ejemplos:* \n• Kick: \`!addstreamer @usuario https://kick.com/canal Rol en Kick Spain RP\`\n• Twitch: \`!addstreamer @usuario https://twitch.tv/canal Rol en Spain RP\`\n• TikTok: \`!addstreamer @usuario https://www.tiktok.com/@canal/live Directo en TikTok\``
+                    content: `❌ **Uso correcto:** \`!addstreamer @usuario <enlace_del_canal> [Título opcional]\`\n📌 *Ejemplos:* \n• **Kick:** \`!addstreamer @usuario https://kick.com/canal Rol en Kick Spain RP\`\n• **Twitch:** \`!addstreamer @usuario https://twitch.tv/canal Rol en Spain RP\`\n• **TikTok:** \`!addstreamer @usuario https://www.tiktok.com/@canal Directo en TikTok\``
                 });
             }
 
-            const titleParts = args.filter(arg => !arg.includes(targetUser.id) && arg !== link && !arg.startsWith('!'));
-            const defaultTitle = titleParts.length > 0 ? titleParts.join(' ') : 'Roleplay en directo en SPAIN RP 🇪🇸';
-
+            let fullUrl = link.startsWith('http') ? link : (link.includes('tiktok') ? `https://www.tiktok.com/@${link.replace(/^@/, '')}` : (link.includes('kick') ? `https://kick.com/${link.replace(/^@/, '')}` : `https://twitch.tv/${link.replace(/^@/, '')}`));
             let platform = 'Twitch';
-            if (link.includes('kick.com')) platform = 'Kick';
-            else if (link.includes('youtube.com') || link.includes('youtu.be')) platform = 'YouTube';
-            else if (link.includes('tiktok.com')) platform = 'TikTok';
+            if (fullUrl.includes('kick.com')) platform = 'Kick';
+            else if (fullUrl.includes('tiktok.com')) platform = 'TikTok';
+            else if (fullUrl.includes('youtube.com') || fullUrl.includes('youtu.be')) platform = 'YouTube';
 
-            saveStreamer(targetUser.id, {
-                url: link,
+            const titleParts = cleanArgs.filter(arg => arg !== link);
+            const defaultTitle = titleParts.length > 0 ? titleParts.join(' ') : `🔥 Directo de ${platform} en SPAIN RP 🇪🇸`;
+
+            const streamerData = {
+                url: fullUrl,
                 platform,
                 title: defaultTitle,
-                name: targetUser.username
-            });
+                name: targetUser.username || targetUser.id
+            };
 
-            return message.reply({
-                content: `✅ **Streamer registrado con éxito:** <@${targetUser.id}>\n📺 **Canal:** ${link}\n🎮 **Plataforma:** \`${platform}\``
-            });
+            if (platform === 'Twitch') { streamerData.twitchUrl = fullUrl; streamerData.twitchTitle = defaultTitle; }
+            if (platform === 'Kick') { streamerData.kickUrl = fullUrl; streamerData.kickTitle = defaultTitle; }
+            if (platform === 'TikTok') { streamerData.tiktokUrl = fullUrl; streamerData.tiktokTitle = defaultTitle; }
+
+            saveStreamer(targetUser.id, streamerData);
+
+            let platEmoji = '🟣';
+            let platColor = 0x9146FF;
+            if (platform === 'Kick') { platEmoji = '🟢'; platColor = 0x53FC18; }
+            else if (platform === 'TikTok') { platEmoji = '🌸'; platColor = 0xFE2C55; }
+            else if (platform === 'YouTube') { platEmoji = '🔴'; platColor = 0xFF0000; }
+
+            const streamSuccessEmbed = new EmbedBuilder()
+                .setColor(platColor)
+                .setAuthor({ name: `SISTEMA DE STREAMERS | ${platform.toUpperCase()} • SPAIN RP 🇪🇸`, iconURL: client.user.displayAvatarURL() })
+                .setTitle(`${platEmoji} ¡Canal de ${platform} Registrado con Éxito!`)
+                .setDescription(
+                    `✨ El streamer ha sido dado de alta en la base de datos oficial.\n\n` +
+                    `👤 **Streamer:** <@${targetUser.id}>\n` +
+                    `📺 **Plataforma:** \`${platform}\`\n` +
+                    `🔗 **Canal:** [${fullUrl}](${fullUrl})\n` +
+                    `🏷️ **Título por defecto:** *"${defaultTitle}"*\n\n` +
+                    `> 💡 *Al usar el panel de directos o iniciar stream se notificará automáticamente a la comunidad.*`
+                )
+                .setFooter({ text: 'SPAIN RP • Creadores de Contenido' })
+                .setTimestamp();
+
+            return message.reply({ embeds: [streamSuccessEmbed] });
         }
 
         // ----------------------------------------------------
