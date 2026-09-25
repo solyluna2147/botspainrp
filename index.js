@@ -68,10 +68,13 @@ purgeTempAudioFiles();
 setInterval(purgeTempAudioFiles, 30 * 60 * 1000); // Cada 30 minutos
 
 // ==========================================
-// 1. SERVIDOR EXPRESS PARA RENDER (24/7)
+// 1. SERVIDOR EXPRESS PARA RENDER (24/7) Y SERVIDOR DE IMÁGENES WEB
 // ==========================================
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Servir la carpeta assets como imágenes públicas vía URL directa (CDN Web Propio)
+app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
 app.get('/', (req, res) => {
     res.status(200).send('🤖 Bot de Whitelist SPAIN RP activo y funcionando 24/7 en Render.');
@@ -5758,10 +5761,18 @@ client.on('messageCreate', async (message) => {
                 .setDescription(simDesc);
 
             // Enviar ÚNICAMENTE la tarjeta de auditoría
-            await message.channel.send({
-                embeds: [embedAuditoria],
-                files
-            });
+            try {
+                await message.channel.send({
+                    embeds: [embedAuditoria],
+                    files
+                }).catch(async (errSend) => {
+                    console.error('❌ [ERROR AL ENVIAR AUDITORÍA SIMULAR]:', errSend);
+                    const safeAuditoria = EmbedBuilder.from(embedAuditoria).setAuthor({ name: 'AUDITORÍA DE WHITELIST • SPAIN RP', iconURL: client.user.displayAvatarURL() });
+                    await message.channel.send({ embeds: [safeAuditoria] }).catch(e2 => console.error('❌ [ERROR CRÍTICO AL ENVIAR AUDITORÍA]:', e2));
+                });
+            } catch (err) {
+                console.error('❌ Error en comando !simular:', err);
+            }
             return;
         }
 
