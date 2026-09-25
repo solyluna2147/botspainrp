@@ -612,12 +612,13 @@ async function syncStaffRatingsFromChannel(targetChannel = null) {
         console.log(`📋 [SYNC VALORACIONES] Total de mensajes obtenidos en el canal: ${allMessages.length}`);
 
         const currentData = getStaffRatingsData();
-        const existingRatings = currentData.ratings || [];
-        let importedCount = 0;
+        const validStaffSet = new Set(currentData.staffList || []);
 
         for (const msg of allMessages) {
             const parsed = parseRatingFromMessage(msg);
             if (!parsed) continue;
+            // Solo registrar si el staff pertenece a la lista oficial configurada
+            if (validStaffSet.size > 0 && !validStaffSet.has(parsed.staffId)) continue;
 
             const isDuplicate = existingRatings.some(r => {
                 if (r.id === parsed.id) return true;
@@ -629,14 +630,12 @@ async function syncStaffRatingsFromChannel(targetChannel = null) {
 
             if (!isDuplicate) {
                 existingRatings.push(parsed);
-                if (!currentData.staffList.includes(parsed.staffId)) {
-                    currentData.staffList.push(parsed.staffId);
-                }
                 importedCount++;
             }
         }
 
-        currentData.ratings = existingRatings;
+        // Limpiar cualquier valoración residual de usuarios que ya no son staff
+        currentData.ratings = existingRatings.filter(r => validStaffSet.size === 0 || validStaffSet.has(r.staffId));
         saveStaffRatingsData(currentData);
 
         // Actualizar automáticamente el panel de Tops si existe
@@ -3290,7 +3289,10 @@ async function sendWelcomeMessage(member) {
 function buildStaffTopRankingEmbed() {
     const ratingsData = getStaffRatingsData();
     const stats = ratingsData.stats || {};
-    const staffList = Object.keys(stats).map(id => ({ id, ...stats[id] }));
+    const validStaffList = ratingsData.staffList || [];
+    const staffList = Object.keys(stats)
+        .filter(id => validStaffList.length === 0 || validStaffList.includes(id))
+        .map(id => ({ id, ...stats[id] }));
 
     // Ordenar por promedio y luego por cantidad de valoraciones
     staffList.sort((a, b) => b.average - a.average || b.totalRatings - a.totalRatings);
