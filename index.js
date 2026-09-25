@@ -110,31 +110,7 @@ const client = new Client({
         timeout: 30000,
         retries: 5,
         makeRequest: async (url, init) => {
-            console.log(`📡 [DISCORD REST REQUEST] ${init?.method || 'GET'} ${url}`);
-            try {
-                let res = await fetch(url, init);
-                console.log(`📡 [DISCORD REST RESPONSE] Status ${res.status} para ${url}`);
-                let attempts = 0;
-                while (res.status === 429 && attempts < 5) {
-                    attempts++;
-                    const retryAfterHeader = res.headers.get('retry-after') || res.headers.get('Retry-After');
-                    let waitTimeMs = attempts * 3000;
-                    if (retryAfterHeader) {
-                        const parsed = parseFloat(retryAfterHeader) * 1000;
-                        if (!isNaN(parsed) && parsed > 0 && parsed <= 30000) {
-                            waitTimeMs = parsed;
-                        }
-                    }
-                    console.warn(`⏳ [DISCORD RATE LIMIT 429 - Intento #${attempts}] Esperando ${Math.ceil(waitTimeMs / 1000)}s...`);
-                    await new Promise(r => setTimeout(r, waitTimeMs + 500));
-                    res = await fetch(url, init);
-                    console.log(`📡 [DISCORD REST REINTENTO #${attempts}] Status ${res.status} para ${url}`);
-                }
-                return res;
-            } catch (err) {
-                console.error(`❌ [DISCORD REST ERROR] ${err.message} para ${url}`);
-                throw err;
-            }
+            return await fetch(url, init);
         }
     },
     ws: {
@@ -2905,32 +2881,6 @@ client.once(Events.ClientReady, async () => {
         if (botConfig.CHANNEL_STATUS_ID) {
             updateChannelStatusPanel().catch(() => { });
             setInterval(() => updateChannelStatusPanel().catch(() => { }), 60000);
-        }
-
-        // 4. Registrar Slash Commands (/admin, /config, etc.) en segundo plano
-        if (client.application) {
-            client.application.commands.set([
-                {
-                    name: 'admin',
-                    description: '👑 Panel de configuración exclusivo del Creador (Solo tú puedes verlo)'
-                },
-                {
-                    name: 'config',
-                    description: '👑 Panel de configuración exclusivo del Creador (Solo tú puedes verlo)'
-                },
-                {
-                    name: 'notificarstream',
-                    description: '📢 Publica el panel con el botón de Notificar Directo'
-                },
-                {
-                    name: 'estado',
-                    description: '🌐 Muestra el estado en tiempo real del servidor FiveM'
-                }
-            ]).then(() => {
-                console.log('✅ Slash Commands (/admin, /config, etc.) registrados exitosamente.');
-            }).catch(e => {
-                console.warn('ℹ️ [SLASH COMMANDS] Ya registrados o pospuestos por rate-limit:', e.message);
-            });
         }
 
         console.log(`\n🟢 [SISTEMA LISTO] Bot conectado y 100% operativo en Spain RP. ¡Listo para recibir comandos! 🚀\n`);
