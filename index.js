@@ -5023,8 +5023,8 @@ client.on('messageCreate', async (message) => {
             return;
         }
 
-        // COMANDO: !tops / !top-staff / !ranking-staff / !panel-tops (Envía o actualiza el mensaje fijo que NUNCA se borra)
-        if (['!tops', '!top-staff', '!ranking-staff', '!stats-staff', '!valoraciones', '!topstaff', '!panel-tops', '!fijar-tops'].includes(command)) {
+        // COMANDO: !tops / !top-staff / !ranking-staff / !panel-tops (Envía el Ranking de Valoraciones)
+        if (['!tops', '!top-staff', '!ranking-staff', '!stats-staff', '!valoraciones', '!topstaff', '!panel-tops', '!fijar-tops', '!ranking'].includes(command)) {
             await message.delete().catch(() => { });
             try {
                 // Sincronizar automáticamente cualquier valoración que falte por registrar en el canal de valoraciones
@@ -5033,26 +5033,10 @@ client.on('messageCreate', async (message) => {
                 const targetChannel = message.channel;
                 const { topEmbed, files } = buildStaffTopRankingEmbed();
 
-                // Si ya existe un mensaje de tops guardado en este canal, editarlo en vez de duplicarlo
-                let updatedExisting = false;
-                if (botConfig.MESSAGE_TOP_STAFF_ID && botConfig.CHANNEL_VALORACION_PANEL_ID === targetChannel.id) {
-                    try {
-                        const existingMsg = await targetChannel.messages.fetch(botConfig.MESSAGE_TOP_STAFF_ID).catch(() => null);
-                        if (existingMsg) {
-                            await existingMsg.edit({ embeds: [topEmbed] }).catch(() => { });
-                            updatedExisting = true;
-                            console.log(`🏆 [PANEL TOP STAFF] Mensaje existente editado con éxito.`);
-                        }
-                    } catch (e) { }
-                }
-
-                // Si no existía o se ejecuta en otro canal, enviar el mensaje fijo permanente y registrarlo
-                if (!updatedExisting) {
-                    const sentMsg = await targetChannel.send({ embeds: [topEmbed], files });
-                    updateConfig('CHANNEL_VALORACION_PANEL_ID', targetChannel.id);
-                    updateConfig('MESSAGE_TOP_STAFF_ID', sentMsg.id);
-                    console.log(`🏆 [PANEL TOP STAFF] Mensaje fijo permanente publicado en #${targetChannel.name} (Msg ID: ${sentMsg.id})`);
-                }
+                const sentMsg = await targetChannel.send({ embeds: [topEmbed], files });
+                updateConfig('CHANNEL_VALORACION_PANEL_ID', targetChannel.id);
+                updateConfig('MESSAGE_TOP_STAFF_ID', sentMsg.id);
+                console.log(`🏆 [PANEL TOP STAFF] Mensaje publicado en #${targetChannel.name} (Msg ID: ${sentMsg.id})`);
                 return;
             } catch (err) {
                 console.error('Error al gestionar panel permanente de tops:', err);
