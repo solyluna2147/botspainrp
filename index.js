@@ -114,19 +114,21 @@ const client = new Client({
             try {
                 let res = await fetch(url, init);
                 console.log(`📡 [DISCORD REST RESPONSE] Status ${res.status} para ${url}`);
-                if (res.status === 429) {
+                let attempts = 0;
+                while (res.status === 429 && attempts < 5) {
+                    attempts++;
                     const retryAfterHeader = res.headers.get('retry-after') || res.headers.get('Retry-After');
-                    let waitTimeMs = 5000;
+                    let waitTimeMs = attempts * 3000;
                     if (retryAfterHeader) {
                         const parsed = parseFloat(retryAfterHeader) * 1000;
                         if (!isNaN(parsed) && parsed > 0 && parsed <= 30000) {
                             waitTimeMs = parsed;
                         }
                     }
-                    console.warn(`⏳ [DISCORD RATE LIMIT 429] Esperando ${Math.ceil(waitTimeMs / 1000)}s antes de reintentar la conexión...`);
+                    console.warn(`⏳ [DISCORD RATE LIMIT 429 - Intento #${attempts}] Esperando ${Math.ceil(waitTimeMs / 1000)}s...`);
                     await new Promise(r => setTimeout(r, waitTimeMs + 500));
                     res = await fetch(url, init);
-                    console.log(`📡 [DISCORD REST REINTENTO] Status ${res.status} para ${url}`);
+                    console.log(`📡 [DISCORD REST REINTENTO #${attempts}] Status ${res.status} para ${url}`);
                 }
                 return res;
             } catch (err) {
@@ -138,7 +140,20 @@ const client = new Client({
     ws: {
         buildStrategy: (manager) => {
             const { SimpleShardingStrategy } = require('@discordjs/ws');
-            console.log('⚡ [DISCORD WS STRATEGY] Estrategia de WebSocket inicializada.');
+            console.log('⚡ [DISCORD WS STRATEGY] Conexión directa ultra-rápida a WebSocket (Bypass Rate-Limit).');
+            manager.gatewayInformation = {
+                data: {
+                    url: 'wss://gateway.discord.gg',
+                    shards: 1,
+                    session_start_limit: {
+                        total: 1000,
+                        remaining: 999,
+                        reset_after: 0,
+                        max_concurrency: 1
+                    }
+                },
+                expiresAt: Date.now() + 86400000
+            };
             return new SimpleShardingStrategy(manager);
         }
     }
