@@ -1,4 +1,8 @@
 require('dotenv').config();
+const dns = require('dns');
+if (dns && dns.setDefaultResultOrder) {
+    dns.setDefaultResultOrder('ipv4first');
+}
 
 const {
     Client,
@@ -229,18 +233,6 @@ async function initDatabase() {
 
 // Iniciar base de datos en segundo plano
 initDatabase().catch(err => console.error('Error al inicializar base de datos:', err));
-
-// Iniciar sesión en Discord de inmediato
-const tokenToUse = (process.env.DISCORD_TOKEN || '').trim();
-if (!tokenToUse) {
-    console.error('❌ [ERROR CRÍTICO] La variable de entorno DISCORD_TOKEN no está configurada.');
-} else {
-    console.log('🔑 [DISCORD] Conectando a la API de Discord...');
-    console.log(`🔑 [DISCORD] Longitud del Token: ${tokenToUse.length} caracteres.`);
-    client.login(tokenToUse)
-        .then(() => console.log('✅ [DISCORD] Promesa client.login resuelta con éxito.'))
-        .catch(err => console.error('❌ [ERROR LOGIN DISCORD]:', err.message || err));
-}
 
 // Sincronizar datos de Mongo al iniciar
 async function syncDataFromMongo() {
@@ -8418,3 +8410,18 @@ if (process.stdin.isTTY) {
         });
     } catch (e) { }
 }
+
+// ==========================================
+// 8. ARRANQUE DEL CLIENTE DISCORD
+// ==========================================
+const tokenToUse = (process.env.DISCORD_TOKEN || '').trim();
+if (!tokenToUse) {
+    console.error('❌ [ERROR CRÍTICO] La variable de entorno DISCORD_TOKEN no está configurada.');
+} else {
+    console.log('🔑 [DISCORD] Conectando a la API de Discord...');
+    console.log(`🔑 [DISCORD] Longitud del Token: ${tokenToUse.length} caracteres.`);
+    client.login(tokenToUse)
+        .then(() => console.log('✅ [DISCORD] Promesa client.login resuelta con éxito.'))
+        .catch(err => console.error('❌ [ERROR LOGIN DISCORD]:', err.message || err));
+}
+
