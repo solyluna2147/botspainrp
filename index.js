@@ -107,8 +107,11 @@ const client = new Client({
         Partials.GuildMember
     ],
     rest: {
-        timeout: 15000,
-        retries: 3
+        timeout: 30000,
+        retries: 5,
+        makeRequest: async (url, init) => {
+            return await fetch(url, init);
+        }
     }
 });
 
