@@ -227,8 +227,9 @@ client.on('shardReconnecting', (shardId) => {
 async function initDatabase() {
     if (process.env.MONGODB_URI) {
         try {
+            console.log('🍃 [MONGODB ATLAS] Conectando a la base de datos en la nube...');
             await mongoose.connect(process.env.MONGODB_URI, {
-                serverSelectionTimeoutMS: 5000
+                serverSelectionTimeoutMS: 8000
             });
             isMongoConnected = true;
             console.log('🍃 [MONGODB ATLAS] Conexión establecida con éxito en la nube (SpainRP DB).');
@@ -238,9 +239,6 @@ async function initDatabase() {
         }
     }
 }
-
-// Iniciar base de datos en segundo plano
-initDatabase().catch(err => console.error('Error al inicializar base de datos:', err));
 
 // Sincronizar datos de Mongo al iniciar
 async function syncDataFromMongo() {
@@ -8420,16 +8418,40 @@ if (process.stdin.isTTY) {
 }
 
 // ==========================================
-// 8. ARRANQUE DEL CLIENTE DISCORD
+// 8. ARRANQUE DEL CLIENTE DISCORD Y BASE DE DATOS
 // ==========================================
-const tokenToUse = (process.env.DISCORD_TOKEN || '').trim();
-if (!tokenToUse) {
-    console.error('❌ [ERROR CRÍTICO] La variable de entorno DISCORD_TOKEN no está configurada.');
-} else {
+async function startBot() {
+    const tokenToUse = (process.env.DISCORD_TOKEN || '').trim();
+    if (!tokenToUse) {
+        console.error('❌ [ERROR CRÍTICO] La variable de entorno DISCORD_TOKEN no está configurada.');
+        return;
+    }
+
+    try {
+        await initDatabase();
+    } catch (e) {
+        console.error('⚠️ [DB INIT ERROR]:', e.message);
+    }
+
     console.log('🔑 [DISCORD] Conectando a la API de Discord...');
     console.log(`🔑 [DISCORD] Longitud del Token: ${tokenToUse.length} caracteres.`);
-    client.login(tokenToUse)
-        .then(() => console.log('✅ [DISCORD] Promesa client.login resuelta con éxito.'))
-        .catch(err => console.error('❌ [ERROR LOGIN DISCORD]:', err.message || err));
+
+    async function tryLogin(attempt = 1) {
+        try {
+            console.log(`🔄 [DISCORD] Intento de conexión #${attempt}...`);
+            await client.login(tokenToUse);
+            console.log('✅ [DISCORD] Promesa client.login resuelta con éxito.');
+        } catch (err) {
+            console.error(`❌ [ERROR LOGIN DISCORD - Intento #${attempt}]:`, err.message || err);
+            const retryDelay = Math.min(attempt * 5000, 30000);
+            console.log(`⏳ [DISCORD] Reintentando conexión en ${retryDelay / 1000}s...`);
+            setTimeout(() => tryLogin(attempt + 1), retryDelay);
+        }
+    }
+
+    tryLogin(1);
 }
+
+startBot();
+
 
