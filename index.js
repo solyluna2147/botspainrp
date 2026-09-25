@@ -613,6 +613,8 @@ async function syncStaffRatingsFromChannel(targetChannel = null) {
 
         const currentData = getStaffRatingsData();
         const validStaffSet = new Set(currentData.staffList || []);
+        const existingRatings = currentData.ratings || [];
+        let importedCount = 0;
 
         for (const msg of allMessages) {
             const parsed = parseRatingFromMessage(msg);
