@@ -2877,11 +2877,10 @@ client.once(Events.ClientReady, async () => {
         // 2. Comprobar y actualizar jugadores cada 15 segundos
         setInterval(updateBotPresence, 15000);
 
-        // 3. Actualizar el panel del canal cada 60 segundos
-        if (botConfig.CHANNEL_STATUS_ID) {
-            updateChannelStatusPanel().catch(() => { });
-            setInterval(() => updateChannelStatusPanel().catch(() => { }), 60000);
-        }
+        // 4. Auto-calibración de patrones de IA y lenguaje humano desde el canal de solicitudes
+        autoBootstrapChannelHistory().catch(err => {
+            console.error('⚠️ [IA BOOTSTRAP ERROR]:', err);
+        });
 
         console.log(`\n🟢 [SISTEMA LISTO] Bot conectado y 100% operativo en Spain RP. ¡Listo para recibir comandos! 🚀\n`);
     } catch (readyErr) {
@@ -4355,8 +4354,10 @@ client.on('messageCreate', async (message) => {
             console.log(`💬 [COMANDO RECIBIDO] "${message.content}" de ${message.author.tag} (${message.author.id}) en #${message.channel.name || message.channel.id}`);
         }
 
-        // Comprobar si este Staff tiene una sanción pendiente de subir captura
-        if (pendingSancionesAwaitingImage.has(message.author.id)) {
+        const isCmdMessage = message.content && message.content.startsWith('!');
+
+        // Comprobar si este Staff tiene una sanción pendiente de subir captura (solo si no es un comando con '!')
+        if (!isCmdMessage && pendingSancionesAwaitingImage.has(message.author.id)) {
             const pending = pendingSancionesAwaitingImage.get(message.author.id);
             console.log(`\n🚨 [SANCIÓN PENDIENTE] Mensaje recibido de Staff ${message.author.tag} (${message.author.id})`);
             console.log(`   -> Adjuntos detectados: ${message.attachments.size} | Contenido de texto: "${message.content}"`);
@@ -4498,8 +4499,8 @@ client.on('messageCreate', async (message) => {
             }
         }
 
-        // Comprobar si este Staff tiene un evento pendiente de subir cartel / flyer
-        if (pendingEventosAwaitingImage.has(message.author.id)) {
+        // Comprobar si este Staff tiene un evento pendiente de subir cartel / flyer (solo si no es un comando con '!')
+        if (!isCmdMessage && pendingEventosAwaitingImage.has(message.author.id)) {
             const pending = pendingEventosAwaitingImage.get(message.author.id);
             console.log(`\n🎉 [EVENTO PENDIENTE] Mensaje recibido de Staff ${message.author.tag} (${message.author.id})`);
             console.log(`   -> Adjuntos detectados: ${message.attachments.size} | Contenido de texto: "${message.content}"`);
