@@ -220,24 +220,18 @@ async function syncDataFromMongo() {
 
         // 2. Staff Ratings
         const staffDoc = await StaffRatingDataModel.findOne({ docId: 'main' });
-        let localRatings = getStaffRatingsData();
         if (staffDoc) {
             const statsObj = {};
             if (staffDoc.stats) {
                 staffDoc.stats.forEach((val, key) => { statsObj[key] = val; });
             }
-            const combinedStaffList = Array.from(new Set([
-                ...(localRatings.staffList || []),
-                ...(staffDoc.staffList || [])
-            ]));
             const dataToSave = {
-                staffList: combinedStaffList.length > 0 ? combinedStaffList : ['418558256840179722'],
-                ratings: staffDoc.ratings || localRatings.ratings || [],
+                staffList: (staffDoc.staffList && staffDoc.staffList.length > 0) ? staffDoc.staffList : ['418558256840179722'],
+                ratings: staffDoc.ratings || [],
                 stats: statsObj
             };
             recalculateStaffRatings(dataToSave);
             fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(dataToSave, null, 2), 'utf8');
-            await StaffRatingDataModel.findOneAndUpdate({ docId: 'main' }, { staffList: dataToSave.staffList }, { upsert: true }).catch(() => { });
         } else {
             // Subir datos iniciales locales a Mongo si está vacío
             const localData = getStaffRatingsData();
