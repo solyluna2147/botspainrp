@@ -101,14 +101,7 @@ const client = new Client({
         Partials.Reaction,
         Partials.User,
         Partials.GuildMember
-    ],
-    rest: {
-        timeout: 15000,
-        retries: 5
-    },
-    ws: {
-        large_threshold: 50
-    }
+    ]
 });
 
 // ==========================================
