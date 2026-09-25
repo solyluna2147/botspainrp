@@ -5080,10 +5080,21 @@ client.on('messageCreate', async (message) => {
                 const targetChannel = message.channel;
                 const { topEmbed, files } = buildStaffTopRankingEmbed();
 
-                const sentMsg = await targetChannel.send({ embeds: [topEmbed], files });
-                await updateConfig('CHANNEL_VALORACION_PANEL_ID', targetChannel.id);
-                await updateConfig('MESSAGE_TOP_STAFF_ID', sentMsg.id);
-                console.log(`🏆 [PANEL TOP STAFF] Mensaje publicado al instante en #${targetChannel.name} (Msg ID: ${sentMsg.id})`);
+                const sentMsg = await targetChannel.send({ embeds: [topEmbed], files }).catch(async (sendErr) => {
+                    console.error('❌ [ERROR ENVIAR TOPS CON ASSETS]:', sendErr);
+                    // Reintento sin adjuntos locales en caso de que falten archivos en el servidor de producción
+                    const safeEmbed = EmbedBuilder.from(topEmbed).setImage(null).setThumbnail(client.user.displayAvatarURL());
+                    return await targetChannel.send({ embeds: [safeEmbed] }).catch(err2 => {
+                        console.error('❌ [ERROR CRÍTICO ENVIAR TOPS]:', err2);
+                        return null;
+                    });
+                });
+
+                if (sentMsg) {
+                    await updateConfig('CHANNEL_VALORACION_PANEL_ID', targetChannel.id);
+                    await updateConfig('MESSAGE_TOP_STAFF_ID', sentMsg.id);
+                    console.log(`🏆 [PANEL TOP STAFF] Mensaje publicado al instante en #${targetChannel.name} (Msg ID: ${sentMsg.id})`);
+                }
                 return;
             } catch (err) {
                 console.error('Error al enviar panel instantáneo de tops:', err);
