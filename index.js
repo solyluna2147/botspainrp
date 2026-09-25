@@ -3403,7 +3403,8 @@ async function updateStaffTopRankingPanel() {
 
         if (!targetMessage) return false;
 
-        await targetMessage.edit({ embeds: [topEmbed] }).catch(() => { });
+        const { topEmbed, files } = buildStaffTopRankingEmbed();
+        await targetMessage.edit({ embeds: [topEmbed], files }).catch(() => { });
         console.log(`🏆 [RANKING AUTO-SYNC] Mensaje de Top Staff (${targetMessage.id}) editado y sincronizado con éxito.`);
         return true;
     } catch (e) {
