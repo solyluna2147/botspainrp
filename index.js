@@ -3004,6 +3004,17 @@ client.once(Events.ClientReady, async () => {
             syncMissingWlDecisions().catch(() => { });
         }, 30000);
 
+        // 6. Sincronizar al momento las valoraciones del canal y actualizar el panel de Tops
+        setTimeout(async () => {
+            try {
+                console.log('🏆 [AUTO-SYNC TOPS] Sincronizando valoraciones del canal de Staff al encender...');
+                await syncStaffRatingsFromChannel();
+                await updateStaffTopRankingPanel();
+            } catch (syncErr) {
+                console.error('⚠️ [ERROR AUTO-SYNC TOPS]:', syncErr);
+            }
+        }, 4000);
+
         console.log(`\n🟢 [SISTEMA LISTO] Bot conectado y 100% operativo en Spain RP. ¡Listo para recibir comandos! 🚀\n`);
     } catch (readyErr) {
         console.error('❌ Error en evento Ready:', readyErr);
@@ -3593,17 +3604,15 @@ function buildStaffTopRankingEmbed() {
     
     // Obtener todos los IDs de staff (staffList completo + cualquier otro en stats)
     const allIds = Array.from(new Set([...validStaffList, ...Object.keys(stats)]));
-    const staffList = allIds.map(id => {
-        const s = stats[id] || { staffTag: 'Staff', totalRatings: 0, sumRatings: 0, average: 0 };
-        return { id, ...s };
-    });
+    const staffList = allIds
+        .map(id => {
+            const s = stats[id] || { staffTag: 'Staff', totalRatings: 0, sumRatings: 0, average: 0 };
+            return { id, ...s };
+        })
+        .filter(s => (s.totalRatings || 0) > 0); // Únicamente mostrar staffs que tengan al menos 1 valoración
 
-    // Ordenar: primero los que tienen valoraciones (mayor promedio, luego más valoraciones), luego los sin valoraciones
-    staffList.sort((a, b) => {
-        if (b.totalRatings > 0 && a.totalRatings === 0) return 1;
-        if (a.totalRatings > 0 && b.totalRatings === 0) return -1;
-        return (b.average - a.average) || (b.totalRatings - a.totalRatings);
-    });
+    // Ordenar: mayor promedio primero, y a igualdad de promedio el que más votos tenga
+    staffList.sort((a, b) => (b.average - a.average) || (b.totalRatings - a.totalRatings));
 
     const logoPath = path.join(__dirname, 'assets', 'logo.png');
     const topsBannerPath = path.join(__dirname, 'assets', 'panel_tops.png');
@@ -3613,15 +3622,15 @@ function buildStaffTopRankingEmbed() {
 
     let desc = '';
     if (staffList.length === 0) {
-        desc = `\u200B\n📭 *Todavía no se han registrado miembros del Staff en el sistema.*`;
+        desc = `\u200B\n📭 *Todavía no hay miembros del Staff con valoraciones registradas.*`;
     } else {
         desc = `\u200B\n`;
         staffList.slice(0, 25).forEach((s, idx) => {
             const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `\`#${idx + 1}\``));
             const member = client.guilds.cache.first()?.members?.cache?.get(s.id);
             const userMentionOrName = member ? `<@${s.id}>` : (s.staffTag && s.staffTag !== 'Staff' ? `**@${s.staffTag}**` : `<@${s.id}>`);
-            const ratingDisplay = s.totalRatings > 0 ? `**${s.average}/10** ⭐` : `*Sin valoraciones*`;
-            const votesDisplay = s.totalRatings > 0 ? `\`${s.totalRatings}\` votos recibidos` : `\`0\` valoraciones`;
+            const ratingDisplay = `**${s.average}/10** ⭐`;
+            const votesDisplay = `\`${s.totalRatings}\` ${s.totalRatings === 1 ? 'voto recibido' : 'votos recibidos'}`;
             desc += `${medal} ${userMentionOrName} • ${ratingDisplay}\n\n` +
                 `> 💬 **Reseñas:** ${votesDisplay}\n\n` +
                 `────────────────────────────\n\n`;
