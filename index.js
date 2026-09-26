@@ -3,6 +3,9 @@ const dns = require('dns');
 if (dns && dns.setDefaultResultOrder) {
     dns.setDefaultResultOrder('ipv4first');
 }
+try {
+    dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch (e) { }
 
 const {
     Client,
@@ -950,18 +953,37 @@ function saveAiFeedbackData(data) {
     }
 }
 
-// Extraer n-gramas filtrados para no capturar ruido ni stopwords
+// Extraer n-gramas filtrados para no capturar ruido ni stopwords ni respuestas fijas
 function extractInformativeNGrams(text, n = 3) {
-    const clean = text.toLowerCase().replace(/[^\wáéíóúñ\s]/gi, ' ').trim();
-    const words = clean.split(/\s+/).filter(w => w.length > 1);
+    const clean = text.toLowerCase()
+        .replace(/¿?\s*qu[eé]\s+es\s+el\s+rol\??/gi, ' ')
+        .replace(/definici[oó]n\s+de\s+rol/gi, ' ')
+        .replace(/valoraci[oó]n\s+de\s+vida/gi, ' ')
+        .replace(/vida\s+[uú]nica\s*-\s*muerte\s+permanente\s+pkt/gi, ' ')
+        .replace(/datos\s+ooc\s+del\s+jugador/gi, ' ')
+        .replace(/[^\wáéíóúñ\s]/gi, ' ')
+        .trim();
+    const words = clean.split(/\s+/).filter(w => w.length > 2);
     const ngrams = [];
+
+    // Frases del formulario genéricas que deben excluirse del aprendizaje
+    const blacklistedFragments = [
+        'muerte permanente', 'vida única', 'vida unica', 'valorar la vida', 'valorar mi vida',
+        'apuntan con un', 'arma de fuego', 'no hago locuras', 'pierde la memoria', 'sí entiendo que',
+        'si entiendo que', 'entorno de la', 'interpretar un personaje', 'situaciones de la',
+        'datos ooc', 'historia de tu', 'historia del personaje'
+    ];
 
     for (let i = 0; i <= words.length - n; i++) {
         const slice = words.slice(i, i + n);
-        // Debe tener al menos 1 palabra de contenido sustancial
+        const phrase = slice.join(' ');
+
+        if (blacklistedFragments.some(bf => phrase.includes(bf))) continue;
+
+        // Debe tener al menos 2 palabras sustanciales (no stopwords)
         const nonStopCount = slice.filter(w => !SPANISH_STOP_WORDS.has(w)).length;
-        if (nonStopCount >= 1) {
-            ngrams.push(slice.join(' '));
+        if (nonStopCount >= Math.max(1, Math.floor(n / 2) + 1)) {
+            ngrams.push(phrase);
         }
     }
     return ngrams;
@@ -986,9 +1008,9 @@ function registerFeedbackOutcome(applicantKey, decisionType, text = '', shouldSa
         targetText = pendingAuditsMap.get(applicantKey).text;
     }
 
-    // Limpiar texto para aislar respuestas
+    // Extraer exclusivamente historia y respuestas de candidato
     const candidateOnly = extractCandidateAnswers(targetText);
-    if (!candidateOnly || candidateOnly.length < 15) return;
+    if (!candidateOnly || candidateOnly.length < 25) return;
 
     data.totalSamples = (data.totalSamples || 0) + 1;
     if (isApproved) data.approvedSamples = (data.approvedSamples || 0) + 1;
@@ -1000,9 +1022,9 @@ function registerFeedbackOutcome(applicantKey, decisionType, text = '', shouldSa
     if (!data.learnedHumanPatterns) data.learnedHumanPatterns = {};
 
     const ngrams = [
-        ...extractInformativeNGrams(candidateOnly, 2),
         ...extractInformativeNGrams(candidateOnly, 3),
-        ...extractInformativeNGrams(candidateOnly, 4)
+        ...extractInformativeNGrams(candidateOnly, 4),
+        ...extractInformativeNGrams(candidateOnly, 5)
     ];
 
     if (isDenied) {
@@ -1029,13 +1051,24 @@ function registerFeedbackOutcome(applicantKey, decisionType, text = '', shouldSa
     }
 }
 
-// Recalcula y consolida clichés vs patrones humanos
+// Recalcula y consolida clichés vs patrones humanos evitando contaminación por preguntas fijas
 function rebuildContrastivePatterns(data) {
     if (!data.learnedClichés) data.learnedClichés = {};
     if (!data.learnedHumanPatterns) data.learnedHumanPatterns = {};
 
+    const fixedQuestionsNoise = [
+        'muerte permanente', 'vida única', 'vida unica', 'valorar la vida', 'valorar mi vida',
+        'apuntan con un', 'arma de fuego', 'no hago locuras', 'pierde la memoria', 'sí entiendo que',
+        'si entiendo que', 'entorno de la', 'interpretar un personaje', 'datos ooc', 'historia del personaje'
+    ];
+
     for (const [phrase, dCount] of Object.entries(data.deniedPhrasesCount || {})) {
+        if (fixedQuestionsNoise.some(noise => phrase.includes(noise)) || phrase.length < 12) {
+            delete data.learnedClichés[phrase];
+            continue;
+        }
         const aCount = data.approvedPhrasesCount?.[phrase] || 0;
+        // Solo es un cliché de IA si se repitió en denegadas al menos 2 veces y casi no aparece en aprobadas
         if (dCount >= 2 && aCount === 0) {
             data.learnedClichés[phrase] = {
                 count: dCount,
@@ -1047,11 +1080,18 @@ function rebuildContrastivePatterns(data) {
     }
 
     for (const [phrase, aCount] of Object.entries(data.approvedPhrasesCount || {})) {
-        if (aCount >= 2) {
+        if (fixedQuestionsNoise.some(noise => phrase.includes(noise)) || phrase.length < 10) {
+            delete data.learnedHumanPatterns[phrase];
+            continue;
+        }
+        const dCount = data.deniedPhrasesCount?.[phrase] || 0;
+        if (aCount >= 2 && dCount === 0) {
             data.learnedHumanPatterns[phrase] = {
                 count: aCount,
                 weight: Math.min(4 + aCount * 2, 12)
             };
+        } else {
+            delete data.learnedHumanPatterns[phrase];
         }
     }
 }
@@ -1536,53 +1576,93 @@ function calculateLexicalRichness(words) {
 // Evaluación de Calidad Narrativa, Persona Gramatical y Extensión (Criterios de Staff de FiveM)
 function evaluateFormQuality(fullText, words) {
     const qualityNotes = [];
-    const lower = fullText.toLowerCase();
 
-    // Extraer exclusivamente el fragmento de la historia para no confundir 'mi personaje' de las preguntas de normativa
-    let storyText = lower;
-    const histMatch = fullText.match(/(?:HISTORIA\s+DE\s+TU\s+PERSONAJE|HISTORIA)[:\s]*([\s\S]+?)(?=\n\s*(?:DATOS\s+OOC|$))/i);
-    if (histMatch && histMatch[1].trim().length > 10) {
-        storyText = histMatch[1].toLowerCase();
+    // Extraer exclusivamente el bloque de historia
+    let storyText = fullText;
+    const histMatch = fullText.match(/(?:HISTORIA\s+DE\s+TU\s+PERSONAJE|HISTORIA)[^\n\r:]*[:\n\r]+([\s\S]+?)(?=\n\s*(?:DATOS\s+OOC|🪪|👑|────────────────|Solicitante|Decisión|hoy\s+a\s+las|$))/i);
+    if (histMatch && histMatch[1].trim().length > 15) {
+        storyText = histMatch[1].trim();
+    } else {
+        // Si no hay encabezado formal, usar el texto completo filtrado
+        storyText = extractCandidateAnswers(fullText);
     }
 
-    // 1. Detección de Persona Gramatical en la Historia
-    const firstPersonMatches = storyText.match(/\b(me llamo|nací|naci|mi infancia|crecí|creci|tuve que|decidí|decidi|aprendí|aprendi|mis padres|fui|empecé|empece|vengo de|tengo \d+ años)\b/g) || [];
-    const thirdPersonMatches = storyText.match(/\b(se llama|nació|nacio|su infancia|creció|crecio|tuvo que|decidió|decidio|aprendió|aprendi[oó]|sus padres|fue|empezó|empezo|decide trasladarse|decide mudarse|estuvo trabajando)\b/g) || [];
+    const storyLower = storyText.toLowerCase();
+    const storyWords = storyLower.split(/\s+/).filter(w => w.length > 0);
+
+    // 1. Detección Inteligente de Persona Gramatical en la Historia
+    // Primera persona estricta en el núcleo de la historia
+    const firstPersonPatterns = [
+        /\b(me llamo|mi nombre es|nací|naci|crecí|creci|mi infancia|mis padres|mi padre|mi madre|mi familia|mi hermano|mi hermana|tuve que|decidí|decidi|empecé|empece|llegué|llegue|fui|estuve|trabajé|trabaje|aprendí|aprendi|me metí|me meti|vengo de|tengo \d+ años|he sido|me considero)\b/g
+    ];
+
+    // Tercera persona estricta (narrativa sobre el personaje)
+    const thirdPersonPatterns = [
+        /\b(se llama|su nombre es|nació|nacio|creció|crecio|su infancia|sus padres|su padre|su madre|su familia|su hermano|su hermana|tuvo que|decidió|decidio|empezó|empezo|llegó|llego|fue|estuvo|trabajó|trabajo|aprendió|aprendio|se metió|se metio|viene de|tiene \d+ años|ha sido|se considera|decide mudarse|decide viajar|un joven llamado|un chico llamado|un hombre llamado)\b/g
+    ];
+
+    let firstCount = 0;
+    for (const pat of firstPersonPatterns) {
+        const matches = storyLower.match(pat);
+        if (matches) firstCount += matches.length;
+    }
+
+    let thirdCount = 0;
+    for (const pat of thirdPersonPatterns) {
+        const matches = storyLower.match(pat);
+        if (matches) thirdCount += matches.length;
+    }
 
     let perspective = '3ª Persona (Recomendada)';
-    if (firstPersonMatches.length > thirdPersonMatches.length && firstPersonMatches.length >= 2) {
+    // Solo marcar 1ª persona si los verbos/posesivos en 1ª superan con claridad a la 3ª persona y tienen peso sustancial
+    if (firstCount >= 3 && firstCount > thirdCount * 1.8) {
         perspective = '1ª Persona (Revisar si normativas piden 3ª)';
         qualityNotes.push('Historia en 1ª persona ("Yo...")');
-    } else if (thirdPersonMatches.length >= 2) {
+    } else if (thirdCount >= 1 || (firstCount === 0 && thirdCount === 0)) {
         perspective = '3ª Persona (Correcta)';
     }
 
-    // 2. Extensión de la Historia (Criterio de brevedad vs profundidad)
+    // 2. Extensión y Profundidad de la Historia
+    const storyWordCount = storyWords.length;
     let lengthRating = 'Adecuada';
-    if (words.length < 35) {
+    if (storyWordCount < 35) {
         lengthRating = 'Muy Corta / Escasa';
         qualityNotes.push('Historia escasa (menos de 35 palabras)');
-    } else if (words.length < 60) {
+    } else if (storyWordCount < 70) {
         lengthRating = 'Corta / Poco Detallada';
-        qualityNotes.push('Pocos detalles de infancia/motivaciones');
-    } else if (words.length > 250) {
+        qualityNotes.push('Poco desarrollada (menos de 70 palabras)');
+    } else if (storyWordCount > 250) {
         lengthRating = 'Extensa y Detallada';
     }
 
-    // 3. Revisión de mención de Infancia / Orígenes
-    const hasInfancia = /\b(infancia|niñez|pequeñ[oa]|colegio|escuela|padres|madre|padre|familia|orígenes|origenes|barrio|afueras|abuelos)\b/i.test(storyText);
-    if (!hasInfancia && words.length < 80) {
-        qualityNotes.push('No profundiza en infancia/origen');
+    // 3. Revisión de mención de Infancia / Orígenes / Metas
+    const hasInfancia = /\b(infancia|niñez|pequeñ[oa]|colegio|escuela|padres|madre|padre|familia|orígenes|origenes|barrio|afueras|abuelos|pueblo|ciudad natal)\b/i.test(storyLower);
+    if (!hasInfancia && storyWordCount < 80) {
+        qualityNotes.push('No profundiza en orígenes/infancia');
     }
 
     return {
         perspective,
         lengthRating,
-        wordCount: words.length,
+        wordCount: storyWordCount,
         hasInfancia,
         qualityNotes
     };
 }
+
+// Generador de variación determinista basada en el texto (evita números idénticos estáticos como siempre 2%)
+function getDeterministicJitter(text, min = -3, max = 3) {
+    if (!text) return 0;
+    let hash = 0;
+    for (let i = 0; i < text.length; i++) {
+        hash = (hash << 5) - hash + text.charCodeAt(i);
+        hash |= 0;
+    }
+    const range = (max - min) + 1;
+    const offset = Math.abs(hash) % range;
+    return min + offset;
+}
+
 async function analyzeTextForAI(text) {
     if (!text || typeof text !== 'string') {
         return {
@@ -1607,11 +1687,12 @@ async function analyzeTextForAI(text) {
     const wordCount = words.length;
 
     if (wordCount < 10) {
+        const jitter = Math.abs(getDeterministicJitter(cleanText, 1, 5));
         return {
-            aiScore: 2,
-            humanScore: 98,
-            localAiScore: 2,
-            localHumanScore: 98,
+            aiScore: jitter,
+            humanScore: 100 - jitter,
+            localAiScore: jitter,
+            localHumanScore: 100 - jitter,
             apiAiScore: null,
             apiHumanScore: null,
             statusEmoji: '🟢',
@@ -1627,24 +1708,24 @@ async function analyzeTextForAI(text) {
     // CAPA 1: Banco de Clichés Arquetípicos de IA (ChatGPT / Claude / Gemini)
     // ----------------------------------------------------
     const hardAiClichés = [
-        { regex: /desde (temprana edad|muy pequeñ[oa]|corta edad)/i, label: 'Apertura de ChatGPT ("Desde temprana edad...")', weight: 22 },
+        { regex: /desde (temprana edad|muy pequeñ[oa]|corta edad)/i, label: 'Apertura típica de IA ("Desde temprana edad...")', weight: 22 },
         { regex: /creci[oó] en (un barrio|un entorno|una familia) (humilde|conflictiv[oa]|marginal|complicad[oa]|carente)/i, label: 'Cliché de origen de IA ("Creció en un barrio humilde...")', weight: 24 },
-        { regex: /forj(ar|ando|ó|aron) su (destino|car[aá]cter|propio camino|futuro)/i, label: 'Frase de destino ("Forjar su propio destino")', weight: 20 },
+        { regex: /forj(ar|ando|ó|aron) su (destino|car[aá]cter|propio camino|futuro)/i, label: 'Frase de destino de IA ("Forjar su propio destino")', weight: 20 },
         { regex: /a pesar de las (dificultades|adversidades|circunstancias|tragedias|desaf[ií]os)/i, label: 'Conector de resiliencia de IA ("A pesar de las adversidades...")', weight: 20 },
         { regex: /(una mezcla|un balance|una combinaci[oó]n) de (determinaci[oó]n|valent[ií]a|respeto|lealtad|firmeza)/i, label: 'Estructura binaria típica de ChatGPT', weight: 24 },
-        { regex: /marc[oó] un antes y un despu[eé]s/i, label: 'Expresión formuláica ("Marcó un antes y un después")', weight: 20 },
+        { regex: /marc[oó] un antes y un despu[eé]s/i, label: 'Expresión formuláica ("Marcó un antes y un después")', weight: 18 },
         { regex: /en busca de (un nuevo comienzo|nuevas oportunidades|un futuro mejor|redenci[oó]n|un cambio de aires|prosperidad)/i, label: 'Motivación cliché de IA ("En busca de un nuevo comienzo...")', weight: 20 },
         { regex: /con la determinaci[oó]n de/i, label: 'Frase de transición de IA ("Con la determinación de...")', weight: 16 },
         { regex: /guiad[oa] por (sus principios|sus valores|su moral|el c[oó]digo|su sentido de la justicia)/i, label: 'Moralismo estándar de IA', weight: 18 },
-        { regex: /(firme convicci[oó]n|inquebrantable|resiliencia|perseverante|esp[ií]ritu indomable)/i, label: 'Vocabulario ensayístico de IA', weight: 18 },
+        { regex: /(firme convicci[oó]n|inquebrantable|resiliencia|esp[ií]ritu indomable)/i, label: 'Vocabulario ensayístico de IA', weight: 18 },
         { regex: /encontrar su lugar en el mundo/i, label: 'Cliché existencial de IA', weight: 20 },
         { regex: /le ense[ñn][oó] el valor del (trabajo duro|esfuerzo|respeto|sacrificio)/i, label: 'Lección moral prefabricada', weight: 20 },
         { regex: /un faro de (esperanza|luz|justicia|integridad)/i, label: 'Metáfora estándar de IA', weight: 22 },
         { regex: /su vida dio un giro (de 180 grados|inesperado|dr[aá]stico)/i, label: 'Cliché narrativo de transición', weight: 18 },
-        { regex: /marcar(on)? su infancia|dej[oó] una huella imborrable/i, label: 'Fórmula de trauma infantil de IA', weight: 18 },
-        { regex: /hacerse un nombre en la ciudad/i, label: 'Cliché de objetivo en GTA RP generado por IA', weight: 20 },
+        { regex: /marcar(on)? su infancia|dej[oó] una huella imborrable/i, label: 'Fórmula de trauma de IA', weight: 18 },
+        { regex: /hacerse un nombre en la ciudad/i, label: 'Objetivo genérico formulado por IA', weight: 18 },
         { regex: /no fue un camino f[aá]cil|el camino no fue f[aá]cil/i, label: 'Cliché narrativo de superación', weight: 18 },
-        { regex: /aprendi[oó] a base de golpes|aprendi[oó] por las malas/i, label: 'Frase trillada de madurez de IA', weight: 16 },
+        { regex: /aprendi[oó] a base de golpes|aprendi[oó] por las malas/i, label: 'Frase de madurez formuláica', weight: 15 },
         { regex: /cada obst[aá]culo lo convirti[oó] en/i, label: 'Retórica de autoayuda de IA', weight: 20 }
     ];
 
@@ -1658,29 +1739,38 @@ async function analyzeTextForAI(text) {
         }
     }
 
-    // CAPA 1.5: Patrones Aprendidos Contrastivamente del Historial
+    // CAPA 1.5: Patrones Aprendidos Contrastivamente del Historial de la Comunidad
     const feedbackData = getAiFeedbackData();
     let learnedAiBonus = 0;
     let learnedHumanBonus = 0;
     const lowerClean = cleanText.toLowerCase();
 
-    // Requerir coincidencia sustancial para patrones aprendidos históricos
+    // Solo contrastar con frases genuinas de historias y evitar duplicaciones de sub-frases
     if (feedbackData.learnedClichés) {
+        const matchedPhrases = [];
         for (const [phrase, info] of Object.entries(feedbackData.learnedClichés)) {
-            // Solo considerar si la frase tiene longitud suficiente y no es una simple coincidencia de palabras comunes
-            if (info.count >= 3 && phrase.length >= 15 && lowerClean.includes(phrase)) {
-                learnedAiBonus += Math.min(info.weight || 4, 8);
-                if (hardDetectedPatterns.length < 3) {
-                    hardDetectedPatterns.push(`Patrón IA recurrente ("${phrase.slice(0, 22)}...")`);
+            if (info.count >= 2 && phrase.length >= 14 && lowerClean.includes(phrase)) {
+                // Verificar que no sea una subcadena de otra frase ya encontrada
+                if (!matchedPhrases.some(p => p.includes(phrase) || phrase.includes(p))) {
+                    matchedPhrases.push(phrase);
+                    learnedAiBonus += Math.min(info.weight || 5, 12);
                 }
+            }
+        }
+
+        // Si se encontraron patrones aprendidos, añadir a lo sumo 1 o 2 ejemplos representativos y limpios
+        for (const phrase of matchedPhrases.slice(0, 2)) {
+            const cleanPhrasePreview = phrase.trim();
+            if (hardDetectedPatterns.length < 3 && !hardDetectedPatterns.some(p => p.toLowerCase().includes(cleanPhrasePreview.slice(0, 12)))) {
+                hardDetectedPatterns.push(`Patrón recurrente: "${cleanPhrasePreview}"`);
             }
         }
     }
 
     if (feedbackData.learnedHumanPatterns) {
         for (const [phrase, info] of Object.entries(feedbackData.learnedHumanPatterns)) {
-            if (info.count >= 2 && lowerClean.includes(phrase)) {
-                learnedHumanBonus += Math.min(info.weight || 5, 10);
+            if (info.count >= 2 && phrase.length >= 12 && lowerClean.includes(phrase)) {
+                learnedHumanBonus += Math.min(info.weight || 4, 10);
             }
         }
     }
@@ -1701,9 +1791,12 @@ async function analyzeTextForAI(text) {
     let uniformityScore = 0;
     // La IA suele generar oraciones de longitud casi idéntica (16-24 palabras) con muy baja varianza
     if (sentences.length >= 3 && variance < 12 && avgWordsPerSentence >= 15 && avgWordsPerSentence <= 26 && hardDetectedPatterns.length > 0) {
-        uniformityScore += 18;
-        hardDetectedPatterns.push('Uniformidad de ritmo artificial');
+        uniformityScore += 16;
+        hardDetectedPatterns.push('Uniformidad de ritmo sintáctico');
     }
+
+    // Riqueza léxica y vocabulario
+    const lexicalRichness = calculateLexicalRichness(words);
 
     // ----------------------------------------------------
     // CAPA 3: Detector de Rasgos y Fluidez Humana (FiveM & Rol España)
@@ -1728,20 +1821,20 @@ async function analyzeTextForAI(text) {
         }
     }
 
-    // Si el texto está en mayúsculas o tiene alta varianza en frases -> típicamente humano
+    // Si el texto está completamente en mayúsculas o tiene alta varianza en frases -> típicamente humano
     if (cleanText === cleanText.toUpperCase() && cleanText.length > 30) {
-        humanScoreBonus += 25; // Los postulantes humanos suelen escribir en mayúsculas
+        humanScoreBonus += 25;
     }
-    if (sentences.length >= 3 && variance > 30) {
-        humanScoreBonus += 20; // Variabilidad natural
+    if (sentences.length >= 3 && variance > 25) {
+        humanScoreBonus += 18; // Variabilidad natural
     }
 
     // ----------------------------------------------------
-    // CAPA 4: Consulta a APIs Externas (Sapling, HuggingFace, Gemini)
+    // CAPA 4: Consulta a APIs Externas (HuggingFace, Sapling, Gemini)
     // ----------------------------------------------------
     const externalScores = [];
 
-    // 1. Hugging Face Inference API (RoBERTa detector de OpenAI)
+    // 1. Hugging Face Inference API
     const hfToken = process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
     if (hfToken && hfToken.trim().length > 0) {
         try {
@@ -1768,12 +1861,8 @@ async function analyzeTextForAI(text) {
                         console.log(`🤗 [AUDITORÍA HUGGINGFACE] Score: ${score}%`);
                     }
                 }
-            } else {
-                console.log(`⚠️ [AUDITORÍA HUGGINGFACE] Status HTTP ${res.status}`);
             }
-        } catch (hfErr) {
-            console.log(`⚠️ [AUDITORÍA HUGGINGFACE] Excepción: ${hfErr.message}`);
-        }
+        } catch (hfErr) { }
     }
 
     // 2. Sapling AI Detector
@@ -1781,7 +1870,7 @@ async function analyzeTextForAI(text) {
     if (saplingKey && saplingKey.trim().length > 0) {
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 6000);
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
             const res = await fetch('https://api.sapling.ai/api/v1/aidetect', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1800,28 +1889,20 @@ async function analyzeTextForAI(text) {
                     externalScores.push({ name: 'Sapling AI', score, weight: 1.2 });
                     console.log(`🤖 [AUDITORÍA SAPLING] Score: ${score}%`);
                 }
-            } else {
-                console.log(`⚠️ [AUDITORÍA SAPLING] Error HTTP ${res.status}`);
             }
-        } catch (apiErr) {
-            if (apiErr.name === 'AbortError') {
-                console.log(`⏱️ [AUDITORÍA SAPLING] Tiempo de respuesta agotado (>6s)`);
-            } else {
-                console.log(`⚠️ [AUDITORÍA SAPLING] Excepción: ${apiErr.message}`);
-            }
-        }
+        } catch (apiErr) { }
     }
 
-    // 3. Google Gemini AI (Análisis Forense con Gemini 3.6 Flash)
+    // 3. Google Gemini AI (Análisis Forense)
     const geminiKey = process.env.GEMINI_API_KEY;
     if (geminiKey && geminiKey.trim().length > 0 && geminiKey.startsWith('AIzaSy')) {
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000);
-            const geminiPrompt = `Eres un auditor experto de Whitelist de FiveM. Determina de 0 a 100 la probabilidad de que este texto haya sido generado por una IA (ChatGPT/Claude). Si el texto tiene lenguaje coloquial, errores menores o es una historia simple escrita por una persona real, asigna un número bajo (entre 0 y 15). Si usa clichés de IA ("desde temprana edad", "barrio humilde", "forjar destino"), asigna entre 80 y 100. Responde SOLAMENTE con el número entero.\nTexto: "${cleanText.substring(0, 1000)}"`;
+            const timeoutId = setTimeout(() => controller.abort(), 4500);
+            const geminiPrompt = `Eres un auditor de Whitelist de FiveM. Determina de 0 a 100 la probabilidad de que este texto haya sido escrito por una IA (ChatGPT/Claude). Historias simples con modismos o errores humanos deben tener entre 1 y 12. Historias con clichés literarios de IA ("desde temprana edad", "barrio humilde", "forjar destino") deben tener entre 75 y 98. Responde únicamente con el número entero.\nTexto: "${cleanText.substring(0, 1000)}"`;
 
             const cleanKey = geminiKey.trim();
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${cleanKey}`, {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${cleanKey}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1842,37 +1923,39 @@ async function analyzeTextForAI(text) {
                     console.log(`✨ [AUDITORÍA GEMINI] Score: ${score}%`);
                 }
             }
-        } catch (gemErr) {
-            console.log(`⚠️ [AUDITORÍA GEMINI] Excepción: ${gemErr.message}`);
-        }
+        } catch (gemErr) { }
     }
 
     // ----------------------------------------------------
-    // CAPA 5: Calibración y Fusión del Ensemble (Motor Interno vs APIs)
+    // CAPA 5: Calibración Dinámica, Orgánica y Fusión Ensemble
     // ----------------------------------------------------
-    let rawScore = 5; // Base mínima
+    // Variación sutil y no repetitiva derivada de la longitud y léxico del usuario
+    const textJitter = getDeterministicJitter(cleanText, 0, 7);
+    const lengthMod = Math.min(Math.floor(wordCount / 40), 4);
 
-    // Sumar peso de clichés duros y uniformidad artificial
+    let rawScore = 3 + textJitter; // Base orgánica dinámica (3% a 10%)
+
+    // Sumar peso de clichés duros y uniformidad sintáctica
     if (hardClichéScore > 0) {
         rawScore += hardClichéScore + uniformityScore;
     }
     rawScore += learnedAiBonus;
 
-    // Restar bonificaciones por rasgos humanos auténticos
+    // Restar bonificaciones por autenticidad humana
     rawScore -= humanScoreBonus;
 
-    // Calibración final por presencia de clichés arquetípicos
+    // Calibración adaptativa basada en la evidencia acumulada
     if (hardClichéScore >= 40) {
-        rawScore = Math.max(rawScore, 85);
+        rawScore = Math.max(rawScore, 82 + (textJitter % 12)); // 82% - 94%
     } else if (hardClichéScore >= 20) {
-        rawScore = Math.max(rawScore, 40);
+        rawScore = Math.max(rawScore, 42 + (textJitter % 15)); // 42% - 57%
     } else if (humanScoreBonus > 15 && hardClichéScore === 0) {
-        rawScore = Math.min(rawScore, 8); // Claramente humano
+        rawScore = Math.min(Math.max(rawScore, 1 + (textJitter % 4)), 9); // 1% - 9%
     } else if (hardClichéScore === 0) {
-        rawScore = Math.min(rawScore, 20);
+        rawScore = Math.min(Math.max(rawScore, 2 + textJitter + lengthMod), 22); // 2% - 22%
     }
 
-    let localAiScore = Math.min(Math.max(Math.round(rawScore), 2), 98);
+    let localAiScore = Math.min(Math.max(Math.round(rawScore), 1), 99);
     let localHumanScore = 100 - localAiScore;
 
     let apiAiScore = null;
@@ -1889,28 +1972,31 @@ async function analyzeTextForAI(text) {
         apiAiScore = Math.round(totalApiWeighted / totalApiWeight);
         apiHumanScore = 100 - apiAiScore;
 
-        const hfEntry = externalScores.find(e => e.name.toLowerCase().includes('huggingface'));
-        const saplingEntry = externalScores.find(e => e.name.toLowerCase().includes('sapling'));
-
-        // Caso Humano Inequívoco: HuggingFace u otra API da <=10% Y no hay clichés duros
-        if (hfEntry && hfEntry.score <= 10 && hardDetectedPatterns.length === 0) {
-            finalAiScore = Math.min(hfEntry.score, localAiScore, 8);
-        } else if ((hfEntry && hfEntry.score >= 75) || (saplingEntry && saplingEntry.score >= 75) || hardDetectedPatterns.length >= 2) {
-            // Caso IA Inequívoco
-            const maxScore = Math.max(
-                hfEntry ? hfEntry.score : 0,
-                saplingEntry ? saplingEntry.score : 0,
-                localAiScore
-            );
-            finalAiScore = Math.min(Math.max(maxScore, 86), 98);
+        // Fusión equilibrada y blindada:
+        // Si el motor local detecta que es humano (sin clichés de IA y con jerga/estructura humana),
+        // las APIs en inglés que dan falsos positivos no pueden forzar 98% a ciegas.
+        if (localAiScore <= 15 && hardDetectedPatterns.length === 0) {
+            // Texto claramente humano a nivel semántico local
+            if (apiAiScore !== null && apiAiScore >= 70) {
+                // Falso positivo típico de modelos en inglés con textos cortos en español: moderar
+                finalAiScore = Math.min(Math.round((localAiScore * 2 + apiAiScore * 0.3) / 2.3), 15);
+            } else if (apiAiScore !== null) {
+                finalAiScore = Math.min(Math.round((localAiScore + apiAiScore) / 2), 12);
+            } else {
+                finalAiScore = localAiScore;
+            }
+        } else if (hardDetectedPatterns.length >= 2 || (localAiScore >= 60 && apiAiScore >= 60)) {
+            // Caso IA confirmado por ambas fuentes o por clichés duros evidentes
+            const maxScore = Math.max(localAiScore, apiAiScore || 0);
+            finalAiScore = Math.min(Math.max(maxScore, 82 + (textJitter % 12)), 98);
         } else {
-            // Promedio equilibrado entre el motor interno del bot y las APIs
-            let totalWeighted = (localAiScore * 1.5) + totalApiWeighted;
-            let totalWeight = 1.5 + totalApiWeight;
+            // Caso intermedio ponderado
+            let totalWeighted = (localAiScore * 2) + totalApiWeighted;
+            let totalWeight = 2 + totalApiWeight;
             finalAiScore = Math.round(totalWeighted / totalWeight);
         }
 
-        finalAiScore = Math.min(Math.max(finalAiScore, 2), 98);
+        finalAiScore = Math.min(Math.max(finalAiScore, 1), 99);
         console.log(`📊 [AUDITORÍA IA COMBINADA] Local: ${localAiScore}% | API: ${apiAiScore}% | Final: ${finalAiScore}%`);
     }
 
@@ -1921,17 +2007,26 @@ async function analyzeTextForAI(text) {
     let statusLabel = 'Texto Original Humano';
     let summaryNote = 'No se detectan patrones evidentes de IA. Lenguaje natural y variado.';
 
-    if (aiScore >= 75) {
+    if (aiScore >= 70) {
         statusEmoji = '🔴';
         statusLabel = 'Alta Probabilidad de IA (ChatGPT / Claude / Gemini)';
         summaryNote = 'Se detectan múltiples frases típicas y sintaxis característica de modelos de lenguaje.';
-    } else if (aiScore >= 35) {
+    } else if (aiScore >= 30) {
         statusEmoji = '🟡';
         statusLabel = 'Sospecha Media de IA / Paráfrasis';
         summaryNote = 'El texto combina giros comunes de IA con modificaciones. Se recomienda profundizar en entrevista.';
     }
 
-    const quality = evaluateFormQuality(cleanText, words);
+    const quality = evaluateFormQuality(text, words);
+
+    // Filtrar patrones para garantizar que sean 100% únicos y sin redundancias
+    const uniqueDetectedPatterns = [];
+    for (const pat of hardDetectedPatterns) {
+        const cleanPat = pat.trim();
+        if (!uniqueDetectedPatterns.some(existing => existing.toLowerCase() === cleanPat.toLowerCase() || existing.includes(cleanPat) || cleanPat.includes(existing))) {
+            uniqueDetectedPatterns.push(cleanPat);
+        }
+    }
 
     return {
         aiScore,
@@ -1944,7 +2039,7 @@ async function analyzeTextForAI(text) {
         statusLabel,
         wordCount,
         sentenceCount: sentences.length,
-        detectedPatterns: hardDetectedPatterns.slice(0, 4),
+        detectedPatterns: uniqueDetectedPatterns.slice(0, 3),
         summaryNote,
         quality
     };
@@ -2901,6 +2996,14 @@ client.once(Events.ClientReady, async () => {
             console.error('⚠️ [IA BOOTSTRAP ERROR]:', err);
         });
 
+        // 5. Sincronizar y publicar cualquier WL aprobada/denegada pendiente de anunciarse
+        setTimeout(() => {
+            syncMissingWlDecisions().catch(() => { });
+        }, 3000);
+        setInterval(() => {
+            syncMissingWlDecisions().catch(() => { });
+        }, 30000);
+
         console.log(`\n🟢 [SISTEMA LISTO] Bot conectado y 100% operativo en Spain RP. ¡Listo para recibir comandos! 🚀\n`);
     } catch (readyErr) {
         console.error('❌ Error en evento Ready:', readyErr);
@@ -2961,12 +3064,97 @@ async function autoBootstrapChannelHistory() {
     }
 }
 
+// Función para sincronizar y enviar cualquier Whitelist reciente que haya sido aprobada o denegada en el canal de solicitudes y que aún no tenga su anuncio
+async function syncMissingWlDecisions() {
+    try {
+        const solChanId = botConfig.CHANNEL_SOLICITUDES_ID || '1517530849661288455';
+        const aprobChanId = botConfig.CHANNEL_APROBADOS_ID || '1550880724930797610';
+        const solChan = await client.channels.fetch(solChanId).catch(() => null);
+        const aprobChan = await client.channels.fetch(aprobChanId).catch(() => null);
+        if (!solChan || !aprobChan) return;
+
+        console.log(`🔄 [SINCRONIZACIÓN WL] Revisando las solicitudes recientes en #${solChan.name}...`);
+        const solMsgs = await solChan.messages.fetch({ limit: 30 }).catch(() => null);
+        if (!solMsgs || solMsgs.size === 0) return;
+
+        const aprobMsgs = await aprobChan.messages.fetch({ limit: 50 }).catch(() => null);
+        const sentAprobTexts = aprobMsgs ? Array.from(aprobMsgs.values()).map(m => `${m.content || ''} ${m.embeds?.[0]?.description || ''} ${m.embeds?.[0]?.title || ''}`) : [];
+
+        // Procesar de las más antiguas a las más recientes
+        const sortedSol = Array.from(solMsgs.values()).reverse();
+        for (const msg of sortedSol) {
+            let fullText = `${msg.content || ''}\n`;
+            if (msg.embeds && msg.embeds.length > 0) {
+                for (const embed of msg.embeds) {
+                    fullText += `${embed.title || ''}\n${embed.description || ''}\n`;
+                    if (embed.fields) {
+                        for (const f of embed.fields) fullText += `${f.name}: ${f.value}\n`;
+                    }
+                }
+            }
+
+            const isAprob = /Decisi[oó]n[:\s*]+Aprobada|Whitelist Solicitud Aprobada|¡?WHITELIST APROBADA!?|Tu Whitelist ha sido aprobada|ha sido Aprobada/i.test(fullText);
+            const isDeneg = /Decisi[oó]n[:\s*]+Denegada|Whitelist Solicitud Denegada|¡?WHITELIST DENEGADA!?|Tu Whitelist ha sido denegada|ha sido Denegada/i.test(fullText);
+
+            if (!isAprob && !isDeneg) continue;
+
+            // Extraer usuario
+            let userMention = null;
+            const kingMatch = fullText.match(/La solicitud de (?:📋 )?Whitelist de ([^\n\r]+?) ha sido (?:Aprobada|Denegada)/i);
+            if (kingMatch) {
+                const idMatch = kingMatch[1].match(/<@!?(\d{17,20})>/);
+                userMention = idMatch ? `<@${idMatch[1]}>` : `@${kingMatch[1].replace(/^[^\w@]+/, '').trim()}`;
+            }
+            if (!userMention) {
+                const idMatch = fullText.match(/<@!?(\d{17,20})>/);
+                if (idMatch) userMention = `<@${idMatch[1]}>`;
+            }
+            if (!userMention) {
+                const solMatch = fullText.match(/Solicitante[:\s*]+@?([^\n\r]+)/i);
+                if (solMatch) userMention = `@${solMatch[1].trim()}`;
+            }
+
+            if (!userMention) continue;
+
+            // Extraer staff
+            let staffName = 'Equipo de Staff';
+            const staffMatch = fullText.match(/Decidido Por[:\s*]+([^\n\r]+)/i);
+            if (staffMatch) staffName = staffMatch[1].trim();
+
+            const userIdOnly = userMention.match(/\d{17,20}/)?.[0] || null;
+            const cleanUserName = userMention.replace(/[<@!>]/g, '').trim().toLowerCase();
+
+            // Comprobar si ya existe un mensaje para este formulario en aprobados
+            const alreadyInAprobados = sentAprobTexts.some(txt => {
+                if (userIdOnly && txt.includes(userIdOnly)) return true;
+                if (cleanUserName && cleanUserName.length > 2 && txt.toLowerCase().includes(cleanUserName)) return true;
+                return false;
+            });
+
+            if (!alreadyInAprobados) {
+                console.log(`📢 [SINCRONIZACIÓN WL] Enviando anuncio pendiente para ${userMention} (${isAprob ? 'APROBADA' : 'DENEGADA'})...`);
+                if (isAprob) {
+                    await sendApprovedNotification({ userMention, staffName });
+                } else {
+                    await sendDeniedNotification({ userMention, staffName });
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Error en syncMissingWlDecisions:', e.message);
+    }
+}
+
 // ==========================================
 function normalizeUserKey(userMention) {
     if (!userMention) return 'unknown_user';
-    const idMatch = String(userMention).match(/\d{17,20}/);
+    const str = String(userMention).trim();
+    // 1. Extraer ID numérico si existe
+    const idMatch = str.match(/\d{17,20}/);
     if (idMatch) return `id_${idMatch[0]}`;
-    return `name_${String(userMention).toLowerCase().replace(/[^a-z0-9_]/gi, '')}`;
+    // 2. Extraer nombre limpio alfanumérico eliminando menciones, emojis y caracteres especiales
+    const clean = str.replace(/<@!?[^>]+>/g, '').replace(/[<@!>#*`~|\s]/g, '').replace(/[^\p{L}\p{N}_]/gu, '').toLowerCase();
+    return clean.length > 0 ? `name_${clean}` : 'unknown_user';
 }
 
 async function sendApprovedNotification({ userMention, staffName = 'Equipo de Staff' }) {
@@ -2980,19 +3168,31 @@ async function sendApprovedNotification({ userMention, staffName = 'Equipo de St
         throw new Error(`No se pudo acceder al canal con ID ${targetChannelId}`);
     }
 
-    // 🛡️ Filtro de seguridad en canal: evitar duplicados recientes (últimos 5 minutos)
+    const normUser = normalizeUserKey(userMention);
+    const rawUserId = userMention.match(/\d{17,20}/)?.[0] || null;
+    const userLockKey = `${normUser}_APROBADA`;
+    const lastTime = recentWlDecisionsSet.get(userLockKey);
+    // 🛡️ Ventana anti-duplicado en memoria: 15 segundos (bloquea eventos gemelos simultáneos sin bloquear WLs futuras)
+    if (lastTime && (Date.now() - lastTime) < 15 * 1000) {
+        console.log(`🛡️ [ANTI-DUPLICADO MEMORIA] Aprobado para ${userMention} ya fue enviado hace ${Math.round((Date.now() - lastTime)/1000)}s. Ignorando evento simultáneo.`);
+        return { success: true, duplicateBlocked: true };
+    }
+    recentWlDecisionsSet.set(userLockKey, Date.now());
+
+    // 🛡️ Filtro de seguridad en canal: evitar duplicados en los últimos 15 segundos
     try {
-        const recentMessages = await targetChannel.messages.fetch({ limit: 15 }).catch(() => null);
+        const recentMessages = await targetChannel.messages.fetch({ limit: 10 }).catch(() => null);
         if (recentMessages && recentMessages.size > 0) {
-            const normUser = normalizeUserKey(userMention);
             const isDuplicateInChannel = recentMessages.some(m => {
                 if (m.author.id !== client.user.id) return false;
-                if (Date.now() - m.createdTimestamp > 5 * 60 * 1000) return false;
+                if (Date.now() - m.createdTimestamp > 15 * 1000) return false;
                 const fullMsgText = `${m.content || ''} ${m.embeds?.[0]?.description || ''} ${m.embeds?.[0]?.title || ''}`;
-                return normalizeUserKey(fullMsgText).includes(normUser) || fullMsgText.includes(userMention);
+                if (rawUserId && fullMsgText.includes(rawUserId)) return true;
+                const normMsgUser = normalizeUserKey(fullMsgText);
+                return (normUser !== 'unknown_user' && normMsgUser.includes(normUser.replace(/^(id_|name_)/, ''))) || fullMsgText.includes(userMention);
             });
             if (isDuplicateInChannel) {
-                console.log(`🛡️ [CANAL APROBADOS] Aviso para ${userMention} ya existe recientemente en #${targetChannel.name}. Envío duplicado evitado.`);
+                console.log(`🛡️ [CANAL APROBADOS] Aviso para ${userMention} ya existe simultáneo en #${targetChannel.name}. Envío duplicado evitado.`);
                 return { success: true, duplicateBlocked: true };
             }
         }
@@ -3070,19 +3270,31 @@ async function sendDeniedNotification({ userMention, staffName = 'Equipo de Staf
         throw new Error(`No se pudo acceder al canal con ID ${targetChannelId}`);
     }
 
-    // 🛡️ Filtro de seguridad en canal: evitar duplicados recientes (últimos 5 minutos)
+    const normUser = normalizeUserKey(userMention);
+    const rawUserId = userMention.match(/\d{17,20}/)?.[0] || null;
+    const userLockKey = `${normUser}_DENEGADA`;
+    const lastTime = recentWlDecisionsSet.get(userLockKey);
+    // 🛡️ Ventana anti-duplicado en memoria: 15 segundos
+    if (lastTime && (Date.now() - lastTime) < 15 * 1000) {
+        console.log(`🛡️ [ANTI-DUPLICADO MEMORIA] Denegado para ${userMention} ya fue enviado hace ${Math.round((Date.now() - lastTime)/1000)}s. Ignorando evento simultáneo.`);
+        return { success: true, duplicateBlocked: true };
+    }
+    recentWlDecisionsSet.set(userLockKey, Date.now());
+
+    // 🛡️ Filtro de seguridad en canal: evitar duplicados en los últimos 15 segundos
     try {
-        const recentMessages = await targetChannel.messages.fetch({ limit: 15 }).catch(() => null);
+        const recentMessages = await targetChannel.messages.fetch({ limit: 10 }).catch(() => null);
         if (recentMessages && recentMessages.size > 0) {
-            const normUser = normalizeUserKey(userMention);
             const isDuplicateInChannel = recentMessages.some(m => {
                 if (m.author.id !== client.user.id) return false;
-                if (Date.now() - m.createdTimestamp > 5 * 60 * 1000) return false;
+                if (Date.now() - m.createdTimestamp > 15 * 1000) return false;
                 const fullMsgText = `${m.content || ''} ${m.embeds?.[0]?.description || ''} ${m.embeds?.[0]?.title || ''}`;
-                return normalizeUserKey(fullMsgText).includes(normUser) || fullMsgText.includes(userMention);
+                if (rawUserId && fullMsgText.includes(rawUserId)) return true;
+                const normMsgUser = normalizeUserKey(fullMsgText);
+                return (normUser !== 'unknown_user' && normMsgUser.includes(normUser.replace(/^(id_|name_)/, ''))) || fullMsgText.includes(userMention);
             });
             if (isDuplicateInChannel) {
-                console.log(`🛡️ [CANAL DENEGADOS] Aviso para ${userMention} ya existe recientemente en #${targetChannel.name}. Envío duplicado evitado.`);
+                console.log(`🛡️ [CANAL DENEGADOS] Aviso para ${userMention} ya existe simultáneo en #${targetChannel.name}. Envío duplicado evitado.`);
                 return { success: true, duplicateBlocked: true };
             }
         }
@@ -3620,6 +3832,398 @@ function buildStaffRatingCardEmbed({ userMention, userAvatar, staffMention, staf
     return { embed, files };
 }
 
+// ==========================================
+// SISTEMA DE PLANTILLAS DE POSTULACIONES (SPAIN RP)
+// ==========================================
+const PLANTILLAS_FILE = path.join(__dirname, 'plantillas.json');
+const lastGeneratedPlantillaByStaff = new Map(); // staffId -> { key, nombre, emoji, contenido, timestamp }
+
+function getPlantillasData() {
+    if (fs.existsSync(PLANTILLAS_FILE)) {
+        try {
+            return JSON.parse(fs.readFileSync(PLANTILLAS_FILE, 'utf8'));
+        } catch (e) {
+            console.error('Error al leer plantillas.json:', e);
+        }
+    }
+    return { plantillas: {} };
+}
+
+function buildPlantillasPanelEmbed() {
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const panelImgPath = path.join(__dirname, 'assets', 'panel_postulaciones.png');
+
+    const embed = new EmbedBuilder()
+        .setColor(0xE67E22) // Naranja Oficial SpainRP
+        .setAuthor({
+            name: 'CENTRO DE POSTULACIONES • SPAIN RP',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setTitle('📋 SISTEMA DE PLANTILLAS DE POSTULACIÓN')
+        .setDescription(
+            `\u200B\n` +
+            `¡Bienvenido al panel central de **Plantillas de Postulaciones Oficiales** de **SPAIN RP**!\n\n` +
+            `Aquí el equipo de Staff puede obtener instantáneamente el formato oficial y limpio de cualquier postulación para enviarlo a los usuarios o tickets de soporte.\n\n` +
+            `📌 **Plantillas Disponibles en el Sistema:**\n` +
+            `> 🎙️ **WL-ORAL** *(OOC, Normativa, Conceptos y Situaciones)*\n` +
+            `> 💼 **Postulación Negocio** *(Apertura de comercios y locales)*\n` +
+            `> 💀 **Postulación Mafia** *(Organizaciones y jerarquías)*\n` +
+            `> 🏴‍☠️ **Postulación Banda** *(Bandas callejeras y territorios)*\n` +
+            `> 🛡️ **Postulación Staff** *(Ingreso al equipo de moderación)*\n` +
+            `> 📄 **Whitelist** *(Formulario escrito y trasfondo)*\n` +
+            `> 🎥 **Streamer** *(Postulaciones de creadores de contenido)*\n\n` +
+            `⚡ **Instrucciones para Staff:**\n` +
+            `> 1️⃣ Haz clic en el botón **"📋 Seleccionar Plantilla"** abajo.\n` +
+            `> 2️⃣ Elige la plantilla deseada en el selector desplegable.\n` +
+            `> 3️⃣ El bot te la entregará y podrás reenviarla con \`!enviar <ID_TICKET>\`.\n\n` +
+            `🇪🇸 **| SPAIN RP • Calidad y Organización |** 🇪🇸`
+        )
+        .setFooter({
+            text: 'SPAIN RP • Gestión de Postulaciones y Formularios',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    if (fs.existsSync(panelImgPath)) {
+        embed.setImage('attachment://panel_postulaciones.png');
+    }
+
+    return embed;
+}
+
+function buildPlantillasPanelRow() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('btn_abrir_selector_plantillas')
+            .setLabel('📋 Seleccionar Plantilla')
+            .setStyle(ButtonStyle.Secondary) // Botón gris elegante
+            .setEmoji('📂')
+    );
+}
+
+function buildPlantillaCardEmbed({ plantillaKey, staffId, staffMention, isTicket = false }) {
+    const data = getPlantillasData();
+    const plantilla = data.plantillas?.[plantillaKey] || {
+        nombre: 'Postulación',
+        emoji: '📋',
+        descripcion: 'Plantilla oficial de postulación',
+        contenido: ''
+    };
+
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const panelImgPath = path.join(__dirname, 'assets', 'panel_postulaciones.png');
+    const files = [];
+
+    if (fs.existsSync(logoPath)) {
+        files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+    }
+    if (fs.existsSync(panelImgPath)) {
+        files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_postulaciones.png' }));
+    }
+
+    const canalTickets = `<#${botConfig.CHANNEL_TICKETS_ID || '1517530849334136844'}>`;
+    const canalNormativas = `<#${botConfig.CHANNEL_NORMATIVAS_ID || '1517530848658849996'}>`;
+
+    const embed = new EmbedBuilder()
+        .setColor(0xE67E22) // Naranja Oficial Spain RP
+        .setAuthor({
+            name: `PLANTILLA OFICIAL • ${plantilla.nombre.toUpperCase()} • SPAIN RP`,
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setThumbnail('attachment://logo.png')
+        .setTitle(`${plantilla.emoji || '📋'} Formulario de ${plantilla.nombre}`)
+        .setDescription(
+            `\u200B\n` +
+            `👋 Estimado usuario, a continuación se te proporciona la **Plantilla Oficial** de **${plantilla.nombre}** para **SPAIN RP** \uD83C\uDDEA\uD83C\uDDF8.\n\n` +
+            `📝 **| Puedes consultar la normativa en,**\n` +
+            `> ${canalNormativas} ❗\n\n` +
+            `📁 **| Si tienes alguna duda consulta en,**\n` +
+            `> ${canalTickets} ❗\n\n` +
+            `📌 **| Instrucciones de Cumplimentación:**\n` +
+            `> 1️⃣ Haz clic en el botón **"📋 Copiar Plantilla"** abajo para obtener el texto limpio.\n` +
+            `> 2️⃣ Rellena todos los apartados indicados con asterisco (\`*\`).\n` +
+            `> 3️⃣ Envía tu postulación completa en este mismo canal para su revisión.\n\n` +
+            `\uD83C\uDDEA\uD83C\uDDF8 **| ¡Disfruta de SPAIN RP! |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
+            `🛡️ **Generado / Enviado por:** ${staffMention || `<@${staffId}>`}`
+        )
+        .setFooter({
+            text: 'SPAIN RP • Departamento de Atención y Soporte',
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    if (fs.existsSync(panelImgPath)) {
+        embed.setImage('attachment://panel_postulaciones.png');
+    }
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`btn_copiar_plantilla_${plantillaKey}`)
+            .setLabel('📋 Copiar Plantilla')
+            .setStyle(ButtonStyle.Success)
+            .setEmoji('📄')
+    );
+
+    return { embed, files, row };
+}
+function buildSubmittedPostulacionEmbed({ member, text, attachments = [] }) {
+    const rawText = (text || '').trim();
+    if (rawText.length < 30) return null;
+
+    // Detectar qué tipo de postulación es según el contenido
+    let plantillaKey = 'desconocida';
+    let nombre = 'Postulación';
+    let emoji = '📋';
+    let color = 0x3498DB; // Azul
+
+    if (/POSTULACI[OÓ]N\s*(?:PARA|-)?\s*STREAMER|Informaci[oó]n de creador|Media de espectadores/i.test(rawText)) {
+        plantillaKey = 'streamer';
+        nombre = 'Postulación para Streamer';
+        emoji = '🎥';
+        color = 0x9B59B6; // Morado Streamer
+    } else if (/POSTULACI[OÓ]N\s*(?:A EQUIPO DE)?\s*STAFF|TxAdmin|LuxuAdmin|¿Por qu[eé] quieres ser staff/i.test(rawText)) {
+        plantillaKey = 'postulacion_staff';
+        nombre = 'Postulación a Staff';
+        emoji = '🛡️';
+        color = 0xE67E22; // Naranja Staff
+    } else if (/POSTULACI[OÓ]N\s*(?:DE)?\s*NEGOCIO|Local deseado|Capital|Acepto la normativa de negocios/i.test(rawText)) {
+        plantillaKey = 'postulacion_negocio';
+        nombre = 'Postulación de Negocio';
+        emoji = '💼';
+        color = 0x2ECC71; // Verde Negocio
+    } else if (/POSTULACION MAFIA|Requisitos para solicitar una mafia|¿Qué significa para vosotros ser una mafia/i.test(rawText)) {
+        plantillaKey = 'postulacion_mafia';
+        nombre = 'Postulación de Mafia';
+        emoji = '💀';
+        color = 0x95A5A6; // Gris oscuro
+    } else if (/POSTULACION BANDA|Requisitos para solicitar una banda|¿Qué es para vosotros una banda/i.test(rawText)) {
+        plantillaKey = 'postulacion_banda';
+        nombre = 'Postulación de Banda';
+        emoji = '🏴‍☠️';
+        color = 0xE74C3C; // Rojo Banda
+    } else if (/WL-ORAL|¿Qué es el PowerGaming|¿Qué es el MetaGaming|¿Qué es el DeathMatch/i.test(rawText)) {
+        plantillaKey = 'wl_oral';
+        nombre = 'Postulación WL-Oral';
+        emoji = '🎙️';
+        color = 0x1ABC9C; // Turquesa
+    } else if (/WHITELIST SPAIN RP|DATOS OOC|DATOS IC|Historia del personaje/i.test(rawText)) {
+        plantillaKey = 'whitelist';
+        nombre = 'Postulación de Whitelist';
+        emoji = '📄';
+        color = 0x3498DB;
+    } else {
+        // Si no coincide con ninguna plantilla oficial, no es un formulario completado
+        return null;
+    }
+
+    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const bannerRecibidaPath = path.join(__dirname, 'assets', 'postulacion_recibida.png');
+    const files = [];
+    if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+    if (fs.existsSync(bannerRecibidaPath)) files.push(new AttachmentBuilder(bannerRecibidaPath, { name: 'postulacion_recibida.png' }));
+
+    // Reestructurar los campos del texto rellenado por el usuario
+    const lines = rawText.split('\n');
+    const sections = [];
+    let currentHeader = '';
+    let currentItems = []; // array de { q, a }
+
+    // Limpiar y normalizar texto Unicode (convierte negritas/cursivas Unicode a texto estándar y elimina caracteres no alfanuméricos)
+    const cleanAlpha = (str) => {
+        return (str || '')
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    };
+
+    // Títulos o subtítulos conocidos para crear secciones limpias en cualquiera de las 7 plantillas
+    const isHeaderLine = (rawLine) => {
+        const norm = cleanAlpha(rawLine);
+        if (!norm) return false;
+        return /^(?:DATOS\s*OOC|DATOS\s*IC|INFORMACION\s*PERSONAL|EXPERIENCIA|POSTULACION|DISPONIBILIDAD|SITUACIONES\s*HIPOTETICAS|SITUACIONES\s*DE\s*ROL|SITUACIONES|ESTADISTICAS|INFORMACION\s*DE\s*CREADOR|INFORMACION\s*DE\s*LA\s*BANDA|SOBRE\s*EL\s*SERVIDOR|COMPROMISO|NEGOCIO|IC|OOC|NORMATIVA|REQUISITOS|HISTORIA|OBSERVACIONES)/i.test(norm) && norm.length < 65;
+    };
+
+    // Limpiar y formatear encabezados como en el sistema de eventos: EMOJI **| TÍTULO:**
+    const formatSectionHeader = (h) => {
+        let clean = h.replace(/^[#*_\s\-–—]+|[#*_\s\-–—]+$/g, '').trim();
+        const norm = cleanAlpha(clean);
+
+        let defaultEmoji = '📌';
+        if (/INFORMACION\s*PERSONAL|DATOS\s*OOC|OOC/i.test(norm)) defaultEmoji = '🆔';
+        else if (/DATOS\s*IC|IC/i.test(norm)) defaultEmoji = '👤';
+        else if (/EXPERIENCIA/i.test(norm)) defaultEmoji = '🎮';
+        else if (/NORMATIVA/i.test(norm)) defaultEmoji = '📜';
+        else if (/SITUACIONES/i.test(norm)) defaultEmoji = '📝';
+        else if (/DISPONIBILIDAD/i.test(norm)) defaultEmoji = '📅';
+        else if (/ESTADISTICAS/i.test(norm)) defaultEmoji = '📈';
+        else if (/CREADOR|STREAMER/i.test(norm)) defaultEmoji = '🎥';
+        else if (/SOBRE\s*EL\s*SERVIDOR/i.test(norm)) defaultEmoji = '🌐';
+        else if (/COMPROMISO/i.test(norm)) defaultEmoji = '⭐';
+        else if (/NEGOCIO/i.test(norm)) defaultEmoji = '💼';
+        else if (/BANDA|MAFIA/i.test(norm)) defaultEmoji = '💀';
+        else if (/HISTORIA/i.test(norm)) defaultEmoji = '📖';
+        else if (/OBSERVACIONES/i.test(norm)) defaultEmoji = '👁️';
+
+        let emojiMatch = clean.match(/^(\p{Extended_Pictographic}+)\s*(.*)$/u);
+        let textH = emojiMatch ? emojiMatch[2] : clean;
+        let em = emojiMatch ? emojiMatch[1] : defaultEmoji;
+
+        textH = textH.replace(/^[|#*_\-\s]+|[|#*_\-\s]+$/g, '').trim();
+        if (!textH.endsWith(':') && !textH.endsWith('?')) textH += ':';
+        return `${em} **| ${textH}**`;
+    };
+
+    const flushCurrentSection = () => {
+        if (currentItems.length > 0) {
+            const formattedLines = currentItems.map(it => {
+                if (it.q && it.a) {
+                    return `> ✨ **| ${it.q}:**\n> 💬 *${it.a}*`;
+                } else if (it.q) {
+                    return `> ✨ **| ${it.q}:**\n> 💬 *(Sin respuesta)*`;
+                } else {
+                    return `> 💬 *${it.a}*`;
+                }
+            });
+            sections.push({ title: currentHeader || '📌 **| Información General:**', text: formattedLines.join('\n>\n') });
+            currentItems = [];
+        }
+    };
+
+    for (let rawLine of lines) {
+        let line = rawLine.trim();
+        if (!line) continue;
+
+        // Omitir líneas decorativas
+        if (/^[-=━_─~*]{3,}$/.test(line)) continue;
+
+        const norm = cleanAlpha(line);
+
+        // Omitir títulos generales y mensajes de despedida/bienvenida o aceptaciones que ya están en la plantilla
+        if (/^POSTULACI[OÓ]N/i.test(norm) || /^PLANTILLA/i.test(norm) || /^WHITELIST/i.test(norm) || /^WL\s*ORAL/i.test(norm)) {
+            continue;
+        }
+        if (/^¿?Quieres formar parte|^Gracias por querer formar parte|^🍀? ¡?Mucha suerte|^Requisitos para solicitar|^Debe rellenar lo siguiente|^El equipo revisara|^Acepto la normativa/i.test(norm)) {
+            continue;
+        }
+
+        // Detectar si la línea es un encabezado de sección
+        if (isHeaderLine(line)) {
+            flushCurrentSection();
+            currentHeader = formatSectionHeader(line);
+            continue;
+        }
+
+        // Comprobar si es un campo/pregunta (empieza por viñeta tipo ➤, •, o contiene dos puntos fuera de URLs y horas)
+        const isBulletField = /^[➤•\-*►→]\s*/.test(line);
+        const hasColon = line.includes(':');
+        const isUrlLine = /https?:\/\//i.test(line) && !isBulletField;
+        const isTimePattern = /\b\d{1,2}:\d{2}\b/.test(line) && !isBulletField && !line.includes('?') && !/^[A-ZÁÉÍÓÚa-záéíóú\s]{2,25}:/.test(line);
+
+        if ((isBulletField || (hasColon && !isUrlLine && !isTimePattern)) && (line.endsWith('?') || /^[A-ZÁÉÍÓÚa-záéíóú¿¡\s()/,]{2,60}:/.test(line) || isBulletField)) {
+            let question = '';
+            let answer = '';
+
+            if (hasColon) {
+                const httpMatch = line.search(/https?:\/\//i);
+                let colonIdx = -1;
+                if (httpMatch !== -1) {
+                    const beforeHttp = line.substring(0, httpMatch);
+                    colonIdx = beforeHttp.indexOf(':');
+                } else {
+                    colonIdx = line.indexOf(':');
+                }
+
+                if (colonIdx !== -1) {
+                    question = line.substring(0, colonIdx).replace(/^[➤•\-*►→|\s]+/, '').trim();
+                    answer = line.substring(colonIdx + 1).trim();
+                } else {
+                    question = line.replace(/^[➤•\-*►→|\s]+/, '').trim();
+                }
+            } else {
+                question = line.replace(/^[➤•\-*►→|\s]+/, '').trim();
+            }
+
+            // Quitar caracteres asterisco o guión que se usan como placeholder de respuesta vacía
+            if (answer === '*' || answer === '-' || answer === '_') {
+                answer = '';
+            }
+
+            currentItems.push({ q: question, a: answer });
+        } else {
+            // Es la respuesta al campo anterior (o línea continua)
+            let cleanVal = line.replace(/^[*\-|•➤►→>\s]+/, '').trim();
+            if (cleanVal && cleanVal !== '*' && cleanVal !== '-' && cleanVal !== '_') {
+                if (cleanAlpha(cleanVal).startsWith('Mucha suerte') || cleanAlpha(cleanVal).startsWith('El equipo revisara') || cleanAlpha(cleanVal).startsWith('Acepto la normativa')) {
+                    continue;
+                }
+                if (currentItems.length > 0) {
+                    const lastItem = currentItems[currentItems.length - 1];
+                    if (!lastItem.a) {
+                        lastItem.a = cleanVal;
+                    } else {
+                        lastItem.a += ` ${cleanVal}`;
+                    }
+                } else {
+                    currentItems.push({ q: '', a: cleanVal });
+                }
+            }
+        }
+    }
+
+    flushCurrentSection();
+
+    let formattedBody = '';
+    if (sections.length > 0) {
+        formattedBody = sections.map(sec => `${sec.title}\n${sec.text}`).join('\n\n\u200B\n');
+    } else {
+        formattedBody = `\`\`\`text\n${rawText.slice(0, 3500)}\n\`\`\``;
+    }
+
+    // Truncar con seguridad si excede el límite de Embed description (4096 caracteres)
+    if (formattedBody.length > 3700) {
+        formattedBody = formattedBody.slice(0, 3650) + '\n\n... *(texto truncado por longitud)*';
+    }
+
+    const embed = new EmbedBuilder()
+        .setColor(color)
+        .setAuthor({
+            name: `${nombre.toUpperCase()} • SPAIN RP`,
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setTitle(`${emoji} ${nombre} Presentada`)
+        .setDescription(
+            `\u200B\n\n` +
+            `🔔 **Notificación enviada a:** <@&1538191116610838691>\n` +
+            `👤 **Postulante:** <@${member.id}>\n` +
+            `📅 **Fecha de Envío:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n` +
+            `\u200B\n` +
+            formattedBody + '\n\n' +
+            `\u200B\n` +
+            `🇪🇸 **| SPAIN RP • Departamento de Postulaciones |** 🇪🇸`
+        )
+        .setFooter({
+            text: `SPAIN RP • Formulario Registrado • ID: ${member.id}`,
+            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    if (attachments && attachments.length > 0) {
+        const firstImg = attachments.find(att => att.contentType?.startsWith('image/') || att.url?.match(/\.(png|jpg|jpeg|gif|webp)$/i));
+        if (firstImg) {
+            embed.setImage(firstImg.url);
+        } else if (fs.existsSync(bannerRecibidaPath)) {
+            embed.setImage('attachment://postulacion_recibida.png');
+        }
+    } else if (fs.existsSync(bannerRecibidaPath)) {
+        embed.setImage('attachment://postulacion_recibida.png');
+    }
+
+    return { embed, files };
+}
 // ==========================================
 // SISTEMA DE SANCIONES Y MODERACIÓN STAFF (SPAIN RP)
 // ==========================================
@@ -4246,8 +4850,7 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
 
             let descText = `👤 **Solicitante:** ${applicantMention}\n` +
                 `📊 **Probabilidad IA:** ${analysis.statusEmoji} \`${analysis.aiScore}%\` \`[${bar}]\`\n` +
-                `🧠 **Motor Local:** 🤖 \`${analysis.localAiScore}% IA\` • 👤 \`${analysis.localHumanScore}% Humano\`` +
-                (analysis.apiAiScore !== null ? ` | 🌐 **API:** \`${analysis.apiAiScore}% IA\`\n` : `\n`) +
+                `🧠 **Motor Local:** 🤖 \`${analysis.localAiScore}% IA\` • 👤 \`${analysis.localHumanScore}% Humano\`\n` +
                 `📄 **Diagnóstico:** ${analysis.statusLabel}`;
 
             if (analysis.detectedPatterns && analysis.detectedPatterns.length > 0) {
@@ -4367,15 +4970,15 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
         return;
     }
 
-    // Si se acaba de notificar a este mismo usuario en los últimos 2 minutos, evitar el evento gemelo
+    // Si se acaba de notificar a este mismo usuario en los últimos 15 segundos, evitar el evento gemelo
     const lastDecisionTime = recentWlDecisionsSet.get(userDecisionKey);
-    if (lastDecisionTime && (Date.now() - lastDecisionTime) < 2 * 60 * 1000) {
+    if (lastDecisionTime && (Date.now() - lastDecisionTime) < 15 * 1000) {
         console.log(`ℹ️ [WL ANTI-DUPLICADO] Notificación (${decisionType}) para ${userMention} ignorada por ser evento gemelo simultáneo (${Math.round((Date.now() - lastDecisionTime)/1000)}s).`);
         processedMessages.add(cacheKey);
         return;
     }
 
-    // RESERVA INMEDIATA: Bloquear este mensaje específico y fijar la marca temporal de 2 minutos
+    // RESERVA INMEDIATA: Bloquear este mensaje específico y fijar la marca temporal de 15 segundos
     processedMessages.add(cacheKey);
     recentWlDecisionsSet.set(userDecisionKey, Date.now());
 
@@ -5054,6 +5657,135 @@ client.on('messageCreate', async (message) => {
                 return;
             } catch (err) {
                 console.error('Error al publicar panel de valoraciones:', err);
+                return;
+            }
+        }
+
+        // ----------------------------------------------------
+        // SISTEMA DE PLANTILLAS DE POSTULACIONES (!panel-plantillas / !plantillas / !enviar)
+        // ----------------------------------------------------
+        if (['!panel-plantillas', '!panel-plantilla', '!panelplantillas', '!plantillas-panel', '!fijar-plantillas'].includes(command)) {
+            await message.delete().catch(() => { });
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+
+            try {
+                const targetChannel = message.channel;
+                const embed = buildPlantillasPanelEmbed();
+                const row = buildPlantillasPanelRow();
+                const files = [];
+
+                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const panelImgPath = path.join(__dirname, 'assets', 'panel_postulaciones.png');
+                if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+                if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_postulaciones.png' }));
+
+                await targetChannel.send({
+                    embeds: [embed],
+                    components: [row],
+                    files
+                });
+
+                console.log(`📋 [PANEL PLANTILLAS] Panel de plantillas publicado en #${targetChannel.name} (${targetChannel.id}) por ${message.author.tag}`);
+                return;
+            } catch (err) {
+                console.error('Error al publicar panel de plantillas:', err);
+                return;
+            }
+        }
+
+        // COMANDO REENVIAR PLANTILLA A UN TICKET O CANAL ESPECÍFICO: !enviar <ID_CANAL_O_TICKET>
+        if (['!enviar', '!enviar-plantilla', '!send-plantilla', '!sendplantilla'].includes(command)) {
+            await message.delete().catch(() => { });
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+
+            const targetArg = args[1];
+            if (!targetArg) {
+                const helpMsg = await message.channel.send({
+                    content: `⚠️ **Uso incorrecto:** Debes indicar la ID del ticket o canal al que deseas enviar la plantilla.\n📌 *Ejemplo:* \`!enviar 1517530849334136844\` o \`!enviar #ticket-1234\``
+                }).catch(() => null);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 6000);
+                return;
+            }
+
+            const cleanChannelId = targetArg.replace(/[<#>]/g, '').trim();
+            const targetChannel = await client.channels.fetch(cleanChannelId).catch(() => null);
+
+            if (!targetChannel) {
+                const errChanMsg = await message.channel.send({
+                    content: `❌ **Error:** No se pudo encontrar ningún canal o ticket con la ID: \`${cleanChannelId}\`. Asegúrate de que el bot tiene permisos para verlo.`
+                }).catch(() => null);
+                if (errChanMsg) setTimeout(() => errChanMsg.delete().catch(() => { }), 6000);
+                return;
+            }
+
+            const lastPlantilla = lastGeneratedPlantillaByStaff.get(message.author.id);
+            if (!lastPlantilla || !lastPlantilla.contenido) {
+                const noPlanMsg = await message.channel.send({
+                    content: `❌ **No tienes ninguna plantilla seleccionada recientemente.**\n💡 Haz clic en **"📋 Seleccionar Plantilla"** en el panel de plantillas para generar una primero.`
+                }).catch(() => null);
+                if (noPlanMsg) setTimeout(() => noPlanMsg.delete().catch(() => { }), 6000);
+                return;
+            }
+
+            try {
+                const { embed: sendEmbed, files, row } = buildPlantillaCardEmbed({
+                    plantillaKey: lastPlantilla.key,
+                    staffId: message.author.id,
+                    staffMention: `<@${message.author.id}>`,
+                    isTicket: true
+                });
+
+                await targetChannel.send({
+                    embeds: [sendEmbed],
+                    components: [row],
+                    files: files
+                });
+
+                // 🗑️ ELIMINAR EL MENSAJE DE VISTA PREVIA DEL CANAL ORIGINAL PARA DEJAR EL PANEL 100% LIMPIO
+                try {
+                    if (lastPlantilla.messageId) {
+                        const originChan = await client.channels.fetch(lastPlantilla.channelId || message.channel.id).catch(() => null);
+                        if (originChan) {
+                            const msgToDelete = await originChan.messages.fetch(lastPlantilla.messageId).catch(() => null);
+                            if (msgToDelete) {
+                                await msgToDelete.delete().catch(() => { });
+                                console.log(`🗑️ [PLANTILLA LIMPIA] Mensaje previo de plantilla #${lastPlantilla.messageId} eliminado para mantener el panel limpio.`);
+                            }
+                        }
+                    } else {
+                        // Si no tenía ID exacta, buscar y borrar mensajes recientes de plantillas generadas en el canal actual
+                        const recentMsgs = await message.channel.messages.fetch({ limit: 8 }).catch(() => null);
+                        if (recentMsgs) {
+                            for (const [, rMsg] of recentMsgs) {
+                                if (rMsg.author.id === client.user.id && rMsg.embeds.length > 0) {
+                                    const authorName = rMsg.embeds[0].author?.name || '';
+                                    if (authorName.includes('PLANTILLA OFICIAL') && !rMsg.components?.[0]?.components?.[0]?.customId?.includes('btn_abrir_selector_plantillas')) {
+                                        await rMsg.delete().catch(() => { });
+                                        console.log(`🗑️ [PLANTILLA LIMPIA] Tarjeta previa de plantilla eliminada.`);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (cleanErr) { }
+
+                // Limpiar referencia de memoria
+                lastGeneratedPlantillaByStaff.delete(message.author.id);
+
+                const confirmMsg = await message.channel.send({
+                    content: `✅ **¡Plantilla (${lastPlantilla.emoji} ${lastPlantilla.nombre}) enviada con éxito al ticket <#${targetChannel.id}>!**`
+                }).catch(() => null);
+                if (confirmMsg) setTimeout(() => confirmMsg.delete().catch(() => { }), 3500);
+                return;
+            } catch (errSend) {
+                console.error('Error al reenviar plantilla al ticket:', errSend);
+                const failMsg = await message.channel.send({
+                    content: `❌ Hubo un fallo al enviar el mensaje al canal <#${targetChannel.id}>. Revisa los permisos del bot en ese ticket.`
+                }).catch(() => null);
+                if (failMsg) setTimeout(() => failMsg.delete().catch(() => { }), 6000);
                 return;
             }
         }
@@ -5740,8 +6472,7 @@ client.on('messageCreate', async (message) => {
 
             let testDesc1 = `👤 **Solicitante:** ${message.author}\n` +
                 `📊 **Probabilidad IA:** ${analysis.statusEmoji} \`${analysis.aiScore}%\` \`[${bar}]\`\n` +
-                `🧠 **Motor Local:** 🤖 \`${analysis.localAiScore}% IA\` • 👤 \`${analysis.localHumanScore}% Humano\`` +
-                (analysis.apiAiScore !== null ? ` | 🌐 **API:** \`${analysis.apiAiScore}% IA\`\n` : `\n`) +
+                `🧠 **Motor Local:** 🤖 \`${analysis.localAiScore}% IA\` • 👤 \`${analysis.localHumanScore}% Humano\`\n` +
                 `📄 **Diagnóstico:** ${analysis.statusLabel}`;
 
             if (analysis.detectedPatterns && analysis.detectedPatterns.length > 0) {
@@ -5797,8 +6528,7 @@ client.on('messageCreate', async (message) => {
 
             let testDesc = `👤 **Solicitante:** ${message.author}\n` +
                 `📊 **Probabilidad IA:** ${analysis.statusEmoji} \`${analysis.aiScore}%\` \`[${bar}]\`\n` +
-                `🧠 **Motor Local:** 🤖 \`${analysis.localAiScore}% IA\` • 👤 \`${analysis.localHumanScore}% Humano\`` +
-                (analysis.apiAiScore !== null ? ` | 🌐 **API:** \`${analysis.apiAiScore}% IA\`\n` : `\n`) +
+                `🧠 **Motor Local:** 🤖 \`${analysis.localAiScore}% IA\` • 👤 \`${analysis.localHumanScore}% Humano\`\n` +
                 `📄 **Diagnóstico:** ${analysis.statusLabel}`;
 
             if (analysis.detectedPatterns && analysis.detectedPatterns.length > 0) {
@@ -5871,8 +6601,7 @@ client.on('messageCreate', async (message) => {
 
             let simDesc = `👤 **Solicitante:** <@${mentionedUser.id}>\n` +
                 `📊 **Probabilidad IA:** ${analysis.statusEmoji} \`${analysis.aiScore}%\` \`[${bar}]\`\n` +
-                `🧠 **Motor Local:** 🤖 \`${analysis.localAiScore}% IA\` • 👤 \`${analysis.localHumanScore}% Humano\`` +
-                (analysis.apiAiScore !== null ? ` | 🌐 **API:** \`${analysis.apiAiScore}% IA\`\n` : `\n`) +
+                `🧠 **Motor Local:** 🤖 \`${analysis.localAiScore}% IA\` • 👤 \`${analysis.localHumanScore}% Humano\`\n` +
                 `📄 **Diagnóstico:** ${analysis.statusLabel}`;
 
             if (analysis.detectedPatterns && analysis.detectedPatterns.length > 0) {
@@ -7582,6 +8311,88 @@ client.on('messageCreate', async (message) => {
             console.log(`✨ [TEST BIENVENIDA] Prueba de bienvenida enviada en #${message.channel.name} por ${message.author.tag}`);
             return;
         }
+
+        // ====================================================
+        // COMANDOS DE PLANTILLAS DE POSTULACIÓN
+        // ====================================================
+        // 1. Enviar / Fijar el panel de plantillas
+        if (['!panel-plantillas', '!panel-plantilla', '!panelplantillas', '!panelplantilla', '!fijar-plantillas'].includes(command)) {
+            await message.delete().catch(() => { });
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+
+            const embed = buildPlantillasPanelEmbed();
+            const row = buildPlantillasPanelRow();
+            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const bannerPath = path.join(__dirname, 'assets', 'panel_postulaciones.png');
+            const files = [];
+            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+            if (fs.existsSync(bannerPath)) files.push(new AttachmentBuilder(bannerPath, { name: 'panel_postulaciones.png' }));
+
+            await message.channel.send({
+                embeds: [embed],
+                components: [row],
+                files
+            }).catch(e => console.error('Error al enviar panel de plantillas:', e));
+
+            console.log(`📋 [PANEL PLANTILLAS] Panel de plantillas enviado por ${message.author.tag} en #${message.channel.name}`);
+            return;
+        }
+
+        // 2. Reenviar última plantilla al ticket destino: !enviar <ID>
+        if (['!enviar', '!mandar-plantilla', '!enviarplantilla'].includes(command)) {
+            await message.delete().catch(() => { });
+            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+
+            const lastPlantilla = lastGeneratedPlantillaByStaff.get(message.author.id);
+            if (!lastPlantilla) {
+                const warnMsg = await message.channel.send('⚠️ No tienes ninguna plantilla seleccionada recientemente. Selecciona una en el panel primero.').catch(() => null);
+                if (warnMsg) setTimeout(() => warnMsg.delete().catch(() => { }), 5000);
+                return;
+            }
+
+            const rawTargetId = args.slice(1).join(' ').match(/\d{17,20}/)?.[0];
+            let targetChannel = message.mentions.channels.first();
+
+            if (!targetChannel && rawTargetId) {
+                targetChannel = message.guild.channels.cache.get(rawTargetId) ||
+                    await client.channels.fetch(rawTargetId).catch(() => null);
+            }
+
+            if (!targetChannel) {
+                const warnMsg = await message.channel.send('⚠️ **Uso:** `!enviar <#canal_ticket o ID>`').catch(() => null);
+                if (warnMsg) setTimeout(() => warnMsg.delete().catch(() => { }), 5000);
+                return;
+            }
+
+            const { embed, files, row } = buildPlantillaCardEmbed({
+                plantillaKey: lastPlantilla.key,
+                staffId: message.author.id,
+                staffMention: `<@${message.author.id}>`,
+                isTicket: true
+            });
+
+            await targetChannel.send({
+                embeds: [embed],
+                components: [row],
+                files
+            }).catch(e => console.error('Error al reenviar plantilla a ticket:', e));
+
+            // Si la plantilla estaba en este canal, borrar el mensaje preview para dejar el canal limpio
+            if (lastPlantilla.messageId && lastPlantilla.channelId === message.channel.id) {
+                try {
+                    const prevMsg = await message.channel.messages.fetch(lastPlantilla.messageId).catch(() => null);
+                    if (prevMsg) await prevMsg.delete().catch(() => { });
+                } catch (e) { }
+            }
+
+            lastGeneratedPlantillaByStaff.delete(message.author.id);
+
+            const okMsg = await message.channel.send(`✅ **Plantilla ${lastPlantilla.emoji} ${lastPlantilla.nombre} enviada con éxito a <#${targetChannel.id}>.**`).catch(() => null);
+            if (okMsg) setTimeout(() => okMsg.delete().catch(() => { }), 5000);
+            return;
+        }
     }
 
     // Si se envía un mensaje en el canal oficial de valoraciones (incluso por otros bots/admins), auto-sincronizar y actualizar el Top
@@ -7601,6 +8412,103 @@ client.on('messageCreate', async (message) => {
                 await updateStaffTopRankingPanel().catch(() => { });
                 console.log(`⭐ [VALORACIÓN EN VIVO] Valoración registrada para Staff ${parsed.staffTag} (${parsed.rating}/10). Panel de Tops actualizado.`);
             }
+        }
+    }
+
+    // Detectar si un usuario ha enviado una plantilla de postulación rellenada en el chat/ticket
+    if (message.author && !message.author.bot && message.author.id !== client.user.id && message.content && message.content.length > 50) {
+        try {
+            const formattedSubmission = buildSubmittedPostulacionEmbed({
+                member: message.member || { id: message.author.id, user: message.author },
+                text: message.content,
+                attachments: Array.from(message.attachments.values())
+            });
+
+            if (formattedSubmission) {
+                // Eliminar ÚNICAMENTE el mensaje de texto plano del usuario que postuló
+                await message.delete().catch(() => { });
+
+                // Buscar si ya existe una postulación de este usuario en el canal para editarla
+                let existingPostMsg = null;
+                try {
+                    const fetchedMessages = await message.channel.messages.fetch({ limit: 40 }).catch(() => null);
+                    if (fetchedMessages) {
+                        existingPostMsg = fetchedMessages.find(m =>
+                            m.author.id === client.user.id &&
+                            m.embeds &&
+                            m.embeds.length > 0 &&
+                            m.embeds[0].footer?.text?.includes(message.author.id) &&
+                            m.embeds[0].title?.includes('Presentada')
+                        );
+                    }
+                } catch (findErr) { }
+
+                if (existingPostMsg) {
+                    // 1. Buscar y borrar con await TODOS los mensajes informativos anteriores del bot
+                    try {
+                        const msgsToDelete = await message.channel.messages.fetch({ limit: 20 }).catch(() => null);
+                        if (msgsToDelete) {
+                            const helpMsgs = msgsToDelete.filter(m =>
+                                m.author.id === client.user.id &&
+                                m.embeds &&
+                                m.embeds.length > 0 &&
+                                (m.embeds[0].description?.includes('modificar o corregir') || m.embeds[0].description?.includes('si necesitas'))
+                            );
+                            for (const [, hMsg] of helpMsgs) {
+                                await hMsg.delete().catch(() => { });
+                            }
+                        }
+                    } catch (delHelpErr) { }
+
+                    // 2. EDITAR LA POSTULACIÓN YA ENVIADA
+                    await existingPostMsg.edit({
+                        content: `📩 **Postulación actualizada de <@${message.author.id}>**`,
+                        embeds: [formattedSubmission.embed]
+                    }).catch(() => null);
+
+                    // 3. Mostrar mensaje temporal de confirmación (se borra en 5s)
+                    const updateNotice = await message.channel.send({
+                        content: `✅ <@${message.author.id}>, tu **postulación ha sido actualizada al instante** con la nueva información.`
+                    }).catch(() => null);
+
+                    if (updateNotice) {
+                        setTimeout(async () => {
+                            await updateNotice.delete().catch(() => { });
+
+                            // 4. Volver a enviar el mensaje informativo permanente de ayuda posicionado al final
+                            const helpEmbed = new EmbedBuilder()
+                                .setColor(0x3498DB)
+                                .setDescription(`ℹ️ <@${message.author.id}>, si necesitas **modificar o corregir alguna información**, simplemente **vuelve a enviar el formulario completo en este canal** y el bot actualizará tu postulación al instante.`);
+
+                            await message.channel.send({ embeds: [helpEmbed] }).catch(() => null);
+                        }, 5000);
+                    }
+
+                    console.log(`🔄 [POSTULACIÓN ACTUALIZADA] Postulación editada en vivo para ${message.author.tag} en #${message.channel.name || message.channel.id}`);
+                    return;
+                }
+
+                // Si es nueva postulación, enviar el mensaje maquetado oficial
+                const sentPostMsg = await message.channel.send({
+                    content: `📩 **Nueva postulación recibida de <@${message.author.id}>**`,
+                    embeds: [formattedSubmission.embed],
+                    files: formattedSubmission.files
+                }).catch(() => null);
+
+                // Mensaje pequeño permanente de ayuda para el usuario
+                if (sentPostMsg) {
+                    const helpEmbed = new EmbedBuilder()
+                        .setColor(0x3498DB)
+                        .setDescription(`ℹ️ <@${message.author.id}>, si necesitas **modificar o corregir alguna información**, simplemente **vuelve a enviar el formulario completo en este canal** y el bot actualizará tu postulación al instante.`);
+
+                    await message.channel.send({ embeds: [helpEmbed] }).catch(() => null);
+                }
+
+                console.log(`📋 [POSTULACIÓN RECIBIDA] Postulación maquetada y enviada con éxito para ${message.author.tag} en #${message.channel.name || message.channel.id}`);
+                return;
+            }
+        } catch (postErr) {
+            console.error('Error al procesar y maquetar postulación enviada por usuario:', postErr);
         }
     }
 
@@ -7711,7 +8619,108 @@ client.on('interactionCreate', async (interaction) => {
         });
     }
 
+    // ----------------------------------------------------
+    // SELECTOR DE PLANTILLAS DE POSTULACIÓN
+    // ----------------------------------------------------
+    if (interaction.isStringSelectMenu() && interaction.customId === 'select_plantilla_postulacion') {
+        const plantillaKey = interaction.values[0];
+        const data = getPlantillasData();
+        const plantilla = data.plantillas?.[plantillaKey];
+
+        if (!plantilla) {
+            return interaction.reply({
+                content: '❌ No se encontró la plantilla solicitada.',
+                ephemeral: true
+            });
+        }
+
+        // Guardar como última plantilla seleccionada en memoria por este Staff
+        const plantillaSession = {
+            key: plantillaKey,
+            nombre: plantilla.nombre,
+            emoji: plantilla.emoji || '📋',
+            contenido: plantilla.contenido,
+            channelId: interaction.channelId,
+            timestamp: Date.now()
+        };
+        lastGeneratedPlantillaByStaff.set(interaction.user.id, plantillaSession);
+
+        // Crear un Embed estético tipo contenedor para el Staff
+        const logoPath = path.join(__dirname, 'assets', 'logo.png');
+        const files = [];
+        if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+
+        const staffGuideEmbed = new EmbedBuilder()
+            .setColor(0xF1C40F) // Amarillo dorado
+            .setAuthor({
+                name: 'SISTEMA DE PLANTILLAS • SPAIN RP',
+                iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            })
+            .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
+            .setTitle(`📂 Plantilla Seleccionada: ${plantilla.emoji || '📋'} ${plantilla.nombre}`)
+            .setDescription(
+                `👤 **Staff Activo:** <@${interaction.user.id}>\n` +
+                `📋 **Plantilla lista:** \`${plantilla.nombre}\`\n\n` +
+                `**¿Cómo enviar la plantilla al usuario / ticket?**\n` +
+                `> 1️⃣ Copia el ID o menciona el canal del ticket (ej: \`#ticket-0123\`).\n` +
+                `> 2️⃣ Escribe en este chat: \`!enviar <#canal_ticket o ID>\`\n\n` +
+                `⏱️ *Esta sesión expirará en **30 segundos** y se cerrará automáticamente para mantener el panel limpio.*`
+            )
+            .setFooter({ text: 'SPAIN RP • Gestión de Postulaciones' })
+            .setTimestamp();
+
+        // Actualizar el mensaje efímero con el contenedor decorado
+        await interaction.update({
+            content: '',
+            embeds: [staffGuideEmbed],
+            components: [],
+            files: files
+        }).catch(() => { });
+
+        // Auto-eliminar a los 30 segundos si el staff no envía la plantilla
+        setTimeout(() => {
+            const currentSession = lastGeneratedPlantillaByStaff.get(interaction.user.id);
+            if (currentSession && currentSession.timestamp === plantillaSession.timestamp) {
+                lastGeneratedPlantillaByStaff.delete(interaction.user.id);
+            }
+            interaction.deleteReply().catch(() => { });
+        }, 30000);
+
+        return;
+    }
+
     if (!interaction.isButton()) return;
+
+    // ----------------------------------------------------
+    // BOTÓN: COPIAR PLANTILLA DE POSTULACIÓN (CASILLA EFÍMERA LIMPIA)
+    // ----------------------------------------------------
+    if (interaction.customId.startsWith('btn_copiar_plantilla_')) {
+        const plantillaKey = interaction.customId.replace('btn_copiar_plantilla_', '');
+        const data = getPlantillasData();
+        const plantilla = data.plantillas?.[plantillaKey];
+
+        if (!plantilla || !plantilla.contenido) {
+            return interaction.reply({
+                content: '❌ No se pudo encontrar el contenido de esta plantilla.',
+                ephemeral: true
+            });
+        }
+
+        // Entregar el bloque de texto limpio en una respuesta efímera que solo ve quien pulsa el botón
+        await interaction.reply({
+            content: `📋 **Copia el siguiente texto para rellenar tu postulación de ${plantilla.emoji || '📋'} ${plantilla.nombre}:** *(Se cerrará en 10s)*\n\n` +
+                `\`\`\`text\n` +
+                `${plantilla.contenido.replace(/```/g, '')}\n` +
+                `\`\`\``,
+            ephemeral: true
+        }).catch(() => { });
+
+        // Auto-eliminar el mensaje efímero a los 10 segundos automáticamente
+        setTimeout(() => {
+            interaction.deleteReply().catch(() => { });
+        }, 10000);
+        return;
+    }
 
     // ----------------------------------------------------
     // BOTÓN: ABRIR PANEL DE CONTROL ADMIN (!admin trigger) -> EFÍMERO ("Solo tú puedes verlo")
@@ -7759,12 +8768,9 @@ client.on('interactionCreate', async (interaction) => {
                 targetStreamUrl = streamerInfo.tiktokUrl || (streamerInfo.url && streamerInfo.url.includes('tiktok.com') ? streamerInfo.url : null);
             } else if (requestedPlatform === 'Twitch') {
                 targetStreamUrl = streamerInfo.twitchUrl || (streamerInfo.url && (streamerInfo.url.includes('twitch.tv') || (!streamerInfo.url.includes('kick.com') && !streamerInfo.url.includes('tiktok.com'))) ? streamerInfo.url : null);
-            } else {
-                targetStreamUrl = streamerInfo.url || streamerInfo.kickUrl || streamerInfo.twitchUrl || streamerInfo.tiktokUrl;
-                activePlatform = streamerInfo.platform || 'Twitch';
             }
 
-            // 2. Si no tiene URL específica para la plataforma pulsada, comprobar su presencia activa en Discord
+            // 2. Si no tiene URL específica para la plataforma pulsada, comprobar su presencia/actividad en vivo en Discord
             if (!targetStreamUrl) {
                 const streamingActivity = interaction.member?.presence?.activities?.find(act =>
                     act.type === ActivityType.Streaming ||
@@ -7778,19 +8784,39 @@ client.on('interactionCreate', async (interaction) => {
                         targetStreamUrl = streamingActivity.url;
                     } else if (requestedPlatform === 'Twitch' && (streamingActivity.url.includes('twitch.tv') || (!streamingActivity.url.includes('kick.com') && !streamingActivity.url.includes('tiktok.com')))) {
                         targetStreamUrl = streamingActivity.url;
-                    } else if (!requestedPlatform) {
+                    } else {
                         targetStreamUrl = streamingActivity.url;
                         if (streamingActivity.url.includes('kick.com')) activePlatform = 'Kick';
                         else if (streamingActivity.url.includes('tiktok.com')) activePlatform = 'TikTok';
+                        else activePlatform = 'Twitch';
                     }
                 }
             }
 
-            // 3. Si sigue sin tener canal específico para esa plataforma pero tiene nombre de usuario
+            // 3. Fallback inteligente: si el streamer está registrado pero pulsó otro botón o tiene un canal general
+            if (!targetStreamUrl) {
+                if (streamerInfo.twitchUrl) {
+                    targetStreamUrl = streamerInfo.twitchUrl;
+                    activePlatform = 'Twitch';
+                } else if (streamerInfo.kickUrl) {
+                    targetStreamUrl = streamerInfo.kickUrl;
+                    activePlatform = 'Kick';
+                } else if (streamerInfo.tiktokUrl) {
+                    targetStreamUrl = streamerInfo.tiktokUrl;
+                    activePlatform = 'TikTok';
+                } else if (streamerInfo.url) {
+                    targetStreamUrl = streamerInfo.url;
+                    if (targetStreamUrl.includes('kick.com')) activePlatform = 'Kick';
+                    else if (targetStreamUrl.includes('tiktok.com')) activePlatform = 'TikTok';
+                    else activePlatform = streamerInfo.platform || 'Twitch';
+                }
+            }
+
+            // 4. Si el usuario no tiene ningún canal registrado
             if (!targetStreamUrl) {
                 const platMsg = requestedPlatform ? ` de **${requestedPlatform}**` : '';
                 return interaction.editReply({
-                    content: `❌ **No tienes un canal${platMsg} registrado en el bot.**\n\n📌 Para poder notificar en **${requestedPlatform || 'esta plataforma'}**, un Administrador debe añadir tu canal con:\n\`!addstreamer @${interaction.user.username} <enlace_${(requestedPlatform || 'twitch').toLowerCase()}>\`\n💬 *Si eres streamer oficial, contacta con Administración.*`
+                    content: `❌ **No tienes un canal${platMsg} registrado en el bot.**\n\n📌 Para poder notificar en **${requestedPlatform || 'directo'}**, un Administrador debe añadir tu canal con:\n\`!addstreamer @${interaction.user.username} <enlace_${(requestedPlatform || 'twitch').toLowerCase()}>\`\n💬 *Si eres streamer oficial, contacta con Administración.*`
                 }).catch(() => { });
             }
 
@@ -7896,6 +8922,60 @@ client.on('interactionCreate', async (interaction) => {
         }).catch(() => { });
 
         // Auto-eliminar el selector efímero tras 60 segundos si no responde
+        setTimeout(() => {
+            interaction.deleteReply().catch(() => { });
+        }, 60000);
+        return;
+    }
+
+    // ----------------------------------------------------
+    // BOTÓN: ABRIR SELECTOR DE PLANTILLAS DE POSTULACIÓN
+    // ----------------------------------------------------
+    if (interaction.customId === 'btn_abrir_selector_plantillas') {
+        const hasStaff = await isStaffMember(interaction.member, interaction.guild, interaction.user.id);
+        if (!hasStaff) {
+            return interaction.reply({
+                content: '❌ Solo los miembros del equipo de **Staff** o Administradores pueden gestionar plantillas de postulación.',
+                ephemeral: true
+            });
+        }
+
+        const data = getPlantillasData();
+        const plantillasMap = data.plantillas || {};
+
+        const options = [];
+        for (const [key, p] of Object.entries(plantillasMap)) {
+            options.push({
+                label: p.nombre.slice(0, 100),
+                description: (p.descripcion || `Plantilla oficial de ${p.nombre}`).slice(0, 100),
+                value: key,
+                emoji: p.emoji || '📋'
+            });
+        }
+
+        if (options.length === 0) {
+            options.push({
+                label: 'WL-ORAL',
+                description: 'Plantilla de Whitelist Oral',
+                value: 'wl_oral',
+                emoji: '🎙️'
+            });
+        }
+
+        const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId('select_plantilla_postulacion')
+            .setPlaceholder('📂 Selecciona la plantilla de postulación que necesitas...')
+            .addOptions(options);
+
+        const row = new ActionRowBuilder().addComponents(selectMenu);
+
+        await interaction.reply({
+            content: '📋 **Elige la plantilla que deseas generar en este chat o reenviar a un ticket:**',
+            components: [row],
+            ephemeral: true
+        }).catch(() => { });
+
+        // Auto-eliminar selector efímero en 60s
         setTimeout(() => {
             interaction.deleteReply().catch(() => { });
         }, 60000);

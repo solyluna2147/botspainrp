@@ -1,0 +1,46 @@
+{
+  "plantillas": {
+    "wl_oral": {
+      "nombre": "WL-ORAL",
+      "emoji": "🎙️",
+      "descripcion": "Plantilla oficial de Whitelist Oral (OOC, Normativa y Situaciones de Rol)",
+      "contenido": "🎙️ WHITELIST ORAL • SPAIN RP\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🆔 Datos OOC\n\n➤ Edad:\n*\n➤ Ciudad / País:\n*\n➤ ¿Tiene experiencia previa en rol? ¿Dónde y cuánto tiempo?:\n*\n➤ ¿Qué estilo de rol suele llevar o le gustaría llevar?:\n*\n➤ ¿Qué busca principalmente en un servidor de roleplay?:\n*\n➤ ¿Qué considera que hace que una situación de rol sea buena?:\n*\n➤ ¿Qué haría si otro jugador comete un error durante un rol?:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📜 Normativa\n\n➤ ¿Qué es el PowerGaming (PG)? Dé un ejemplo:\n*\n➤ ¿Qué es el MetaGaming (MG)? Dé un ejemplo:\n*\n➤ ¿Qué es el DeathMatch (DM) y el Vehicle DeathMatch (VDM)?:\n*\n➤ ¿Qué entiende por rol de entorno? Dé un ejemplo:\n*\n➤ ¿Qué es el Combat Log y por qué está prohibido?:\n*\n➤ ¿Qué significa valorar la vida del personaje?:\n*\n➤ ¿Qué entiende por Forzar Rol? Dé un ejemplo:\n*\n➤ ¿Qué entiende por Revenge Kill (RK)?:\n*\n➤ ¿Qué haría si durante un rol pierde o queda en una situación desfavorable?:\n*\n➤ ¿Está permitido utilizar información obtenida fuera del servidor dentro del rol? Explique por qué:\n*\n➤ ¿Cómo debería continuar un rol después de recibir heridas?:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📝 Situaciones de Rol\n\n➤ Está en la calle y presencia un robo. El asaltante está armado y usted no. ¿Cómo actuaría?:\n*"
+    },
+    "postulacion_negocio": {
+      "nombre": "Postulación Negocio",
+      "emoji": "💼",
+      "descripcion": "Plantilla para solicitar la apertura y gestión de un Negocio",
+      "contenido": "💼 POSTULACIÓN DE NEGOCIO • SPAIN RP\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🆔 Datos OOC\n\n➤ Nombre:\n*\n➤ Discord:\n*\n➤ Horas en SpainRP:\n*\n➤ Baneos:\n*\n➤ Tiempo diario para el negocio:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 Datos IC\n\n➤ Nombre IC:\n*\n➤ Teléfono IC:\n*\n➤ Capital:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💼 Información del Negocio\n\n➤ Nombre:\n*\n➤ Tipo:\n*\n➤ Local deseado:\n*\n➤ Descripción corta:\n*\n➤ Horario:\n*\n➤ Empleados iniciales:\n*\n➤ Idea para generar rol:\n*\n\nAcepto la normativa de negocios de SpainRP."
+    },
+    "postulacion_mafia": {
+      "nombre": "Postulación Mafia",
+      "emoji": "💀",
+      "descripcion": "Plantilla para solicitar una Mafia (mínimo 15 personas)",
+      "contenido": "💀 POSTULACIÓN DE MAFIA • SPAIN RP\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🆔 Requisitos y Miembros (Mínimo 15 personas)\n\n➤ Nombre IC:\n*\n➤ Edad OOC:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💀 Información de la Banda / Mafia\n\n➤ ¿Qué significa para vosotros ser una mafia?:\n*\n➤ Aspectos a resaltar de la historia de cada miembro (Conflictos, asesinatos, huida de la justicia, etc.):\n*\n➤ ¿Qué motivos os llevaron a formar la mafia?:\n*\n➤ ¿Cuáles son sus objetivos en SpainRP?:\n*\n➤ Valores y pilares:\n*\n➤ Jerarquía dentro de la mafia:\n*\n➤ ¿Tienes claro que hay que seguir un IDP y que la base es fija?:\n*\n➤ Ropa (adjuntar fotos):\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👁️ Observaciones\n\n➤ Observaciones y aportes adicionales:\n*"
+    },
+    "postulacion_banda": {
+      "nombre": "Postulación Banda",
+      "emoji": "🏴‍☠️",
+      "descripcion": "Plantilla para solicitar una Banda (mínimo 5 personas)",
+      "contenido": "🏴‍☠️ POSTULACIÓN DE BANDA • SPAIN RP\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🆔 Requisitos y Miembros (Mínimo 5 personas)\n\n➤ Nombre IC:\n*\n➤ Edad OOC:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💀 Información de la Banda\n\n➤ ¿Qué es para vosotros una banda?:\n*\n➤ Aspectos a resaltar de la historia de cada miembro (Conflictos, asesinatos, huida de la justicia, etc.):\n*\n➤ ¿Qué motivos os llevaron a formar la banda?:\n*\n➤ ¿Cuáles son sus objetivos en SpainRP?:\n*\n➤ Valores y pilares:\n*\n➤ Jerarquía dentro de la banda:\n*\n➤ ¿Tienes claro que hay que seguir un IDP y que la base es fija?:\n*\n➤ Ropa (adjuntar fotos):\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👁️ Observaciones\n\n➤ Observaciones y aportes adicionales:\n*"
+    },
+    "postulacion_staff": {
+      "nombre": "Postulación Staff",
+      "emoji": "🛡️",
+      "descripcion": "Formulario oficial para postular al Equipo de Staff",
+      "contenido": "🛡️ POSTULACIÓN A STAFF • SPAIN RP\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🆔 Información Personal\n\n➤ Nombre o apodo:\n*\n➤ Edad:\n*\n➤ Zona horaria y país:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎮 Experiencia en la Comunidad\n\n➤ ¿Cuánto tiempo llevas en el servidor?:\n*\n➤ ¿Cuántas horas aproximadamente juegas a la semana?:\n*\n➤ ¿Has pertenecido al staff de otros servidores? Si es así, ¿cuáles y qué funciones realizabas?:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💼 Postulación\n\n➤ ¿Por qué quieres ser staff?:\n*\n➤ ¿Cuáles consideras que son tus puntos fuertes, débiles o aspectos a mejorar?:\n*\n➤ ¿Conoces TxAdmin, LuxuAdmin y sabes utilizarlo?:\n*\n➤ ¿Qué harías si vieras a otro miembro del staff incumpliendo las normas?:\n*\n➤ ¿Qué significa para ti ser imparcial como staff?:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📅 Disponibilidad\n\n➤ ¿Qué días y horarios sueles estar disponible?:\n*\n➤ ¿Comprendes que debes asistir a reuniones o eventos organizados por la administración?:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📝 Situaciones Hipotéticas\n\n➤ Un jugador comienza a insultarte por una sanción que le has puesto. ¿Qué harías?:\n*\n➤ Dos jugadores te dan versiones completamente distintas de un mismo problema. ¿Cómo resolverías la situación?:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👁️ Observaciones\n\n➤ ¿Hay algo más que quieras añadir o que debamos saber sobre ti?:\n*"
+    },
+    "whitelist": {
+      "nombre": "Whitelist",
+      "emoji": "📄",
+      "descripcion": "Plantilla para la solicitud de Whitelist",
+      "contenido": "📄 WHITELIST • SPAIN RP\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🆔 Datos OOC\n\n➤ Nombre real:\n*\n➤ Edad:\n*\n➤ Discord ID:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 Datos IC\n\n➤ Nombre y Apellido del Personaje:\n*\n➤ Edad IC:\n*\n➤ Historia del personaje:\n*\n➤ Objetivos en la ciudad:\n*"
+    },
+    "streamer": {
+      "nombre": "Streamer",
+      "emoji": "🎥",
+      "descripcion": "Formulario para el programa de Creadores de Contenido / Streamers",
+      "contenido": "🎥 POSTULACIÓN PARA STREAMER • SPAIN RP\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎥 Información de creador\n\n➤ Edad y País:\n*\n➤ Plataforma principal (Twitch, Kick, YouTube, etc.):\n*\n➤ Nombre del canal y enlace:\n*\n➤ ¿Cuánto tiempo llevas creando contenido?:\n*\n➤ ¿Con qué frecuencia haces directos o subes vídeos?:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📈 Estadísticas\n\n➤ Número de seguidores:\n*\n➤ Media de espectadores por directo:\n*\n➤ Horas emitidas/semana:\n*\n➤ ¿Has colaborado con otras comunidades anteriormente?:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌐 Sobre el servidor\n\n➤ ¿Por qué quieres ser streamer oficial de la comunidad?:\n*\n➤ ¿Qué puedes aportar al proyecto?:\n*\n➤ ¿Has jugado anteriormente en servidores de GTA RP? ¿Cuáles?:\n*\n➤ ¿Conoces y aceptas las normas del servidor?:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⭐ Compromiso\n\n➤ ¿Te comprometes a representar la comunidad de forma respetuosa y profesional?:\n*\n➤ ¿Estarías dispuesto a participar en eventos y promociones cuando sea necesario?:\n*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👁️ Observaciones\n\n➤ Cuéntanos cualquier cosa que consideres importante para tu postulación:\n*"
+    }
+  }
+}
