@@ -537,10 +537,8 @@ function saveStaffRating({ userId, userName, staffId, staffTag, rating, comment 
 }
 
 function parseRatingFromMessage(msg) {
-    let userMention = null;
     let userId = null;
     let userName = 'Usuario';
-    let staffMention = null;
     let staffId = null;
     let staffTag = 'Staff';
     let numRating = null;
@@ -558,56 +556,84 @@ function parseRatingFromMessage(msg) {
         ].join('\n'))
     ].join('\n');
 
-    if (!fullContent) return null;
+    if (!fullContent || fullContent.trim().length === 0) return null;
 
-    // 1. Extraer Staff
-    const staffIdMatch = fullContent.match(/Miembro del Staff Evaluado[^\n]*\n?>\s*<@!?(\d{17,20})>/i) ||
-        fullContent.match(/Staff Evaluado[^\n]*\n?>\s*<@!?(\d{17,20})>/i) ||
-        fullContent.match(/Staff[^\n]*:\s*<@!?(\d{17,20})>/i) ||
-        fullContent.match(/<@!?(\d{17,20})>\s*!/i);
+    // 1. Extraer Staff ID con múltiples formatos posibles
+    const staffPatterns = [
+        /(?:Miembro del Staff Evaluado|Staff Evaluado|Staff Atendi[oó]|Staff)\s*[:\*\s]*\r?\n?>\s*<@!?(\d{17,20})>/i,
+        /para el Staff\s+<@!?(\d{17,20})>/i,
+        /Staff\s*[:\s*]+<@!?(\d{17,20})>/i,
+        /Evaluado\s*[:\s*]+<@!?(\d{17,20})>/i,
+        /<@!?(\d{17,20})>\s*!/i
+    ];
 
-    if (staffIdMatch) {
-        staffId = staffIdMatch[1];
-    } else {
-        // Si no hay mención directa con formato, buscar cualquier mención en el embed
+    for (const pat of staffPatterns) {
+        const m = fullContent.match(pat);
+        if (m) {
+            staffId = m[1];
+            break;
+        }
+    }
+
+    if (!staffId) {
         const allMentions = fullContent.match(/<@!?(\d{17,20})>/g);
         if (allMentions && allMentions.length >= 2) {
-            // Normalmente la 1a es el usuario y la 2a el staff
             staffId = allMentions[1].replace(/[<@!>]/g, '');
         } else if (allMentions && allMentions.length === 1) {
             staffId = allMentions[0].replace(/[<@!>]/g, '');
         }
     }
 
-    // 2. Extraer Usuario
-    const userIdMatch = fullContent.match(/Usuario que Valora[^\n]*\n?>\s*<@!?(\d{17,20})>/i) ||
-        fullContent.match(/Usuario[^\n]*\n?>\s*<@!?(\d{17,20})>/i);
-    if (userIdMatch) {
-        userId = userIdMatch[1];
-    } else {
+    // 2. Extraer Usuario ID
+    const userPatterns = [
+        /(?:Usuario que Valora|Usuario|Valorado por)\s*[:\*\s]*\r?\n?>\s*<@!?(\d{17,20})>/i,
+        /Usuario\s*[:\s*]+<@!?(\d{17,20})>/i
+    ];
+    for (const pat of userPatterns) {
+        const m = fullContent.match(pat);
+        if (m) {
+            userId = m[1];
+            break;
+        }
+    }
+    if (!userId) {
         const allMentions = fullContent.match(/<@!?(\d{17,20})>/g);
         if (allMentions && allMentions.length >= 2) {
             userId = allMentions[0].replace(/[<@!>]/g, '');
+        } else {
+            userId = msg.author?.id || 'unknown';
         }
     }
 
     // 3. Extraer Nota (1 al 10)
-    const ratingMatch = fullContent.match(/Puntuaci[oó]n Otorgada[^\n]*\n?>\s*`?(\d{1,2})\/10`?/i) ||
-        fullContent.match(/Puntuaci[oó]n[^\n]*:\s*`?(\d{1,2})\/10`?/i) ||
-        fullContent.match(/`?(\d{1,2})\/10`?/i) ||
-        fullContent.match(/Nota[^\n]*:\s*(\d{1,2})/i);
-
-    if (ratingMatch) {
-        numRating = parseInt(ratingMatch[1], 10);
+    const ratingPatterns = [
+        /(?:Puntuaci[oó]n Otorgada|Puntuaci[oó]n|Nota|Calificaci[oó]n)\s*[:\*\s]*\r?\n?>\s*`?(\d{1,2})\s*\/\s*10`?/i,
+        /(?:Puntuaci[oó]n|Nota|Calificaci[oó]n)\s*[:\s*]+`?(\d{1,2})(?:\/10)?`?/i,
+        /`?(\d{1,2})\s*\/\s*10`?/,
+        /\b(\d{1,2})\s*\/\s*10\b/
+    ];
+    for (const pat of ratingPatterns) {
+        const m = fullContent.match(pat);
+        if (m) {
+            const val = parseInt(m[1], 10);
+            if (!isNaN(val) && val >= 1 && val <= 10) {
+                numRating = val;
+                break;
+            }
+        }
     }
 
     // 4. Extraer Comentario
-    const commentMatch = fullContent.match(/Opini[oó]n y Experiencia del Usuario[^\n]*\n?>\s*[\*"]*([\s\S]*?)[\*"]*\n\n📈/i) ||
-        fullContent.match(/Opini[oó]n y Experiencia del Usuario[^\n]*\n?>\s*[\*"]*([\s\S]*?)[\*"]*(?:\n\n|\n>|$)/i) ||
-        fullContent.match(/Comentario[^\n]*:\s*[\*"]*([^\n]+)/i);
-
-    if (commentMatch) {
-        comment = commentMatch[1].replace(/^[\*"\s]+|[\*"\s]+$/g, '').trim();
+    const commentPatterns = [
+        /(?:Opini[oó]n y Experiencia del Usuario|Comentario|Opini[oó]n)\s*[:\*\s]*\r?\n?>\s*[\*"]*([\s\S]*?)[\*"]*(?:\r?\n\r?\n📈|\r?\n\r?\n>|\r?\n\r?\n🇪🇸|$)/i,
+        /(?:Comentario|Opini[oó]n)\s*[:\s*]+[\*"]*([^\r\n]+)/i
+    ];
+    for (const pat of commentPatterns) {
+        const m = fullContent.match(pat);
+        if (m && m[1]) {
+            comment = m[1].replace(/^[\*"\s]+|[\*"\s]+$/g, '').trim();
+            if (comment) break;
+        }
     }
 
     if (!staffId || !numRating || isNaN(numRating) || numRating < 1 || numRating > 10) {
@@ -657,15 +683,17 @@ async function syncStaffRatingsFromChannel(targetChannel = null) {
         console.log(`📋 [SYNC VALORACIONES] Total de mensajes obtenidos en el canal: ${allMessages.length}`);
 
         const currentData = getStaffRatingsData();
-        const validStaffSet = new Set(currentData.staffList || []);
         const existingRatings = currentData.ratings || [];
         let importedCount = 0;
 
         for (const msg of allMessages) {
             const parsed = parseRatingFromMessage(msg);
             if (!parsed) continue;
-            // Solo registrar si el staff pertenece a la lista oficial configurada
-            if (validStaffSet.size > 0 && !validStaffSet.has(parsed.staffId)) continue;
+
+            // Añadir automáticamente al staff a la lista oficial si aún no estaba
+            if (!currentData.staffList.includes(parsed.staffId)) {
+                currentData.staffList.push(parsed.staffId);
+            }
 
             const isDuplicate = existingRatings.some(r => {
                 if (r.id === parsed.id) return true;
@@ -681,8 +709,7 @@ async function syncStaffRatingsFromChannel(targetChannel = null) {
             }
         }
 
-        // Limpiar cualquier valoración residual de usuarios que ya no son staff
-        currentData.ratings = existingRatings.filter(r => validStaffSet.size === 0 || validStaffSet.has(r.staffId));
+        currentData.ratings = existingRatings;
         saveStaffRatingsData(currentData);
 
         // Actualizar automáticamente el panel de Tops si existe
@@ -2935,8 +2962,12 @@ async function autoBootstrapChannelHistory() {
 }
 
 // ==========================================
-// 3. FUNCIONES PARA ENVIAR NOTIFICACIONES
-// ==========================================
+function normalizeUserKey(userMention) {
+    if (!userMention) return 'unknown_user';
+    const idMatch = String(userMention).match(/\d{17,20}/);
+    if (idMatch) return `id_${idMatch[0]}`;
+    return `name_${String(userMention).toLowerCase().replace(/[^a-z0-9_]/gi, '')}`;
+}
 
 async function sendApprovedNotification({ userMention, staffName = 'Equipo de Staff' }) {
     const targetChannelId = botConfig.CHANNEL_APROBADOS_ID || '1550880724930797610';
@@ -2948,6 +2979,24 @@ async function sendApprovedNotification({ userMention, staffName = 'Equipo de St
     if (!targetChannel) {
         throw new Error(`No se pudo acceder al canal con ID ${targetChannelId}`);
     }
+
+    // 🛡️ Filtro de seguridad en canal: evitar duplicados recientes (últimos 5 minutos)
+    try {
+        const recentMessages = await targetChannel.messages.fetch({ limit: 15 }).catch(() => null);
+        if (recentMessages && recentMessages.size > 0) {
+            const normUser = normalizeUserKey(userMention);
+            const isDuplicateInChannel = recentMessages.some(m => {
+                if (m.author.id !== client.user.id) return false;
+                if (Date.now() - m.createdTimestamp > 5 * 60 * 1000) return false;
+                const fullMsgText = `${m.content || ''} ${m.embeds?.[0]?.description || ''} ${m.embeds?.[0]?.title || ''}`;
+                return normalizeUserKey(fullMsgText).includes(normUser) || fullMsgText.includes(userMention);
+            });
+            if (isDuplicateInChannel) {
+                console.log(`🛡️ [CANAL APROBADOS] Aviso para ${userMention} ya existe recientemente en #${targetChannel.name}. Envío duplicado evitado.`);
+                return { success: true, duplicateBlocked: true };
+            }
+        }
+    } catch (e) { }
 
     const imgPngPath = path.join(__dirname, 'assets', 'aprobado.png');
     const imgGifPath = path.join(__dirname, 'assets', 'aprobado.gif');
@@ -3020,6 +3069,24 @@ async function sendDeniedNotification({ userMention, staffName = 'Equipo de Staf
     if (!targetChannel) {
         throw new Error(`No se pudo acceder al canal con ID ${targetChannelId}`);
     }
+
+    // 🛡️ Filtro de seguridad en canal: evitar duplicados recientes (últimos 5 minutos)
+    try {
+        const recentMessages = await targetChannel.messages.fetch({ limit: 15 }).catch(() => null);
+        if (recentMessages && recentMessages.size > 0) {
+            const normUser = normalizeUserKey(userMention);
+            const isDuplicateInChannel = recentMessages.some(m => {
+                if (m.author.id !== client.user.id) return false;
+                if (Date.now() - m.createdTimestamp > 5 * 60 * 1000) return false;
+                const fullMsgText = `${m.content || ''} ${m.embeds?.[0]?.description || ''} ${m.embeds?.[0]?.title || ''}`;
+                return normalizeUserKey(fullMsgText).includes(normUser) || fullMsgText.includes(userMention);
+            });
+            if (isDuplicateInChannel) {
+                console.log(`🛡️ [CANAL DENEGADOS] Aviso para ${userMention} ya existe recientemente en #${targetChannel.name}. Envío duplicado evitado.`);
+                return { success: true, duplicateBlocked: true };
+            }
+        }
+    } catch (e) { }
 
     const imgPngPath = path.join(__dirname, 'assets', 'denegado.png');
     const imgGifPath = path.join(__dirname, 'assets', 'denegado.gif');
@@ -4245,11 +4312,6 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
     console.log(`✅ [DEBUG] Decisión identificada: ${isAprobada ? 'APROBADA' : 'DENEGADA'}`);
 
     const decisionType = isAprobada ? 'APROBADA' : 'DENEGADA';
-    const cacheKey = `${message.id}_${decisionType}`;
-
-    if (processedMessages.has(cacheKey)) {
-        return; // Ya se notificó anteriormente
-    }
 
     // 2. Extraer el solicitante (El usuario de Discord)
     let userMention = null;
@@ -4294,6 +4356,28 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
             userMention = 'Postulante';
         }
     }
+
+    // 🛡️ COMPROBACIÓN Y RESERVA SÍNCRONA INSTANTÁNEA (ANTI-CARRERA)
+    const normUser = normalizeUserKey(userMention);
+    const userDecisionKey = `${normUser}_${decisionType}`;
+    const cacheKey = `${message.id}_${decisionType}`;
+
+    // Si este mensaje concreto de Discord ya se procesó, ignorar
+    if (processedMessages.has(cacheKey)) {
+        return;
+    }
+
+    // Si se acaba de notificar a este mismo usuario en los últimos 2 minutos, evitar el evento gemelo
+    const lastDecisionTime = recentWlDecisionsSet.get(userDecisionKey);
+    if (lastDecisionTime && (Date.now() - lastDecisionTime) < 2 * 60 * 1000) {
+        console.log(`ℹ️ [WL ANTI-DUPLICADO] Notificación (${decisionType}) para ${userMention} ignorada por ser evento gemelo simultáneo (${Math.round((Date.now() - lastDecisionTime)/1000)}s).`);
+        processedMessages.add(cacheKey);
+        return;
+    }
+
+    // RESERVA INMEDIATA: Bloquear este mensaje específico y fijar la marca temporal de 2 minutos
+    processedMessages.add(cacheKey);
+    recentWlDecisionsSet.set(userDecisionKey, Date.now());
 
     // 3. Extraer el Staff que tomó la decisión (Decidido Por o Autor del mensaje si es Staff)
     let staffName = 'Equipo de Staff';
@@ -4344,21 +4428,9 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
 
     // 5. Enviar notificación usando la función reutilizable con protección estricta anti-duplicados
     try {
-        const userDecisionKey = `${userMention}_${decisionType}`;
-        const lastUserDecision = recentWlDecisionsSet.get(userDecisionKey);
-        if (lastUserDecision && (Date.now() - lastUserDecision) < 5 * 60 * 1000) {
-            console.log(`ℹ️ [WL RESULTADOS] Notificación (${decisionType}) para ${userMention} ignorada por ser duplicada reciente.`);
-            processedMessages.add(cacheKey);
-            return;
-        }
-
         if (isAprobada) {
-            processedMessages.add(cacheKey);
-            recentWlDecisionsSet.set(userDecisionKey, Date.now());
             await sendApprovedNotification({ userMention, staffName });
         } else if (isDenegada) {
-            processedMessages.add(cacheKey);
-            recentWlDecisionsSet.set(userDecisionKey, Date.now());
             await sendDeniedNotification({ userMention, staffName });
         }
     } catch (error) {
