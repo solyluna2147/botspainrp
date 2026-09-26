@@ -8656,7 +8656,7 @@ client.on('interactionCreate', async (interaction) => {
                 name: 'SISTEMA DE PLANTILLAS • SPAIN RP',
                 iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
             })
-            .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
+            .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
             .setTitle(`📂 Plantilla Seleccionada: ${plantilla.emoji || '📋'} ${plantilla.nombre}`)
             .setDescription(
                 `👤 **Staff Activo:** <@${interaction.user.id}>\n` +
