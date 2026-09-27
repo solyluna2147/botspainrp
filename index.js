@@ -5494,8 +5494,11 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !fijar-estado / !panel-estado (Crea el panel auto-actualizable)
         // ----------------------------------------------------
         if (['!fijar-estado', '!panel-estado'].includes(command)) {
+            await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
             try {
-                await message.delete().catch(() => { });
                 const state = await fetchFiveMServerStatus();
                 const embed = buildStatusEmbed(state);
                 const row = buildStatusActionRow();
@@ -5569,6 +5572,25 @@ client.on('messageCreate', async (message) => {
         }
 
         // ----------------------------------------------------
+        // COMANDO: !panel-stream / !notificarstream (Publica el botón interactivo de streamer)
+        // ----------------------------------------------------
+        if (['!panel-stream', '!notificarstream', '!panel-directos', '!fijar-stream'].includes(command)) {
+            await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
+            try {
+                const targetChannel = message.channel;
+                await ensureStreamPanel(targetChannel.id).catch(() => { });
+                updateConfig('CHANNEL_STREAM_PANEL_ID', targetChannel.id);
+                console.log(`🟣 [PANEL STREAM] Panel de stream publicado en #${targetChannel.name} (${targetChannel.id})`);
+                return;
+            } catch (err) {
+                console.error('Error al publicar panel de stream:', err);
+                return;
+            }
+        }
+
         // ----------------------------------------------------
         // COMANDO: !addstreamer / !setstreamer (Registra un streamer)
         // ----------------------------------------------------
@@ -5675,8 +5697,9 @@ client.on('messageCreate', async (message) => {
         // ----------------------------------------------------
         if (['!panel-plantillas', '!panel-plantilla', '!panelplantillas', '!plantillas-panel', '!fijar-plantillas'].includes(command)) {
             await message.delete().catch(() => { });
-            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
-            if (!hasStaff) return;
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
 
             try {
                 const targetChannel = message.channel;
@@ -5800,8 +5823,40 @@ client.on('messageCreate', async (message) => {
         }
 
         // ----------------------------------------------------
-        // SISTEMA DE SANCIONES STAFF (!sancionar / !sanciones)
+        // SISTEMA DE SANCIONES STAFF (!panel-sanciones / !sancionar / !sanciones)
         // ----------------------------------------------------
+        // COMANDO: !panel-sanciones / !fijar-sanciones (Publica el panel con el botón de registrar sanción)
+        if (['!panel-sanciones', '!panel-sancion', '!panelsanciones', '!fijar-sanciones', '!fijar-panel-sanciones'].includes(command)) {
+            await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
+            try {
+                const targetChannel = message.channel;
+                const embed = buildSancionesPanelEmbed();
+                const row = buildSancionesPanelRow();
+                const files = [];
+
+                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const panelImgPath = path.join(__dirname, 'assets', 'panel_sanciones.png');
+                if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+                if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_sanciones.png' }));
+
+                await targetChannel.send({
+                    embeds: [embed],
+                    components: [row],
+                    files
+                });
+
+                updateConfig('CHANNEL_SANCIONES_PANEL_ID', targetChannel.id);
+                console.log(`⚖️ [PANEL SANCIONES] Panel de sanciones publicado en #${targetChannel.name} (${targetChannel.id})`);
+                return;
+            } catch (err) {
+                console.error('Error al publicar panel de sanciones:', err);
+                return;
+            }
+        }
+
         // COMANDO MANUAL: !sancionar @usuario <Sanción> <Motivo...> (con foto adjunta opcional)
         if (['!sancionar', '!sancion', '!warn', '!ban', '!permaban'].includes(command)) {
             await message.delete().catch(() => { });
@@ -5891,8 +5946,40 @@ client.on('messageCreate', async (message) => {
         }
 
         // ==========================================
-        // SISTEMA DE EVENTOS STAFF (!evento / !eventos)
+        // SISTEMA DE EVENTOS STAFF (!panel-eventos / !evento / !eventos)
         // ==========================================
+        // COMANDO: !panel-eventos / !fijar-eventos (Publica el panel con el botón de crear evento)
+        if (['!panel-eventos', '!panel-evento', '!eventos-panel', '!fijar-eventos', '!fijar-panel-eventos'].includes(command)) {
+            await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
+            try {
+                const targetChannel = message.channel;
+                const embed = buildEventosPanelEmbed();
+                const row = buildEventosPanelRow();
+                const files = [];
+
+                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const panelImgPath = path.join(__dirname, 'assets', 'panel_eventos.png');
+                if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+                if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_eventos.png' }));
+
+                await targetChannel.send({
+                    embeds: [embed],
+                    components: [row],
+                    files
+                });
+
+                updateConfig('CHANNEL_EVENTOS_PANEL_ID', targetChannel.id);
+                console.log(`🎉 [PANEL EVENTOS] Panel de eventos publicado en #${targetChannel.name} (${targetChannel.id})`);
+                return;
+            } catch (err) {
+                console.error('Error al publicar panel de eventos:', err);
+                return;
+            }
+        }
+
         // COMANDO MANUAL: !evento <Título | Hora | Lugar | Organiza | Descripción> (con flyer adjunto opcional)
         if (['!evento', '!eventos', '!crearevento', '!anunciarevinto', '!anunciarevents'].includes(command)) {
             await message.delete().catch(() => { });
