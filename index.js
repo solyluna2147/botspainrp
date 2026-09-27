@@ -9075,25 +9075,23 @@ client.on('interactionCreate', async (interaction) => {
         const stats = ratingsData.stats || {};
         const validStaffList = ratingsData.staffList || [];
         const allIds = Array.from(new Set([...validStaffList, ...Object.keys(stats)]));
-        const staffList = allIds.map(id => {
-            const s = stats[id] || { staffTag: 'Staff', totalRatings: 0, sumRatings: 0, average: 0 };
-            return { id, ...s };
-        });
+        const staffList = allIds
+            .map(id => {
+                const s = stats[id] || { staffTag: 'Staff', totalRatings: 0, sumRatings: 0, average: 0 };
+                return { id, ...s };
+            })
+            .filter(s => (s.totalRatings || 0) > 0);
 
-        staffList.sort((a, b) => {
-            if (b.totalRatings > 0 && a.totalRatings === 0) return 1;
-            if (a.totalRatings > 0 && b.totalRatings === 0) return -1;
-            return (b.average - a.average) || (b.totalRatings - a.totalRatings);
-        });
+        staffList.sort((a, b) => (b.average - a.average) || (b.totalRatings - a.totalRatings));
 
         let desc = '';
         if (staffList.length === 0) {
-            desc = '📭 *Todavía no se han registrado miembros de Staff en el servidor.*';
+            desc = '📭 *Todavía no hay miembros de Staff con valoraciones registradas.*';
         } else {
             staffList.slice(0, 25).forEach((s, idx) => {
                 const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `\`#${idx + 1}\``));
-                const ratingDisplay = s.totalRatings > 0 ? `**${s.average}/10** ⭐` : `*Sin valoraciones*`;
-                const votesDisplay = s.totalRatings > 0 ? `\`${s.totalRatings}\` votos recibidos` : `\`0\` valoraciones`;
+                const ratingDisplay = `**${s.average}/10** ⭐`;
+                const votesDisplay = `\`${s.totalRatings}\` ${s.totalRatings === 1 ? 'voto recibido' : 'votos recibidos'}`;
                 desc += `${medal} <@${s.id}> • ${ratingDisplay}\n> 💬 Reseñas: ${votesDisplay}\n\n`;
             });
         }
