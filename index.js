@@ -5347,101 +5347,139 @@ client.on('messageCreate', async (message) => {
         // ----------------------------------------------------
         // COMANDO DE AYUDA DINÁMICO POR ROL: !ayuda / !comandos / !help / !wl-ayuda
         // ----------------------------------------------------
+        // ----------------------------------------------------
+        // COMANDO DE AYUDA DINÁMICO POR ROL: !ayuda / !comandos / !help / !wl-ayuda
+        // ----------------------------------------------------
         if (['!ayuda', '!comandos', '!help', '!wl-ayuda', '!wl-comandos', '!comandos-wl'].includes(command)) {
-            await message.delete().catch(() => { });
+            try {
+                // Borrar el mensaje del usuario que invocó el comando sin bloquear
+                message.delete().catch(() => { });
 
-            const isOwner = message.author.id === OWNER_ID;
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
-            const files = [];
-            if (fs.existsSync(logoPath)) {
-                files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-            }
+                const isOwner = message.author.id === OWNER_ID;
+                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const hasLogo = fs.existsSync(logoPath);
+                const files = [];
+                if (hasLogo) {
+                    try {
+                        files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+                    } catch (e) {
+                        console.warn('⚠️ No se pudo cargar el logo local:', e.message);
+                    }
+                }
 
-            let helpEmbed = new EmbedBuilder()
-                .setColor(isOwner ? 0x9B59B6 : 0xF1C40F)
-                .setAuthor({
-                    name: isOwner ? 'GUÍA DE COMANDOS DEL PROPIETARIO • SPAIN RP' : 'GUÍA DE COMANDOS PARA EL EQUIPO DE STAFF • SPAIN RP',
-                    iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
-                })
-                .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
-                .setFooter({ text: 'SPAIN RP • Este mensaje se auto-eliminará automáticamente en 30 segundos' })
-                .setTimestamp();
+                const iconUrl = hasLogo && files.length > 0 ? 'attachment://logo.png' : (client.user ? client.user.displayAvatarURL() : null);
 
-            if (isOwner) {
-                // ==========================
-                // VISTA COMPLETA DEL OWNER
-                // ==========================
-                helpEmbed.setTitle('👑 Centro de Control y Todos los Comandos del Bot')
-                    .setDescription(
-                        `Hola <@${message.author.id}>, como **Owner** del servidor tienes acceso total a todos los comandos, paneles y configuraciones del bot.\n\n` +
-                        `📌 **PANELES Y MENÚS INTERACTIVOS (Exclusivos Owner):**\n` +
-                        `> 🌟 \`!panel-valoracion\` → Publica el botón para valorar al Staff *(Canal: \`!setcanal valoracionpanel\`)*\n` +
-                        `> 🏆 \`!panel-tops\` o \`!tops\` → Publica el ranking de mejores valoraciones en tiempo real\n` +
-                        `> 📋 \`!panel-plantillas\` → Publica el panel selector de plantillas de postulación\n` +
-                        `> ⚖️ \`!panel-sanciones\` → Publica el panel con el botón para emitir sanciones *(Canal: \`!setcanal panelsanciones\`)*\n` +
-                        `> 🎉 \`!panel-eventos\` → Publica el panel con el botón para crear eventos *(Canal: \`!setcanal paneleventos\`)*\n` +
-                        `> 🟣 \`!panel-stream\` → Publica el panel con el botón de notificar directos *(Canal: \`!setcanal streampanel\`)*\n` +
-                        `> 📊 \`!panel-estado\` → Publica el panel auto-actualizable de jugadores de FiveM *(Canal: \`!setcanal status\`)*\n\n` +
-                        `⚙️ **GESTIÓN DEL SISTEMA DE VALORACIONES (Exclusivo Owner):**\n` +
-                        `> ➕ \`!addstaff @usuario\` → Añade un miembro al menú desplegable de valoraciones\n` +
-                        `> ➖ \`!delstaff @usuario\` → Retira a un miembro del menú desplegable\n` +
-                        `> 🛡️ \`!staffs\` o \`!stafflist\` → Consulta la lista interna de staffs configurados\n` +
-                        `> 🗑️ \`!delvaloracion @usuario\` → Purga y reinicia las estadísticas de un staff\n` +
-                        `> 🔄 \`!sync-valoraciones\` → Escanea el canal y sincroniza el Top al instante\n\n` +
-                        `👑 **CONFIGURACIÓN DEL SISTEMA & CANALES (Exclusivo Owner):**\n` +
-                        `> 🛠️ \`!admin\` o \`!config\` → Abre el panel maestro con el estado de todos los canales\n` +
-                        `> 📍 \`!setcanal <tipo> <#canal|ID>\` → Vincula cualquier canal al bot\n` +
-                        `> 🛡️ \`!setrol <staff|streamer> <@rol|ID>\` → Configura los roles del bot\n` +
-                        `> 📡 \`!setip <ip:puerto>\` → Cambia la IP y puerto de consulta FiveM\n` +
-                        `> 🔗 \`!setcfx <codigo>\` → Cambia el código de conexión CFX\n` +
-                        `> 🔄 \`!reiniciar-paneles\` → Fuerza el reenvío de todos los paneles automáticos\n\n` +
-                        `📝 **COMANDOS DE GESTIÓN & STAFF:**\n` +
-                        `> ✅ \`!aprobar @usuario\` → Envía el anuncio oficial de Whitelist Aprobada\n` +
-                        `> ❌ \`!denegar @usuario\` → Envía el anuncio oficial de Whitelist Denegada\n` +
-                        `> 📨 \`!enviar <#ticket|ID>\` → Envía la plantilla seleccionada al ticket del usuario\n` +
-                        `> 🚨 \`!sancionar @usuario <Sanción> <Motivo>\` → Registra una sanción oficial\n` +
-                        `> 📂 \`!sanciones @usuario\` → Consulta el historial disciplinario de un ciudadano\n` +
-                        `> 📢 \`!evento <Título> | <Hora> | <Lugar> | <Organiza> | <Desc>\` → Anuncia un evento oficial\n` +
-                        `> 🟣 \`!addstreamer @usuario <link>\` → Registra a un streamer oficial\n` +
-                        `> 🔴 \`!stream @usuario <link> [título]\` → Emite el aviso de directo\n` +
-                        `> 🗑️ \`!borrar [cantidad]\` → Limpia mensajes recientes del chat\n` +
-                        `> 🌐 \`!estado\` o \`!status\` → Comprueba el estado del servidor FiveM\n` +
-                        `> 🎙️ \`!entrevista @usuario\` → Realiza la auditoría de Whitelist Oral por voz con IA\n` +
-                        `> 🤖 \`!test-ia <texto>\` → Comprueba la probabilidad de IA de un texto`
-                    );
-            } else {
-                // ==========================
-                // VISTA DE STAFF
-                // ==========================
-                helpEmbed.setTitle('🛡️ Comandos Disponibles para Miembros de Staff')
-                    .setDescription(
-                        `Hola <@${message.author.id}>, estos son los comandos que tienes autorizados para el soporte y moderación:\n\n` +
-                        `📋 **GESTIÓN DE WHITELIST:**\n` +
-                        `> ✅ \`!aprobar @usuario\` o \`!aprobado @usuario\` → Envía el anuncio oficial de Whitelist Aprobada *(Canal: Aprobados)*\n` +
-                        `> ❌ \`!denegar @usuario\` o \`!denegado @usuario\` → Envía el anuncio oficial de Whitelist Denegada *(Canal: Denegados)*\n` +
-                        `> 🎙️ \`!entrevista @usuario\` → Inicia la evaluación de Whitelist Oral con transcripción y ficha por IA\n\n` +
-                        `📑 **PLANTILLAS EN TICKETS:**\n` +
-                        `> 📨 \`!enviar <#ticket|ID>\` → Envía al ticket especificado la última plantilla que generaste en el panel\n\n` +
-                        `🚨 **SANCIONES Y MODERACIÓN:**\n` +
-                        `> ⚖️ \`!sancionar @usuario <Sanción> <Motivo>\` → Publica una sanción oficial *(Adjunta foto si la tienes)*\n` +
-                        `> 📂 \`!sanciones @usuario\` → Consulta el expediente e historial de sanciones de un usuario\n` +
-                        `> 🗑️ \`!borrar [cantidad]\` → Borra mensajes de forma limpia en el canal actual\n\n` +
-                        `🎉 **EVENTOS:**\n` +
-                        `> 📢 \`!evento <Título> | <Hora> | <Lugar> | <Organiza> | <Descripción>\` → Publica el anuncio oficial de un evento con flyer\n\n` +
-                        `🟣 **CREADORES DE CONTENIDO / STREAMERS:**\n` +
-                        `> ➕ \`!addstreamer @usuario <enlace>\` → Da de alta un streamer en la base de datos\n` +
-                        `> 🔴 \`!stream @usuario <enlace> [título]\` → Publica el aviso de directo manualmente\n\n` +
-                        `🌐 **INFORMACIÓN Y AUDITORÍA:**\n` +
-                        `> 📊 \`!estado\` o \`!status\` → Consulta jugadores online y ping de FiveM\n` +
-                        `> 🤖 \`!test-ia <texto>\` → Analiza un formulario para verificar si fue redactado por ChatGPT`
-                    );
-            }
+                let helpEmbed = new EmbedBuilder()
+                    .setColor(isOwner ? 0x9B59B6 : 0xF1C40F)
+                    .setFooter({ text: 'SPAIN RP • Este mensaje se auto-eliminará automáticamente en 30 segundos' })
+                    .setTimestamp();
 
-            const helpMsg = await message.channel.send({ embeds: [helpEmbed], files }).catch(() => null);
-            if (helpMsg) {
-                setTimeout(() => {
-                    helpMsg.delete().catch(() => { });
-                }, 30000); // 30 segundos
+                if (iconUrl) {
+                    helpEmbed.setAuthor({
+                        name: isOwner ? 'GUÍA DE COMANDOS DEL PROPIETARIO • SPAIN RP' : 'GUÍA DE COMANDOS PARA EL EQUIPO DE STAFF • SPAIN RP',
+                        iconURL: iconUrl
+                    });
+                    helpEmbed.setThumbnail(iconUrl);
+                } else {
+                    helpEmbed.setAuthor({
+                        name: isOwner ? 'GUÍA DE COMANDOS DEL PROPIETARIO • SPAIN RP' : 'GUÍA DE COMANDOS PARA EL EQUIPO DE STAFF • SPAIN RP'
+                    });
+                }
+
+                if (isOwner) {
+                    // ==========================
+                    // VISTA COMPLETA DEL OWNER
+                    // ==========================
+                    helpEmbed.setTitle('👑 Centro de Control y Todos los Comandos del Bot')
+                        .setDescription(
+                            `Hola <@${message.author.id}>, como **Owner** del servidor tienes acceso total a todos los comandos, paneles y configuraciones del bot.\n\n` +
+                            `📌 **PANELES Y MENÚS INTERACTIVOS (Exclusivos Owner):**\n` +
+                            `> 🌟 \`!panel-valoracion\` → Publica el botón para valorar al Staff *(Canal: \`!setcanal valoracionpanel\`)*\n` +
+                            `> 🏆 \`!panel-tops\` o \`!tops\` → Publica el ranking de mejores valoraciones en tiempo real\n` +
+                            `> 📋 \`!panel-plantillas\` → Publica el panel selector de plantillas de postulación\n` +
+                            `> ⚖️ \`!panel-sanciones\` → Publica el panel con el botón para emitir sanciones *(Canal: \`!setcanal panelsanciones\`)*\n` +
+                            `> 🎉 \`!panel-eventos\` → Publica el panel con el botón para crear eventos *(Canal: \`!setcanal paneleventos\`)*\n` +
+                            `> 🟣 \`!panel-stream\` → Publica el panel con el botón de notificar directos *(Canal: \`!setcanal streampanel\`)*\n` +
+                            `> 📊 \`!panel-estado\` → Publica el panel auto-actualizable de jugadores de FiveM *(Canal: \`!setcanal status\`)*\n\n` +
+                            `⚙️ **GESTIÓN DEL SISTEMA DE VALORACIONES (Exclusivo Owner):**\n` +
+                            `> ➕ \`!addstaff @usuario\` → Añade un miembro al menú desplegable de valoraciones\n` +
+                            `> ➖ \`!delstaff @usuario\` → Retira a un miembro del menú desplegable\n` +
+                            `> 🛡️ \`!staffs\` o \`!stafflist\` → Consulta la lista interna de staffs configurados\n` +
+                            `> 🗑️ \`!delvaloracion @usuario\` → Purga y reinicia las estadísticas de un staff\n` +
+                            `> 🔄 \`!sync-valoraciones\` → Escanea el canal y sincroniza el Top al instante\n\n` +
+                            `👑 **CONFIGURACIÓN DEL SISTEMA & CANALES (Exclusivo Owner):**\n` +
+                            `> 🛠️ \`!admin\` o \`!config\` → Abre el panel maestro con el estado de todos los canales\n` +
+                            `> 📍 \`!setcanal <tipo> <#canal|ID>\` → Vincula cualquier canal al bot\n` +
+                            `> 🛡️ \`!setrol <staff|streamer> <@rol|ID>\` → Configura los roles del bot\n` +
+                            `> 📡 \`!setip <ip:puerto>\` → Cambia la IP y puerto de consulta FiveM\n` +
+                            `> 🔗 \`!setcfx <codigo>\` → Cambia el código de conexión CFX\n` +
+                            `> 🔄 \`!reiniciar-paneles\` → Fuerza el reenvío de todos los paneles automáticos\n\n` +
+                            `📝 **COMANDOS DE GESTIÓN & STAFF:**\n` +
+                            `> ✅ \`!aprobar @usuario\` → Envía el anuncio oficial de Whitelist Aprobada\n` +
+                            `> ❌ \`!denegar @usuario\` → Envía el anuncio oficial de Whitelist Denegada\n` +
+                            `> 📨 \`!enviar <#ticket|ID>\` → Envía la plantilla seleccionada al ticket del usuario\n` +
+                            `> 🚨 \`!sancionar @usuario <Sanción> <Motivo>\` → Registra una sanción oficial\n` +
+                            `> 📂 \`!sanciones @usuario\` → Consulta el historial disciplinario de un ciudadano\n` +
+                            `> 📢 \`!evento <Título> | <Hora> | <Lugar> | <Organiza> | <Desc>\` → Anuncia un evento oficial\n` +
+                            `> 🟣 \`!addstreamer @usuario <link>\` → Registra a un streamer oficial\n` +
+                            `> 🔴 \`!stream @usuario <link> [título]\` → Emite el aviso de directo\n` +
+                            `> 🗑️ \`!borrar [cantidad]\` → Limpia mensajes recientes del chat\n` +
+                            `> 🌐 \`!estado\` o \`!status\` → Comprueba el estado del servidor FiveM\n` +
+                            `> 🎙️ \`!entrevista @usuario\` → Realiza la auditoría de Whitelist Oral por voz con IA\n` +
+                            `> 🤖 \`!test-ia <texto>\` → Comprueba la probabilidad de IA de un texto`
+                        );
+                } else {
+                    // ==========================
+                    // VISTA DE STAFF
+                    // ==========================
+                    helpEmbed.setTitle('🛡️ Comandos Disponibles para Miembros de Staff')
+                        .setDescription(
+                            `Hola <@${message.author.id}>, estos son los comandos que tienes autorizados para el soporte y moderación:\n\n` +
+                            `📋 **GESTIÓN DE WHITELIST:**\n` +
+                            `> ✅ \`!aprobar @usuario\` o \`!aprobado @usuario\` → Envía el anuncio oficial de Whitelist Aprobada *(Canal: Aprobados)*\n` +
+                            `> ❌ \`!denegar @usuario\` o \`!denegado @usuario\` → Envía el anuncio oficial de Whitelist Denegada *(Canal: Denegados)*\n` +
+                            `> 🎙️ \`!entrevista @usuario\` → Inicia la evaluación de Whitelist Oral con transcripción y ficha por IA\n\n` +
+                            `📑 **PLANTILLAS EN TICKETS:**\n` +
+                            `> 📨 \`!enviar <#ticket|ID>\` → Envía al ticket especificado la última plantilla que generaste en el panel\n\n` +
+                            `🚨 **SANCIONES Y MODERACIÓN:**\n` +
+                            `> ⚖️ \`!sancionar @usuario <Sanción> <Motivo>\` → Publica una sanción oficial *(Adjunta foto si la tienes)*\n` +
+                            `> 📂 \`!sanciones @usuario\` → Consulta el expediente e historial de sanciones de un usuario\n` +
+                            `> 🗑️ \`!borrar [cantidad]\` → Borra mensajes de forma limpia en el canal actual\n\n` +
+                            `🎉 **EVENTOS:**\n` +
+                            `> 📢 \`!evento <Título> | <Hora> | <Lugar> | <Organiza> | <Descripción>\` → Publica el anuncio oficial de un evento con flyer\n\n` +
+                            `🟣 **CREADORES DE CONTENIDO / STREAMERS:**\n` +
+                            `> ➕ \`!addstreamer @usuario <enlace>\` → Da de alta un streamer en la base de datos\n` +
+                            `> 🔴 \`!stream @usuario <enlace> [título]\` → Publica el aviso de directo manualmente\n\n` +
+                            `🌐 **INFORMACIÓN Y AUDITORÍA:**\n` +
+                            `> 📊 \`!estado\` o \`!status\` → Consulta jugadores online y ping de FiveM\n` +
+                            `> 🤖 \`!test-ia <texto>\` → Analiza un formulario para verificar si fue redactado por ChatGPT`
+                        );
+                }
+
+                let helpMsg = null;
+                if (files.length > 0) {
+                    helpMsg = await message.channel.send({ embeds: [helpEmbed], files }).catch(async (sendErr) => {
+                        console.error('⚠️ Error enviando ayuda con logo, reintentando sin adjunto:', sendErr.message);
+                        return await message.channel.send({ embeds: [helpEmbed] }).catch((e) => {
+                            console.error('❌ Error enviando embed de ayuda:', e);
+                            return null;
+                        });
+                    });
+                } else {
+                    helpMsg = await message.channel.send({ embeds: [helpEmbed] }).catch((e) => {
+                        console.error('❌ Error enviando embed de ayuda:', e);
+                        return null;
+                    });
+                }
+
+                if (helpMsg && helpMsg.id) {
+                    console.log(`✅ [AYUDA ENVIADA] Guía mostrada a ${message.author.tag} (${isOwner ? 'OWNER' : 'STAFF'}) en #${message.channel.name || message.channel.id}`);
+                    setTimeout(() => {
+                        helpMsg.delete().catch(() => { });
+                    }, 30000); // Se borra automáticamente a los 30 segundos
+                }
+            } catch (err) {
+                console.error('❌ [ERROR EN COMANDO !AYUDA]:', err);
             }
             return;
         }
