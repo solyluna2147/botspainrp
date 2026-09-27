@@ -419,25 +419,21 @@ function removeStaffMemberFromRating(staffId) {
     const idx = data.staffList.indexOf(staffId);
     if (idx !== -1) {
         data.staffList.splice(idx, 1);
-        try {
-            fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(data, null, 2), 'utf8');
-        } catch (e) { }
-        if (isMongoConnected) {
-            StaffRatingDataModel.findOneAndUpdate({ docId: 'main' }, { staffList: data.staffList }, { upsert: true }).catch(() => { });
-        }
-        return true;
     }
-    return false;
+    if (data.stats && data.stats[staffId] && data.stats[staffId].totalRatings === 0) {
+        delete data.stats[staffId];
+    }
+    saveStaffRatingsData(data);
+    updateStaffTopRankingPanel().catch(() => { });
+    return true;
 }
 
 function recalculateStaffRatings(data) {
     const newStats = {};
-    const allStaffIds = Array.from(new Set([
-        ...(data.staffList || []),
-        ...Object.keys(data.stats || {})
-    ]));
+    const validRatings = data.ratings || [];
 
-    for (const sId of allStaffIds) {
+    // Solo inicializar estadísticas para los staffs actuales en la lista oficial
+    for (const sId of (data.staffList || [])) {
         newStats[sId] = {
             staffTag: data.stats?.[sId]?.staffTag || 'Staff',
             totalRatings: 0,
@@ -446,7 +442,8 @@ function recalculateStaffRatings(data) {
         };
     }
 
-    for (const r of (data.ratings || [])) {
+    // Calcular únicamente votos reales
+    for (const r of validRatings) {
         const staffId = r.staffId || 'staff_general';
         if (!newStats[staffId]) {
             newStats[staffId] = {
