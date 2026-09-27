@@ -5639,6 +5639,9 @@ client.on('messageCreate', async (message) => {
         // ----------------------------------------------------
         if (['!panel-valoracion', '!panel-valoraciones', '!fijar-valoraciones'].includes(command)) {
             await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
             try {
                 const targetChannel = message.channel;
 
@@ -5943,6 +5946,9 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !tops / !top-staff / !ranking-staff / !panel-tops (Envía el Ranking de Valoraciones de forma instantánea)
         if (['!tops', '!top-staff', '!ranking-staff', '!stats-staff', '!valoraciones', '!topstaff', '!panel-tops', '!fijar-tops', '!ranking'].includes(command)) {
             await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
             try {
                 const targetChannel = message.channel;
                 const { topEmbed, files } = buildStaffTopRankingEmbed();
@@ -5972,6 +5978,9 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !sync-valoraciones / !recuperar-valoraciones (Escanea todo el canal y sincroniza a fondo)
         if (['!sync-valoraciones', '!syncvaloraciones', '!escanear-valoraciones', '!recuperar-valoraciones'].includes(command)) {
             await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
             try {
                 const statusMsg = await message.channel.send('⏳ **Escaneando el canal de valoraciones para sincronizar el Top...**').catch(() => null);
                 const syncRes = await syncStaffRatingsFromChannel();
@@ -6071,6 +6080,9 @@ client.on('messageCreate', async (message) => {
 
         if (['!staffs', '!listastaff', '!stafflist'].includes(command)) {
             await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
             const data = getStaffRatingsData();
             const staffList = data.staffList || [];
 
