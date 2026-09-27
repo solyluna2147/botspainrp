@@ -5309,20 +5309,33 @@ client.on('messageCreate', async (message) => {
         // ----------------------------------------------------
         // COMANDO DE AYUDA DINÁMICO POR ROL: !ayuda / !comandos / !help / !wl-ayuda
         // ----------------------------------------------------
+        // ----------------------------------------------------
+        // COMANDO DE AYUDA DINÁMICO POR ROL: !ayuda / !comandos / !help / !wl-ayuda
+        // ----------------------------------------------------
         if (['!ayuda', '!comandos', '!help', '!wl-ayuda', '!wl-comandos', '!comandos-wl'].includes(command)) {
+            console.log(`\n========================================`);
+            console.log(`🚀 [EJECUTANDO AYUDA] Iniciando comando "${command}" por ${message.author.tag} (${message.author.id})`);
+            console.log(`   -> Canal: #${message.channel.name || 'DM'} (${message.channel.id})`);
+            console.log(`   -> ¿Es Owner?: ${message.author.id === OWNER_ID}`);
             try {
                 // Borrar el mensaje del usuario que invocó el comando sin bloquear
-                message.delete().catch(() => { });
+                message.delete().then(() => {
+                    console.log(`   -> 🗑️ Mensaje del comando borrado con éxito.`);
+                }).catch((delErr) => {
+                    console.warn(`   -> ⚠️ No se pudo borrar el mensaje del comando (${delErr.message}). (Falta permiso ManageMessages)`);
+                });
 
                 const isOwner = message.author.id === OWNER_ID;
                 const logoPath = path.join(__dirname, 'assets', 'logo.png');
                 const hasLogo = fs.existsSync(logoPath);
+                console.log(`   -> 🖼️ Archivo logo.png existe: ${hasLogo}`);
+
                 const files = [];
                 if (hasLogo) {
                     try {
                         files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
                     } catch (e) {
-                        console.warn('⚠️ No se pudo cargar el logo local:', e.message);
+                        console.warn('   -> ⚠️ No se pudo cargar el logo local:', e.message);
                     }
                 }
 
@@ -5415,31 +5428,38 @@ client.on('messageCreate', async (message) => {
                         );
                 }
 
+                console.log(`   -> 📤 Intentando enviar Embed al canal #${message.channel.name || message.channel.id}...`);
                 let helpMsg = null;
-                if (files.length > 0) {
-                    helpMsg = await message.channel.send({ embeds: [helpEmbed], files }).catch(async (sendErr) => {
-                        console.error('⚠️ Error enviando ayuda con logo, reintentando sin adjunto:', sendErr.message);
-                        return await message.channel.send({ embeds: [helpEmbed] }).catch((e) => {
-                            console.error('❌ Error enviando embed de ayuda:', e);
-                            return null;
-                        });
-                    });
-                } else {
+                try {
+                    helpMsg = await message.channel.send({ embeds: [helpEmbed], files });
+                    console.log(`   -> ✅ Embed enviado con archivos adjuntos (ID: ${helpMsg.id}).`);
+                } catch (sendErr) {
+                    console.error(`   -> ⚠️ Falló con archivos (${sendErr.message}). Reintentando solo Embed plano...`);
                     helpMsg = await message.channel.send({ embeds: [helpEmbed] }).catch((e) => {
-                        console.error('❌ Error enviando embed de ayuda:', e);
+                        console.error(`   -> ❌ Falló el reintento de Embed plano (${e.message}). Enviando texto de emergencia...`);
+                        return null;
+                    });
+                }
+
+                if (!helpMsg) {
+                    helpMsg = await message.channel.send(`📋 **GUÍA DE COMANDOS:** Puedes usar \`!aprobar\`, \`!denegar\`, \`!sancionar\`, \`!evento\`, \`!stream\`, \`!estado\`.`).catch(e => {
+                        console.error(`   -> 🔥 ERROR CRÍTICO DISCORD (No se pudo enviar nada):`, e.message);
                         return null;
                     });
                 }
 
                 if (helpMsg && helpMsg.id) {
-                    console.log(`✅ [AYUDA ENVIADA] Guía mostrada a ${message.author.tag} (${isOwner ? 'OWNER' : 'STAFF'}) en #${message.channel.name || message.channel.id}`);
+                    console.log(`✅ [AYUDA ENVIADA CON ÉXITO] ID: ${helpMsg.id} en #${message.channel.name}`);
                     setTimeout(() => {
-                        helpMsg.delete().catch(() => { });
+                        helpMsg.delete().then(() => {
+                            console.log(`🗑️ [AYUDA AUTO-BORRADA] Mensaje temporal de ayuda eliminado tras 30s.`);
+                        }).catch(() => { });
                     }, 30000); // Se borra automáticamente a los 30 segundos
                 }
             } catch (err) {
-                console.error('❌ [ERROR EN COMANDO !AYUDA]:', err);
+                console.error('❌ [ERROR INESPERADO EN COMANDO !AYUDA]:', err);
             }
+            console.log(`========================================\n`);
             return;
         }
 
