@@ -5307,6 +5307,7 @@ client.on('messageCreate', async (message) => {
         const command = args[0].toLowerCase();
 
         const botCommands = [
+            '!ayuda', '!comandos', '!help', '!wl-ayuda', '!wl-comandos', '!comandos-wl',
             '!aprobar', '!aprobado', '!wl-aprobar', '!wlaprobar',
             '!denegar', '!denegado', '!wl-denegar', '!wldenegar',
             '!borrar', '!delete', '!clear', '!purge',
@@ -5315,7 +5316,6 @@ client.on('messageCreate', async (message) => {
             '!stream', '!directo', '!streamer',
             '!addstreamer', '!setstreamer',
             '!panel-stream', '!panel-directos',
-            '!wl-ayuda', '!wl-comandos', '!comandos-wl',
             '!test-ia', '!analizar-ia', '!check-ia', '!auditoria-ia',
             '!simular', '!simular-pendiente',
             '!scan-historial', '!escanear-historial', '!ia-stats', '!reset-ia',
@@ -5325,21 +5325,22 @@ client.on('messageCreate', async (message) => {
             '!tops', '!top-staff', '!ranking-staff', '!valoraciones', '!stats-staff', '!topstaff', '!panel-tops', '!fijar-tops',
             '!sync-valoraciones', '!syncvaloraciones', '!escanear-valoraciones', '!recuperar-valoraciones',
             '!panel-valoracion', '!panel-valoraciones', '!fijar-valoraciones',
-            '!panel-sanciones', '!panelsanciones', '!enviar-panel-sanciones', '!sancionar', '!sancion', '!sanciones', '!historial',
-            '!setcanal-sanciones', '!setcanal-sancion', '!canalsanciones', '!fijar-sanciones',
-            '!setcanal-panel-sanciones', '!setcanal-panelsanciones', '!canalpanelsanciones', '!fijar-panel-sanciones',
-            '!panel-evento', '!panel-eventos', '!panelevento', '!paneleventos', '!enviar-panel-eventos', '!evento', '!eventos',
-            '!setcanal-eventos', '!setcanal-evento', '!canaleventos', '!fijar-eventos',
-            '!setcanal-panel-eventos', '!setcanal-paneleventos', '!canalpaneleventos', '!fijar-panel-eventos',
-            '!setcanal', '!fijar-canal', '!canal'
+            '!panel-plantillas', '!panel-plantilla', '!panelplantillas', '!plantillas-panel', '!fijar-plantillas', '!enviar',
+            '!panel-sanciones', '!panelsanciones', '!fijar-sanciones', '!fijar-panel-sanciones', '!sancionar', '!sancion', '!sanciones', '!historial',
+            '!panel-evento', '!panel-eventos', '!panelevento', '!paneleventos', '!fijar-eventos', '!fijar-panel-eventos', '!evento', '!eventos',
+            '!addstaff', '!agregarstaff', '!nuevostaff', '!delstaff', '!eliminarstaff', '!quitarstaff', '!delvaloracion', '!staffs', '!listastaff', '!stafflist',
+            '!admin', '!panel-admin', '!config', '!ajustes', '!setcanal', '!setrol', '!setip', '!setcfx', '!reiniciar-paneles'
         ];
 
         if (botCommands.includes(command)) {
-            // Verificar si el usuario tiene el rol de Staff o permisos de Administrador
-            const hasStaffPermission = await isStaffMember(message.member, message.guild, message.author.id);
-            if (!hasStaffPermission) {
-                console.log(`⛔ [ACCESO DENEGADO] ${message.author.tag} (${message.author.id}) intentó ejecutar '${command}' sin tener el rol de Staff (${ROLE_STAFF_ID}).`);
-                return; // Ignorar el comando de forma silenciosa para evitar spam de usuarios sin permisos
+            // El Owner siempre tiene acceso permitido
+            if (message.author.id !== OWNER_ID) {
+                // Verificar si el usuario tiene el rol de Staff o permisos de Administrador
+                const hasStaffPermission = await isStaffMember(message.member, message.guild, message.author.id);
+                if (!hasStaffPermission) {
+                    console.log(`⛔ [ACCESO DENEGADO] ${message.author.tag} (${message.author.id}) intentó ejecutar '${command}' sin tener el rol de Staff (${ROLE_STAFF_ID}).`);
+                    return; // Ignorar el comando de forma silenciosa para evitar spam de usuarios sin permisos
+                }
             }
         }
 
