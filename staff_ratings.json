@@ -3,102 +3,293 @@
     "418558256840179722",
     "1143604913893543956",
     "926990937022922752",
-    "921493711370747945",
-    "1009160368997793873",
     "805808371106054164",
-    "827988473315065858",
     "725638700431704134",
-    "753041284280615033"
+    "753041284280615033",
+    "836339558986940427"
   ],
   "ratings": [
     {
       "id": "1552860497714614466",
       "staffId": "418558256840179722",
       "rating": 10,
-      "timestamp": "2026-09-25T01:53:13.408Z"
+      "timestamp": "2026-09-25T01:53:13.408Z",
+      "_id": "6ab5d712e74017caaac6bdc8"
     },
     {
       "id": "1552804900650492119",
       "staffId": "418558256840179722",
       "rating": 10,
-      "timestamp": "2026-09-24T22:12:18.035Z"
+      "timestamp": "2026-09-24T22:12:18.035Z",
+      "_id": "6ab5d712e74017caaac6bdc9"
     },
     {
       "id": "1552739537078329448",
       "staffId": "926990937022922752",
       "rating": 10,
-      "timestamp": "2026-09-24T17:52:34.145Z"
+      "timestamp": "2026-09-24T17:52:34.145Z",
+      "_id": "6ab5d712e74017caaac6bdca"
     },
     {
       "id": "1552725983688401077",
       "staffId": "418558256840179722",
       "rating": 10,
-      "timestamp": "2026-09-24T16:58:42.765Z"
+      "timestamp": "2026-09-24T16:58:42.765Z",
+      "_id": "6ab5d712e74017caaac6bdcb"
     },
     {
       "id": "1552724476213469246",
       "staffId": "418558256840179722",
       "rating": 10,
-      "timestamp": "2026-09-24T16:52:43.355Z"
+      "timestamp": "2026-09-24T16:52:43.355Z",
+      "_id": "6ab5d712e74017caaac6bdcc"
     },
     {
       "id": "1552724466612703353",
       "staffId": "418558256840179722",
       "rating": 10,
-      "timestamp": "2026-09-24T16:52:41.066Z"
+      "timestamp": "2026-09-24T16:52:41.066Z",
+      "_id": "6ab5d712e74017caaac6bdcd"
     },
     {
       "id": "1552468316885356585",
       "staffId": "926990937022922752",
       "rating": 10,
-      "timestamp": "2026-09-23T23:54:50.212Z"
+      "timestamp": "2026-09-23T23:54:50.212Z",
+      "_id": "6ab5d712e74017caaac6bdce"
     },
     {
       "id": "1552426339028574288",
       "staffId": "418558256840179722",
       "rating": 10,
-      "timestamp": "2026-09-23T21:08:01.911Z"
+      "timestamp": "2026-09-23T21:08:01.911Z",
+      "_id": "6ab5d712e74017caaac6bdcf"
     },
     {
       "id": "1552324443211047063",
       "staffId": "753041284280615033",
       "rating": 10,
-      "timestamp": "2026-09-23T14:23:08.055Z"
+      "timestamp": "2026-09-23T14:23:08.055Z",
+      "_id": "6ab5d712e74017caaac6bdd0"
     },
     {
       "id": "1552271885503430666",
       "staffId": "418558256840179722",
       "rating": 10,
-      "timestamp": "2026-09-23T10:54:17.321Z"
+      "timestamp": "2026-09-23T10:54:17.321Z",
+      "_id": "6ab5d712e74017caaac6bdd1"
     },
     {
       "id": "1552261711715631166",
       "staffId": "418558256840179722",
       "rating": 10,
-      "timestamp": "2026-09-23T10:13:51.701Z"
+      "timestamp": "2026-09-23T10:13:51.701Z",
+      "_id": "6ab5d712e74017caaac6bdd2"
     },
     {
       "id": "1552115757251305474",
       "staffId": "418558256840179722",
       "rating": 10,
-      "timestamp": "2026-09-23T00:33:53.445Z"
+      "timestamp": "2026-09-23T00:33:53.445Z",
+      "_id": "6ab5d712e74017caaac6bdd3"
+    },
+    {
+      "id": "1790367267712",
+      "userId": "836339558986940427",
+      "userName": "_wachy_",
+      "staffId": "418558256840179722",
+      "staffTag": "keeviinsaanchez__",
+      "rating": 10,
+      "comment": "Todo perfecto intento solucionarlo todo y al momento",
+      "timestamp": "2026-09-25T20:14:27.712Z",
+      "_id": "6ab6d6230a793881f17b9b61"
+    },
+    {
+      "id": "1790367439511",
+      "userId": "1250820342914748435",
+      "userName": "5lambo5",
+      "staffId": "418558256840179722",
+      "staffTag": "keeviinsaanchez__",
+      "rating": 10,
+      "comment": "es muy amable y es un crack",
+      "timestamp": "2026-09-25T20:17:19.511Z",
+      "_id": "6ab6d6cf0a793881f17b9b6e"
+    },
+    {
+      "id": "1553061002512179353",
+      "userId": "418558256840179722",
+      "userName": "keeviinsaanchez__",
+      "staffId": "805808371106054164",
+      "staffTag": "lim.clown",
+      "rating": 10,
+      "comment": "la mejor!!",
+      "timestamp": "2026-09-25T15:09:57.477Z",
+      "_id": "6ab6d91886dab785b98166ae"
+    },
+    {
+      "id": "1790449839495",
+      "userId": "1349481392064561264",
+      "userName": "disien",
+      "staffId": "1143604913893543956",
+      "staffTag": "achoanubis",
+      "rating": 10,
+      "comment": "Atención personalizada exquisita, mucha implicación en hacer que todo funcione correctamente y super amable. Se notan las ganas y la ilusión. Muchas gracias!!!",
+      "timestamp": "2026-09-26T19:10:39.495Z",
+      "_id": "6ab818af1711791311cccb27"
+    },
+    {
+      "id": "1790458997872",
+      "userId": "1465434671973404794",
+      "userName": "negrito0039",
+      "staffId": "725638700431704134",
+      "staffTag": "aeropilot737",
+      "rating": 10,
+      "comment": "lo hace muy bien y le gusta su trabajo",
+      "timestamp": "2026-09-26T21:43:17.872Z",
+      "_id": "6ab94bdfb392ba2d92524794"
+    },
+    {
+      "id": "1790459005595",
+      "userId": "1521004798445486221",
+      "userName": "nacho068109",
+      "staffId": "725638700431704134",
+      "staffTag": "aeropilot737",
+      "rating": 10,
+      "comment": "muy bueno y buena forma de hablar",
+      "timestamp": "2026-09-26T21:43:25.595Z",
+      "_id": "6ab94bdfb392ba2d92524795"
+    },
+    {
+      "id": "1790470682622",
+      "userId": "585365176816107530",
+      "userName": "maiky.vd",
+      "staffId": "1143604913893543956",
+      "staffTag": "achoanubis",
+      "rating": 10,
+      "comment": "un maquina, tifon, mastodonte, y mil cosas mas",
+      "timestamp": "2026-09-27T00:58:02.622Z",
+      "_id": "6ab94bdfb392ba2d92524796"
+    },
+    {
+      "id": "1556714933373239377",
+      "userId": "1172136350670143584",
+      "userName": "pajaroloco22",
+      "staffId": "836339558986940427",
+      "staffTag": "_wachy_",
+      "rating": 8,
+      "comment": "muy buena",
+      "timestamp": "2026-10-05T17:09:22.481Z",
+      "_id": "6ac5d32ac4eec3313ba1380c"
+    },
+    {
+      "id": "1556714860690284584",
+      "userId": "1465066766441906188",
+      "userName": "lonewolft900",
+      "staffId": "836339558986940427",
+      "staffTag": "_wachy_",
+      "rating": 10,
+      "comment": "Solucion mi problema con rapidez y eficiencia y con mucho respeto",
+      "timestamp": "2026-10-05T17:09:05.152Z",
+      "_id": "6ac5d32ac4eec3313ba1380d"
+    },
+    {
+      "id": "1556709568694718467",
+      "userId": "590574638170374150",
+      "userName": "rubenillo1007",
+      "staffId": "836339558986940427",
+      "staffTag": "_wachy_",
+      "rating": 10,
+      "comment": "me ayudo de forma eficiente y correcta",
+      "timestamp": "2026-10-05T16:48:03.442Z",
+      "_id": "6ac5d32ac4eec3313ba1380e"
+    },
+    {
+      "id": "1555022467238600764",
+      "userId": "969918134653964288",
+      "userName": "alvarovrxz",
+      "staffId": "926990937022922752",
+      "staffTag": "alvin0803",
+      "rating": 10,
+      "comment": "Super educado e inteligente.",
+      "timestamp": "2026-10-01T01:04:07.110Z",
+      "_id": "6ac5d32ac4eec3313ba1380f"
+    },
+    {
+      "id": "1554727919228821576",
+      "userId": "1542755071861854268",
+      "userName": "._06mk",
+      "staffId": "836339558986940427",
+      "staffTag": "_wachy_",
+      "rating": 10,
+      "comment": "muy atento 10 de 10 un crak",
+      "timestamp": "2026-09-30T05:33:41.392Z",
+      "_id": "6ac5d32ac4eec3313ba13810"
+    },
+    {
+      "id": "1554727664374255627",
+      "userId": "1542755071861854268",
+      "userName": "._06mk",
+      "staffId": "418558256840179722",
+      "staffTag": "keeviinsaanchez__",
+      "rating": 10,
+      "comment": "muy atento y muy servicial nada malo 10 de 10 un crak",
+      "timestamp": "2026-09-30T05:32:40.630Z",
+      "_id": "6ac5d32ac4eec3313ba13811"
+    },
+    {
+      "id": "1554657793603149918",
+      "userId": "683180152363941899",
+      "userName": "lzmartillo",
+      "staffId": "836339558986940427",
+      "staffTag": "_wachy_",
+      "rating": 10,
+      "comment": "muy atento muy buen servicio",
+      "timestamp": "2026-09-30T00:55:02.140Z",
+      "_id": "6ac5d32ac4eec3313ba13812"
     }
   ],
   "stats": {
     "418558256840179722": {
-      "totalRatings": 9,
-      "sumRatings": 90,
+      "staffTag": "keeviinsaanchez__",
+      "totalRatings": 12,
+      "sumRatings": 120,
+      "average": 10
+    },
+    "1143604913893543956": {
+      "staffTag": "achoanubis",
+      "totalRatings": 2,
+      "sumRatings": 20,
       "average": 10
     },
     "926990937022922752": {
+      "staffTag": "alvin0803",
+      "totalRatings": 3,
+      "sumRatings": 30,
+      "average": 10
+    },
+    "805808371106054164": {
+      "staffTag": "lim.clown",
+      "totalRatings": 1,
+      "sumRatings": 10,
+      "average": 10
+    },
+    "725638700431704134": {
+      "staffTag": "aeropilot737",
       "totalRatings": 2,
       "sumRatings": 20,
       "average": 10
     },
     "753041284280615033": {
+      "staffTag": "Staff",
       "totalRatings": 1,
       "sumRatings": 10,
       "average": 10
+    },
+    "836339558986940427": {
+      "staffTag": "_wachy_",
+      "totalRatings": 5,
+      "sumRatings": 48,
+      "average": 9.6
     }
   }
 }
