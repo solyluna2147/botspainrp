@@ -3482,6 +3482,11 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
             files: files
         });
 
+        // Enviar mención @everyone y auto-eliminarla a los 3 segundos
+        targetChannel.send('@everyone')
+            .then(pingMsg => setTimeout(() => pingMsg.delete().catch(() => { }), 3000))
+            .catch(e => console.error('Error enviando ping @everyone temporal:', e.message));
+
         console.log(`[DIRECTO NOTIFICADO] Stream en ${platformName} publicado para ${userMention} en canal #${targetChannel.name} (${targetChannelId})`);
         return { success: true, channelId: targetChannelId, messageId: sentMsg.id };
     } catch (sendErr) {
