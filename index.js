@@ -3444,7 +3444,8 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
             `🌍 **| Comenta el directo en la comunidad:**\n` +
             `> ${canalGeneral} ❗\n\n` +
             `🇪🇸 **| ¡Disfruta del mejor Roleplay en SPAIN RP! |** 🇪🇸\n\n` +
-            `👤 **Streamer:** ${userMention}`
+            `👤 **Streamer:** ${userMention}\n` +
+            `🌍 **Notificacion:** @everyone`
         )
         .setFooter({
             text: `SPAIN RP • Creadores de Contenido Oficiales (${platformName})`,
