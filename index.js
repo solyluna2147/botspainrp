@@ -260,9 +260,11 @@ async function syncDataFromMongo() {
             if (staffDoc.stats) {
                 staffDoc.stats.forEach((val, key) => { statsObj[key] = val; });
             }
+            const officialList = (staffDoc.staffList && staffDoc.staffList.length > 0) ? staffDoc.staffList : ['418558256840179722'];
+            const filteredRatings = (staffDoc.ratings || []).filter(r => r.staffId && officialList.includes(r.staffId));
             const dataToSave = {
-                staffList: (staffDoc.staffList && staffDoc.staffList.length > 0) ? staffDoc.staffList : ['418558256840179722'],
-                ratings: staffDoc.ratings || [],
+                staffList: officialList,
+                ratings: filteredRatings,
                 stats: statsObj
             };
             recalculateStaffRatings(dataToSave);
@@ -687,6 +689,11 @@ async function syncStaffRatingsFromChannel(targetChannel = null) {
         for (const msg of allMessages) {
             const parsed = parseRatingFromMessage(msg);
             if (!parsed) continue;
+
+            // Solo importar valoraciones si el staff está registrado en la lista oficial
+            if (!parsed.staffId || !currentData.staffList.includes(parsed.staffId)) {
+                continue;
+            }
 
             const isDuplicate = existingRatings.some(r => {
                 if (r.id === parsed.id) return true;
@@ -6240,8 +6247,8 @@ client.on('messageCreate', async (message) => {
             }
 
             removeStaffMemberFromRating(targetUser.id);
-            const successMsg = await message.channel.send(`🗑️ Staff <@${targetUser.id}> (\`${targetUser.id}\`) retirado del menú y purgado de Tops.`).catch(() => null);
-            if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 6000);
+            const successMsg = await message.channel.send(`🗑️ Staff <@${targetUser.id}> (\`${targetUser.id}\`) retirado del menú y **todas sus valoraciones han sido eliminadas por completo**.\n🏆 *El ranking de Tops se ha actualizado automáticamente.*`).catch(() => null);
+            if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 7000);
             return;
         }
 
