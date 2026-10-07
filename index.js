@@ -6210,7 +6210,8 @@ client.on('messageCreate', async (message) => {
                 return sendDeniedAccessMessage(message);
             }
 
-            const targetUser = message.mentions.users.first() || { id: args[0]?.replace(/[<@!>]/g, '') };
+            const rawTarget = args[1]?.replace(/[<@!>]/g, '').trim();
+            const targetUser = message.mentions.users.first() || (rawTarget ? { id: rawTarget } : null);
             if (!targetUser || !targetUser.id) {
                 const helpMsg = await message.channel.send('⚠️ **Uso:** `!addstaff @usuario` o `!addstaff <ID>`').catch(() => null);
                 if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 5000);
@@ -6219,7 +6220,7 @@ client.on('messageCreate', async (message) => {
 
             const tag = targetUser.tag || targetUser.username || 'Staff';
             addStaffMemberToRating(targetUser.id, tag);
-            const successMsg = await message.channel.send(`✅ Staff <@${targetUser.id}> añadido a la lista del menú de valoraciones.`).catch(() => null);
+            const successMsg = await message.channel.send(`✅ Staff <@${targetUser.id}> (\`${targetUser.id}\`) añadido a la lista del menú de valoraciones.`).catch(() => null);
             if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 6000);
             return;
         }
@@ -6230,7 +6231,8 @@ client.on('messageCreate', async (message) => {
                 return sendDeniedAccessMessage(message);
             }
 
-            const targetUser = message.mentions.users.first() || { id: args[0]?.replace(/[<@!>]/g, '') };
+            const rawTarget = args[1]?.replace(/[<@!>]/g, '').trim();
+            const targetUser = message.mentions.users.first() || (rawTarget ? { id: rawTarget } : null);
             if (!targetUser || !targetUser.id) {
                 const helpMsg = await message.channel.send('⚠️ **Uso:** `!delstaff @usuario` o `!delstaff <ID>`').catch(() => null);
                 if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 5000);
@@ -6238,7 +6240,7 @@ client.on('messageCreate', async (message) => {
             }
 
             removeStaffMemberFromRating(targetUser.id);
-            const successMsg = await message.channel.send(`🗑️ Staff <@${targetUser.id}> retirado de la lista del menú de valoraciones.`).catch(() => null);
+            const successMsg = await message.channel.send(`🗑️ Staff <@${targetUser.id}> (\`${targetUser.id}\`) retirado del menú y purgado de Tops.`).catch(() => null);
             if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 6000);
             return;
         }
