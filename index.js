@@ -399,16 +399,20 @@ function getStaffRatingsData() {
     return { staffList: ['418558256840179722'], ratings: [], stats: {} };
 }
 
-function addStaffMemberToRating(staffId) {
+function addStaffMemberToRating(staffId, staffTag = 'Staff') {
     const data = getStaffRatingsData();
     if (!data.staffList.includes(staffId)) {
         data.staffList.push(staffId);
-        try {
-            fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(data, null, 2), 'utf8');
-        } catch (e) { }
-        if (isMongoConnected) {
-            StaffRatingDataModel.findOneAndUpdate({ docId: 'main' }, { staffList: data.staffList }, { upsert: true }).catch(() => { });
+        if (!data.stats) data.stats = {};
+        if (!data.stats[staffId]) {
+            data.stats[staffId] = {
+                staffTag: staffTag,
+                totalRatings: 0,
+                sumRatings: 0,
+                average: 0
+            };
         }
+        saveStaffRatingsData(data);
         return true;
     }
     return false;
@@ -420,20 +424,24 @@ function removeStaffMemberFromRating(staffId) {
     if (idx !== -1) {
         data.staffList.splice(idx, 1);
     }
-    if (data.stats && data.stats[staffId] && data.stats[staffId].totalRatings === 0) {
+    if (data.stats && data.stats[staffId]) {
         delete data.stats[staffId];
     }
+    // Eliminar por completo todas las reseñas y valoraciones de ese staff
+    data.ratings = (data.ratings || []).filter(r => r.staffId !== staffId);
+    
+    // Guardar en JSON, en MongoDB y actualizar el panel de Tops en vivo
     saveStaffRatingsData(data);
-    updateStaffTopRankingPanel().catch(() => { });
     return true;
 }
 
 function recalculateStaffRatings(data) {
     const newStats = {};
     const validRatings = data.ratings || [];
+    const staffList = data.staffList || [];
 
-    // Solo inicializar estadísticas para los staffs actuales en la lista oficial
-    for (const sId of (data.staffList || [])) {
+    // Inicializar estadísticas estrictamente para los staffs en la lista oficial
+    for (const sId of staffList) {
         newStats[sId] = {
             staffTag: data.stats?.[sId]?.staffTag || 'Staff',
             totalRatings: 0,
@@ -442,17 +450,11 @@ function recalculateStaffRatings(data) {
         };
     }
 
-    // Calcular únicamente votos reales
+    // Calcular únicamente votos de staffs oficiales registrados
     for (const r of validRatings) {
-        const staffId = r.staffId || 'staff_general';
-        if (!newStats[staffId]) {
-            newStats[staffId] = {
-                staffTag: r.staffTag || 'Staff',
-                totalRatings: 0,
-                sumRatings: 0,
-                average: 0
-            };
-        }
+        const staffId = r.staffId;
+        if (!staffId || !staffList.includes(staffId)) continue;
+
         const s = newStats[staffId];
         s.staffTag = r.staffTag || s.staffTag;
         s.totalRatings += 1;
@@ -501,10 +503,6 @@ function saveStaffRating({ userId, userName, staffId, staffTag, rating, comment 
     };
 
     data.ratings.push(entry);
-
-    if (staffId && !data.staffList.includes(staffId)) {
-        data.staffList.push(staffId);
-    }
 
     recalculateStaffRatings(data);
 
@@ -689,11 +687,6 @@ async function syncStaffRatingsFromChannel(targetChannel = null) {
         for (const msg of allMessages) {
             const parsed = parseRatingFromMessage(msg);
             if (!parsed) continue;
-
-            // Añadir automáticamente al staff a la lista oficial si aún no estaba
-            if (!currentData.staffList.includes(parsed.staffId)) {
-                currentData.staffList.push(parsed.staffId);
-            }
 
             const isDuplicate = existingRatings.some(r => {
                 if (r.id === parsed.id) return true;
@@ -3599,14 +3592,13 @@ function buildStaffTopRankingEmbed() {
     const stats = ratingsData.stats || {};
     const validStaffList = ratingsData.staffList || [];
     
-    // Obtener todos los IDs de staff (staffList completo + cualquier otro en stats)
-    const allIds = Array.from(new Set([...validStaffList, ...Object.keys(stats)]));
-    const staffList = allIds
+    // Únicamente considerar staffs oficiales configurados en staffList
+    const staffList = validStaffList
         .map(id => {
             const s = stats[id] || { staffTag: 'Staff', totalRatings: 0, sumRatings: 0, average: 0 };
             return { id, ...s };
         })
-        .filter(s => (s.totalRatings || 0) > 0); // Únicamente mostrar staffs que tengan al menos 1 valoración
+        .filter(s => (s.totalRatings || 0) > 0); // Únicamente mostrar staffs con al menos 1 valoración válida
 
     // Ordenar: mayor promedio primero, y a igualdad de promedio el que más votos tenga
     staffList.sort((a, b) => (b.average - a.average) || (b.totalRatings - a.totalRatings));
@@ -6225,7 +6217,8 @@ client.on('messageCreate', async (message) => {
                 return;
             }
 
-            addStaffMemberToRating(targetUser.id);
+            const tag = targetUser.tag || targetUser.username || 'Staff';
+            addStaffMemberToRating(targetUser.id, tag);
             const successMsg = await message.channel.send(`✅ Staff <@${targetUser.id}> añadido a la lista del menú de valoraciones.`).catch(() => null);
             if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 6000);
             return;
