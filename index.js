@@ -53,15 +53,8 @@ process.on('uncaughtException', (err, origin) => {
     console.error('🔥 [EXCEPCIÓN CRÍTICA / UNCAUGHT EXCEPTION]:', err);
 });
 
-// Helper para obtener la ruta del logo oficial (soporta tanto logo.png como Vallecas RP)
+// Helper para obtener la ruta del logo oficial de Vallecas RP
 function getLogoPath() {
-    const candidates = [
-        path.join(__dirname, 'assets', 'Vallecas RP_ Legado y Poder Neon.png'),
-        path.join(__dirname, 'assets', 'logo.png')
-    ];
-    for (const c of candidates) {
-        if (fs.existsSync(c)) return c;
-    }
     return path.join(__dirname, 'assets', 'logo.png');
 }
 
@@ -1303,7 +1296,7 @@ function buildStreamPanelEmbed() {
     const canalGeneral = `<#${botConfig.CHANNEL_GENERAL_ID || '1517530849032016002'}>`;
 
     const embed = new EmbedBuilder()
-        .setColor(0x9B59B6) // Morado elegante VALLECAS RP
+        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
         .setAuthor({
             name: 'SISTEMA DE CREADORES | VALLECAS RP 🇪🇸',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -2620,7 +2613,7 @@ async function playNextInQueue(guildId) {
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
             const musicEmbed = new EmbedBuilder()
-                .setColor(0x8A2BE2) // Morado / Violeta Eléctrico Premium
+                .setColor(0xD900FF) // Morado / Violeta Eléctrico Premium
                 .setAuthor({
                     name: 'REPRODUCTOR DE MÚSICA • VALLECAS RP',
                     iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -2684,7 +2677,7 @@ async function updateNowPlayingEmbed(guildId) {
     const logoPath = getLogoPath();
 
     const musicEmbed = new EmbedBuilder()
-        .setColor(0x8A2BE2) // Morado / Violeta Eléctrico Premium
+        .setColor(0xD900FF) // Morado / Violeta Eléctrico Premium
         .setAuthor({
             name: 'REPRODUCTOR DE MÚSICA • VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -2864,6 +2857,7 @@ client.once(Events.ClientReady, async () => {
         console.log(`✅ [APROBADOS]   ${botConfig.CHANNEL_APROBADOS_ID ? `<#${botConfig.CHANNEL_APROBADOS_ID}>` : 'No configurado'}`);
         console.log(`🎙️ [ENTREVISTAS] ${botConfig.CHANNEL_ENTREVISTAS_ID ? `<#${botConfig.CHANNEL_ENTREVISTAS_ID}>` : 'No configurado'}`);
         console.log(`🎮 [FIVEM]       IP: ${botConfig.FIVEM_SERVER_IP} (CFX: ${botConfig.FIVEM_CFX_CODE})`);
+        console.log(`🖼️ [LOGO CARGADO]  Ruta: ${getLogoPath()}`);
         console.log(`==================================================\n`);
 
         // Función para actualizar la presencia del bot (siempre en estado Online 🟢)
@@ -3448,7 +3442,7 @@ function buildWelcomeEmbed(member, guild) {
     const canalGeneral = botConfig.CHANNEL_GENERAL_ID ? `<#${botConfig.CHANNEL_GENERAL_ID}>` : '`#general`';
 
     const welcomeEmbed = new EmbedBuilder()
-        .setColor(0xE74C3C) // Rojo carmesí España / Vallecas RP
+        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
         .setAuthor({
             name: '¡TE DAMOS LA BIENVENIDA A VALLECAS RP!',
             iconURL: 'attachment://logo.png'
@@ -3567,8 +3561,7 @@ function buildStaffTopRankingEmbed() {
         desc = desc.replace(/\n\n────────[^\n]*\n\n$/, '');
     }
 
-    const topEmbed = new EmbedBuilder()
-        .setColor(0xF1C40F)
+    const topEmbed = new EmbedBuilder().setColor(0xD900FF)
         .setAuthor({
             name: 'RANKING DE ATENCIÓN DE STAFF • VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -3660,7 +3653,7 @@ function buildStaffRatingPanelEmbed() {
     const canalPublicacion = botConfig.CHANNEL_VALORACIONES_ID ? `<#${botConfig.CHANNEL_VALORACIONES_ID}>` : '`No configurado`';
 
     const embed = new EmbedBuilder()
-        .setColor(0xF1C40F) // Oro / Amarillo VIP
+        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
         .setAuthor({
             name: 'SISTEMA DE VALORACIONES • VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -3791,7 +3784,7 @@ function buildPlantillasPanelEmbed() {
     const panelImgPath = path.join(__dirname, 'assets', 'panel_postulaciones.png');
 
     const embed = new EmbedBuilder()
-        .setColor(0xE67E22) // Naranja Oficial VallecasRP
+        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
         .setAuthor({
             name: 'CENTRO DE POSTULACIONES • VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -3863,7 +3856,7 @@ function buildPlantillaCardEmbed({ plantillaKey, staffId, staffMention, isTicket
     const canalNormativas = `<#${botConfig.CHANNEL_NORMATIVAS_ID || '1517530848658849996'}>`;
 
     const embed = new EmbedBuilder()
-        .setColor(0xE67E22) // Naranja Oficial Vallecas RP
+        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
         .setAuthor({
             name: `PLANTILLA OFICIAL • ${plantilla.nombre.toUpperCase()} • VALLECAS RP`,
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -4218,7 +4211,7 @@ function buildSancionesPanelEmbed() {
     const logoPath = getLogoPath();
     const bannerPath = path.join(__dirname, 'assets', 'panel_sanciones.png');
     const embed = new EmbedBuilder()
-        .setColor(0xE74C3C) // Rojo Moderación / Sanciones
+        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
         .setAuthor({
             name: 'SISTEMA DE SANCIONES • VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -4280,7 +4273,7 @@ function buildSancionCardEmbed({ id, reporterId, reporterTag, targetId, targetTa
 
     const galleryUrl = `https://vallecasrp.es/sanciones/${id || Date.now()}`;
     const mainEmbed = new EmbedBuilder()
-        .setColor(0xE74C3C) // Rojo fuego moderación
+        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
         .setAuthor({
             name: 'SISTEMA DE SANCIONES • VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -4389,7 +4382,7 @@ function buildEventosPanelEmbed() {
     const logoPath = getLogoPath();
     const bannerPath = path.join(__dirname, 'assets', 'panel_eventos.png');
     const embed = new EmbedBuilder()
-        .setColor(0xF1C40F) // Amarillo Oro / Dorado vibrante
+        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
         .setAuthor({
             name: 'SISTEMA DE EVENTOS | VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -4629,7 +4622,7 @@ function buildEventoCardEmbed({ id, reporterId, reporterTag, title, description,
     const finalDescription = descSections.join('\n');
 
     const mainEmbed = new EmbedBuilder()
-        .setColor(0xF1C40F) // Amarillo Oro / Dorado vibrante
+        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
         .setAuthor({
             name: `🎉 | SISTEMA DE EVENTOS | VALLECAS RP 👑`,
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -5273,7 +5266,7 @@ client.on('messageCreate', async (message) => {
                 const iconUrl = hasLogo && files.length > 0 ? 'attachment://logo.png' : (client.user ? client.user.displayAvatarURL() : null);
 
                 let helpEmbed = new EmbedBuilder()
-                    .setColor(isOwner ? 0x9B59B6 : 0xF1C40F)
+                    .setColor(0xD900FF) // Morado Magenta VALLECAS RP
                     .setFooter({ text: 'VALLECAS RP • Este mensaje se auto-eliminará automáticamente en 30 segundos' })
                     .setTimestamp();
 
@@ -6303,7 +6296,7 @@ client.on('messageCreate', async (message) => {
             const formatRole = (id) => id ? `<@&${id}> \`(${id})\`` : '`🔴 No configurado`';
 
             const adminEmbed = new EmbedBuilder()
-                .setColor(0x9B59B6) // Púrpura Admin
+                .setColor(0xD900FF) // Morado Magenta VALLECAS RP
                 .setAuthor({
                     name: 'PANEL DE CONTROL DEL CREADOR | VALLECAS RP 🇪🇸',
                     iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -7614,7 +7607,7 @@ client.on('messageCreate', async (message) => {
                 if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
                 const chatEmbed = new EmbedBuilder()
-                    .setColor(0x9B59B6)
+                    .setColor(0xD900FF)
                     .setAuthor({
                         name: 'CONVERSACIÓN DE VOZ CON IA • VALLECAS RP',
                         iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -8001,7 +7994,7 @@ client.on('messageCreate', async (message) => {
             }
 
             const queueEmbed = new EmbedBuilder()
-                .setColor(0x8A2BE2) // Violeta
+                .setColor(0xD900FF) // Violeta
                 .setAuthor({
                     name: 'COLA DE REPRODUCCIÓN • VALLECAS RP',
                     iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
@@ -8380,7 +8373,7 @@ client.on('messageCreate', async (message) => {
             }
 
             const listEmbed = new EmbedBuilder()
-                .setColor(0x9B59B6)
+                .setColor(0xD900FF)
                 .setTitle('🟣 Base de Datos de Creadores y Streamers (VALLECAS RP)')
                 .setDescription(desc)
                 .setFooter({ text: 'VALLECAS RP • Usa !addtwitch, !addkick o !addtiktok' })
@@ -8537,7 +8530,7 @@ client.on('messageCreate', async (message) => {
             await updateConfig('CHANNEL_EVENTOS_ID', targetChannel.id);
 
             const confEmbed = new EmbedBuilder()
-                .setColor(0x00E5FF)
+                .setColor(0xD900FF)
                 .setTitle('🎉 Canal Principal de Eventos Configurado')
                 .setDescription(`✅ Los anuncios oficiales de eventos se publicarán ahora en el **Canal 1**: <#${targetChannel.id}> (\`${targetChannel.id}\`)`)
                 .setFooter({ text: 'VALLECAS RP • Configuración Oficial de Eventos' })
@@ -8569,7 +8562,7 @@ client.on('messageCreate', async (message) => {
             await updateConfig('CHANNEL_EVENTOS_2_ID', targetChannel.id);
 
             const confEmbed = new EmbedBuilder()
-                .setColor(0x00E5FF)
+                .setColor(0xD900FF)
                 .setTitle('🎉 Segundo Canal de Eventos Configurado (Dual-Channel)')
                 .setDescription(`✅ Los anuncios de eventos se enviarán **también** al **Canal 2**: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n*(Ahora cada evento se publicará a la vez en ambos canales).*`)
                 .setFooter({ text: 'VALLECAS RP • Publicación Simultánea de Eventos' })
@@ -8601,7 +8594,7 @@ client.on('messageCreate', async (message) => {
             await updateConfig('CHANNEL_EVENTOS_PANEL_ID', targetChannel.id);
 
             const confEmbed = new EmbedBuilder()
-                .setColor(0x00E5FF)
+                .setColor(0xD900FF)
                 .setTitle('📋 Canal del Panel de Eventos Configurado')
                 .setDescription(`✅ El canal asignado para el Panel interactivo de Eventos es: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n💡 *Puedes enviar el panel allí escribiendo **\`!panel-eventos\`**.*`)
                 .setFooter({ text: 'VALLECAS RP • Configuración Oficial de Eventos' })
@@ -9474,8 +9467,7 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
-        const topEmbed = new EmbedBuilder()
-            .setColor(0xF1C40F)
+        const topEmbed = new EmbedBuilder().setColor(0xD900FF)
             .setTitle('🏆 Ranking de Atención de Staff • VALLECAS RP')
             .setDescription(desc)
             .setFooter({ text: 'VALLECAS RP • Calidad de Soporte' })
