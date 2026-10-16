@@ -2587,8 +2587,8 @@ function playTtsResponseInVoice(text, connection, player) {
                         fileGenerated = true;
                         console.log(`🔊 [VOZ ELEVENLABS CACHÉ GRATIS] Reutilizando audio guardado (0 créditos consumidos)`);
                     } else {
-                        // ID de voz masculina en español o bilingüe de ElevenLabs
-                        const voiceId = process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB'; // Adam / Mateo
+                        // ID de voz de ElevenLabs (por defecto Roger CwhRBWXzGAHq8TQ4Fs17 o configurable en ELEVENLABS_VOICE_ID)
+                        const voiceId = process.env.ELEVENLABS_VOICE_ID || 'CwhRBWXzGAHq8TQ4Fs17';
                         const elevenRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
                             method: 'POST',
                             headers: {
