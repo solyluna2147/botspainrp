@@ -80,7 +80,7 @@ const PORT = process.env.PORT || 3000;
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
 app.get('/', (req, res) => {
-    res.status(200).send('🤖 Bot de Whitelist SPAIN RP activo y funcionando 24/7 en Render.');
+    res.status(200).send('🤖 Bot de Whitelist VALLECAS RP activo y funcionando 24/7 en Render.');
 });
 
 app.get('/health', (req, res) => {
@@ -234,7 +234,7 @@ async function initDatabase() {
                 serverSelectionTimeoutMS: 8000
             });
             isMongoConnected = true;
-            console.log('🍃 [MONGODB ATLAS] Conexión establecida con éxito en la nube (SpainRP DB).');
+            console.log('🍃 [MONGODB ATLAS] Conexión establecida con éxito en la nube (VallecasRP DB).');
             await syncDataFromMongo();
         } catch (err) {
             console.warn('⚠️ [MONGODB ATLAS] No se pudo conectar a MongoDB. Se usarán archivos JSON locales:', err.message);
@@ -727,7 +727,7 @@ const streamerCooldowns = new Map();
 
 // Configuración de Streamers Oficiales (ID Discord -> Datos del canal)
 const STREAMERS_CONFIG = {
-    // 'ID_DISCORD': { url: 'https://twitch.tv/canal', platform: 'Twitch', title: '🔥 Directo en SPAIN RP' }
+    // 'ID_DISCORD': { url: 'https://twitch.tv/canal', platform: 'Twitch', title: '🔥 Directo en VALLECAS RP' }
 };
 
 const STREAMERS_FILE = path.join(__dirname, 'streamers.json');
@@ -836,7 +836,7 @@ let liveServerState = {
     maxPlayers: 128,
     ping: 0,
     gametype: 'ESX Legacy',
-    hostname: 'SPAIN RP 🇪🇸'
+    hostname: 'VALLECAS RP 🇪🇸'
 };
 
 let liveStatusMessageRef = null;
@@ -1126,7 +1126,7 @@ async function fetchFiveMServerStatus() {
             online: true,
             players: playersCount,
             maxPlayers: dynamicData.sv_maxclients || '128',
-            hostname: dynamicData.hostname || 'SPAIN RP 🇪🇸',
+            hostname: dynamicData.hostname || 'VALLECAS RP 🇪🇸',
             gametype: dynamicData.gametype || 'Roleplay',
             mapname: dynamicData.mapname || 'San Andreas',
             ping
@@ -1184,10 +1184,10 @@ function buildStatusEmbed(state) {
     const embed = new EmbedBuilder()
         .setColor(isOnline ? 0x2ECC71 : 0xE74C3C)
         .setAuthor({
-            name: 'SPAIN RP',
+            name: 'VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user?.displayAvatarURL()
         })
-        .setTitle('SPAIN RP')
+        .setTitle('VALLECAS RP')
         .addFields(
             {
                 name: '▍ Estado',
@@ -1232,7 +1232,7 @@ function buildStatusEmbed(state) {
 function buildStatusActionRow() {
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setLabel('🚀 Conectar a SPAIN RP')
+            .setLabel('🚀 Conectar a VALLECAS RP')
             .setStyle(ButtonStyle.Link)
             .setURL(`https://cfx.re/join/${botConfig.FIVEM_CFX_CODE}`)
     );
@@ -1266,7 +1266,7 @@ async function updateChannelStatusPanel() {
         if (!liveStatusMessageRef) {
             // Buscar si ya existía un mensaje anterior del bot en el canal
             const fetched = await channel.messages.fetch({ limit: 10 }).catch(() => null);
-            const prevMsg = fetched ? fetched.find(m => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0].title?.includes('SPAIN RP')) : null;
+            const prevMsg = fetched ? fetched.find(m => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0].title?.includes('VALLECAS RP')) : null;
 
             if (prevMsg) {
                 liveStatusMessageRef = await prevMsg.edit({ embeds: [embed], components: [row] }).catch(() => null);
@@ -1291,16 +1291,16 @@ function buildStreamPanelEmbed() {
     const canalGeneral = `<#${botConfig.CHANNEL_GENERAL_ID || '1517530849032016002'}>`;
 
     const embed = new EmbedBuilder()
-        .setColor(0x9B59B6) // Morado elegante SPAIN RP
+        .setColor(0x9B59B6) // Morado elegante VALLECAS RP
         .setAuthor({
-            name: 'SISTEMA DE CREADORES | SPAIN RP 🇪🇸',
+            name: 'SISTEMA DE CREADORES | VALLECAS RP 🇪🇸',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
         .setTitle('🟣 ¡PANEL DE NOTIFICACIÓN DE DIRECTOS!')
         .setDescription(
             `\u200B\n` +
-            `✨ ¡Bienvenido al **Panel Oficial de Creadores y Streamers** de **SPAIN RP** 🇪🇸!\n\n` +
+            `✨ ¡Bienvenido al **Panel Oficial de Creadores y Streamers** de **VALLECAS RP** 🇪🇸!\n\n` +
             `Si eres Creador de Contenido oficial del servidor, puedes avisar a toda la comunidad cuando comiences directo en **Twitch, Kick o TikTok** con un solo clic.\n\n` +
             `📢 **| ¿Cómo publicar tu directo?**\n` +
             `> Haz clic en el botón de tu plataforma:\n` +
@@ -1310,15 +1310,15 @@ function buildStreamPanelEmbed() {
             `📍 **| Canal de publicación oficial:**\n` +
             `> ${canalStreamers} ❗\n\n` +
             `⚠️ **| Normativas de los Streamers:**\n` +
-            `> • Debes estar transmitiendo contenido dentro de **SPAIN RP** 🇪🇸.\n\n` +
+            `> • Debes estar transmitiendo contenido dentro de **VALLECAS RP** 🇪🇸.\n\n` +
             `📁 **| ¿Quieres ser Streamer Oficial?**\n` +
             `> Abre un ticket de creadores en ${canalTickets} ❗\n\n` +
             `🌍 **| 𝗗𝗶𝘀𝗳𝗿𝘂𝘁𝗮 𝘆 𝗰𝗼𝗺𝗽𝗮𝗿𝘁𝗲 𝘁𝘂 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼,**\n` +
             `> ${canalGeneral} ❗\n\n` +
-            `🇪🇸 **| ¡Disfruta y crece en SPAIN RP! |** 🇪🇸`
+            `🇪🇸 **| ¡Disfruta y crece en VALLECAS RP! |** 🇪🇸`
         )
         .setFooter({
-            text: 'SPAIN RP • Creadores de Contenido Oficiales',
+            text: 'VALLECAS RP • Creadores de Contenido Oficiales',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
@@ -1432,7 +1432,7 @@ async function fetchLiveStreamTitle(streamUrl, member = null, defaultTitle = nul
                         }
                     }
                 }
-                return `🔴 Directo de ${channelName} | SPAIN RP 🇪🇸`;
+                return `🔴 Directo de ${channelName} | VALLECAS RP 🇪🇸`;
             }
         }
     } catch (err) { }
@@ -1443,16 +1443,16 @@ async function fetchLiveStreamTitle(streamUrl, member = null, defaultTitle = nul
             const match = streamUrl.match(/@([a-zA-Z0-9_.]+)/i);
             if (match && match[1]) {
                 const tiktokUser = match[1];
-                return `🔴 LIVE de @${tiktokUser} | SPAIN RP 🇪🇸`;
+                return `🔴 LIVE de @${tiktokUser} | VALLECAS RP 🇪🇸`;
             }
         }
     } catch (e) { }
 
-    if (defaultTitle && defaultTitle.trim() && !defaultTitle.includes('Roleplay en directo en SPAIN RP')) {
+    if (defaultTitle && defaultTitle.trim() && !defaultTitle.includes('Roleplay en directo en VALLECAS RP')) {
         return defaultTitle.trim();
     }
 
-    return '🔥 Roleplay en vivo en SPAIN RP 🇪🇸';
+    return '🔥 Roleplay en vivo en VALLECAS RP 🇪🇸';
 }
 
 
@@ -1964,7 +1964,7 @@ async function fetchLiveStreamTitle(streamUrl, member = null, fallbackTitle = ''
     }
 
     if (!streamUrl) {
-        return fallbackTitle || '🔥 Roleplay en directo en SPAIN RP 🇪🇸';
+        return fallbackTitle || '🔥 Roleplay en directo en VALLECAS RP 🇪🇸';
     }
 
     // 2. Consulta en vivo para Twitch
@@ -2048,7 +2048,7 @@ async function fetchLiveStreamTitle(streamUrl, member = null, fallbackTitle = ''
     }
 
     // 5. Título de reserva si está offline o no se pudo consultar
-    return fallbackTitle || '🔥 Roleplay en directo en SPAIN RP 🇪🇸';
+    return fallbackTitle || '🔥 Roleplay en directo en VALLECAS RP 🇪🇸';
 }
 
 // Helper para verificar si un miembro tiene permisos de Staff (independientemente de cuántos otros roles tenga)
@@ -2220,7 +2220,7 @@ async function generateAiVoiceChatResponse(userPrompt, history = []) {
     if (/\b(vdm|vehicle deathmatch|atropellar|carkill|car kill)\b/i.test(lower)) {
         return pickRandom([
             `¡El VDM es utilizar cualquier vehículo, ya sea coche, moto o camión, como si fuera un arma letal para atropellar o embestir a otros jugadores o a sus vehículos sin un motivo de peso ni un rol previo que lo justifique!`,
-            `Pues mira, el coche sirve para desplazarte por la ciudad, no para ir por las aceras llevándote a la gente por delante. Atropellar a alguien de forma intencionada para matarlo o quitarle ventaja en un tiroteo está totalmente prohibido en Spain RP.`,
+            `Pues mira, el coche sirve para desplazarte por la ciudad, no para ir por las aceras llevándote a la gente por delante. Atropellar a alguien de forma intencionada para matarlo o quitarle ventaja en un tiroteo está totalmente prohibido en Vallecas RP.`,
             `¡Claro crack! El Vehicle Deathmatch es emplear tu vehículo de forma antideportiva para chocar, golpear o arrollar a otros usuarios. Los coches sufren averías y atropellar a alguien en la vida real tiene consecuencias penales gravísimas.`
         ]);
     }
@@ -2229,7 +2229,7 @@ async function generateAiVoiceChatResponse(userPrompt, history = []) {
     if (/\b(rdm|random deathmatch|matar sin rol|deathmatch)\b/i.test(lower)) {
         return pickRandom([
             `¡El RDM consiste en agredir, disparar o matar a otro usuario de forma totalmente aleatoria, sin haber mediado palabra ni haber iniciado previamente una interacción de rol que justifique ese acto de violencia!`,
-            `Pues mira, Spain RP no es un juego de disparos por equipos. No puedes llegar a una zona, sacar un arma y liarte a tiros con el primero que pase. Para llegar a la agresión física o armada debe existir un trasfondo, una discusión o un conflicto previo bien desarrollado.`,
+            `Pues mira, Vallecas RP no es un juego de disparos por equipos. No puedes llegar a una zona, sacar un arma y liarte a tiros con el primero que pase. Para llegar a la agresión física o armada debe existir un trasfondo, una discusión o un conflicto previo bien desarrollado.`,
             `¡Totalmente crack! RDM es asesinar sin motivo de rol. Todo tiroteo o agresión debe tener un motivo coherente dentro de la historia de tu personaje y una advertencia o diálogo que lo preceda.`
         ]);
     }
@@ -2248,7 +2248,7 @@ async function generateAiVoiceChatResponse(userPrompt, history = []) {
         return pickRandom([
             `¡El Character Kill o CK es la muerte absoluta, definitiva e irreversible de tu personaje! Su historia se cierra por completo, pierde todas sus propiedades y relaciones, y estás obligado a crearte un personaje nuevo desde cero con otra identidad.`,
             `Pues mira, un CK puede ser solicitado voluntariamente por ti cuando quieres terminar la historia de tu personaje, o puede ser solicitado por una facción oficial o la policía mediante un trámite administrativo con el Staff si existen motivos de peso suficientes.`,
-            `¡Hombre, el CK es lo más drástico en el roleplay! Significa que tu personaje deja de existir para siempre en la ciudad de Spain RP y no puedes volver a utilizar ni su nombre ni su trasfondo.`
+            `¡Hombre, el CK es lo más drástico en el roleplay! Significa que tu personaje deja de existir para siempre en la ciudad de Vallecas RP y no puedes volver a utilizar ni su nombre ni su trasfondo.`
         ]);
     }
 
@@ -2300,9 +2300,9 @@ async function generateAiVoiceChatResponse(userPrompt, history = []) {
         ]);
     }
 
-    // Concepto: QUÉ ES SPAIN RP
-    if (/\b(spain rp|servidor|este server)\b/i.test(lower)) {
-        return `¡Spain RP es una comunidad española de FiveM dedicada al rol serio y de calidad, con sistemas avanzados, economía equilibrada y un equipo de Staff comprometido con la mejor experiencia para todos!`;
+    // Concepto: QUÉ ES VALLECAS RP
+    if (/\b(vallecas rp|servidor|este server)\b/i.test(lower)) {
+        return `¡Vallecas RP es una comunidad española de FiveM dedicada al rol serio y de calidad, con sistemas avanzados, economía equilibrada y un equipo de Staff comprometido con la mejor experiencia para todos!`;
     }
 
     // Preguntas de HORA o FECHA
@@ -2316,7 +2316,7 @@ async function generateAiVoiceChatResponse(userPrompt, history = []) {
     // SALUDOS / ESTADO DE ÁNIMO
     if (/\b(c[oó]mo\s+est[aá]s|qu[eé]\s+tal|c[oó]mo\s+andas|c[oó]mo\s+te\s+va)\b/i.test(lower)) {
         return pickRandom([
-            `¡De lujo crack! Aquí al pie del cañón en el Discord de Spain RP, ¿tú qué tal llevas el día por la ciudad?`,
+            `¡De lujo crack! Aquí al pie del cañón en el Discord de Vallecas RP, ¿tú qué tal llevas el día por la ciudad?`,
             `¡Todo genial amigo! Listo para resolver cualquier duda de rol o normativa que tengas, dime qué necesitas.`,
             `¡Muy bien hombre! Con ganas de buen rol y de ayudar a la comunidad, ¿qué te cuentas?`
         ]);
@@ -2332,7 +2332,7 @@ async function generateAiVoiceChatResponse(userPrompt, history = []) {
 
     // DESPEDIDAS
     if (/\b(adi[oó]s|hasta luego|chao|me voy|buenas noches|nos vemos)\b/i.test(lower)) {
-        return `¡Venga crack, un placer charlar contigo! ¡Que pases muy buena noche y disfruta mucho del rol en Spain RP!`;
+        return `¡Venga crack, un placer charlar contigo! ¡Que pases muy buena noche y disfruta mucho del rol en Vallecas RP!`;
     }
 
     // AGRADECIMIENTOS
@@ -2348,7 +2348,7 @@ async function generateAiVoiceChatResponse(userPrompt, history = []) {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 3500);
 
-                const systemPrompt = `Eres el asistente de voz de SPAIN RP en Discord. Hablas en español de España de forma 100% natural, coloquial, amigable y fluida (usa ¡!, expresiones como "¡Hombre!", "Pues mira,", "Básicamente...").
+                const systemPrompt = `Eres el asistente de voz de VALLECAS RP en Discord. Hablas en español de España de forma 100% natural, coloquial, amigable y fluida (usa ¡!, expresiones como "¡Hombre!", "Pues mira,", "Básicamente...").
 Hora actual: ${timeString}.
 Responde de forma clara y hablada en 2 o 3 frases explicativas con ritmo humano.`;
 
@@ -2395,7 +2395,7 @@ Responde de forma clara y hablada en 2 o 3 frases explicativas con ritmo humano.
 
     // Respuesta inteligente contextual
     if (cleanInput.length > 5) {
-        return `¡Entendido crack! Pues sobre "${cleanInput.substring(0, 35)}", la clave en Spain RP es mantener siempre la máxima inmersión y respetar el rol de todos los compañeros en la ciudad. ¡Dime si quieres que profundicemos en algún concepto en particular!`;
+        return `¡Entendido crack! Pues sobre "${cleanInput.substring(0, 35)}", la clave en Vallecas RP es mantener siempre la máxima inmersión y respetar el rol de todos los compañeros en la ciudad. ¡Dime si quieres que profundicemos en algún concepto en particular!`;
     }
 
     return `¡Te escucho perfectamente crack! Pregúntame sobre cualquier normativa como valorar vida, PG, MG o VDM y te lo explico con todo detalle.`;
@@ -2610,7 +2610,7 @@ async function playNextInQueue(guildId) {
             const musicEmbed = new EmbedBuilder()
                 .setColor(0x8A2BE2) // Morado / Violeta Eléctrico Premium
                 .setAuthor({
-                    name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                    name: 'REPRODUCTOR DE MÚSICA • VALLECAS RP',
                     iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                 })
                 .setTitle(`🎶 ${meta.title || currentSong.query}`)
@@ -2620,7 +2620,7 @@ async function playNextInQueue(guildId) {
                     `📺 **Canal:** \`${meta.uploader}\`\n` +
                     `📑 **En Cola:** \`${queue.songs.length - 1} canciones restantes\``
                 )
-                .setFooter({ text: 'SPAIN RP Music • Usa !skip para saltar | !stop para detener' })
+                .setFooter({ text: 'VALLECAS RP Music • Usa !skip para saltar | !stop para detener' })
                 .setTimestamp();
 
             if (meta.url) {
@@ -2646,7 +2646,7 @@ async function playNextInQueue(guildId) {
             const errEmbed = new EmbedBuilder()
                 .setColor(0xE74C3C)
                 .setAuthor({
-                    name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                    name: 'REPRODUCTOR DE MÚSICA • VALLECAS RP',
                     iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                 })
                 .setDescription(`❌ **No se pudo reproducir:** \`${currentSong.query}\`\n⏭️ *Saltando al siguiente tema en cola...*`);
@@ -2674,7 +2674,7 @@ async function updateNowPlayingEmbed(guildId) {
     const musicEmbed = new EmbedBuilder()
         .setColor(0x8A2BE2) // Morado / Violeta Eléctrico Premium
         .setAuthor({
-            name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+            name: 'REPRODUCTOR DE MÚSICA • VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTitle(`🎶 ${meta.title || currentSong.query}`)
@@ -2684,7 +2684,7 @@ async function updateNowPlayingEmbed(guildId) {
             `📺 **Canal:** \`${meta.uploader}\`\n` +
             `📑 **En Cola:** \`${remainingCount} canciones restantes\``
         )
-        .setFooter({ text: 'SPAIN RP Music • Usa !skip para saltar | !stop para detener' })
+        .setFooter({ text: 'VALLECAS RP Music • Usa !skip para saltar | !stop para detener' })
         .setTimestamp();
 
     if (meta.url) musicEmbed.setURL(meta.url);
@@ -2844,7 +2844,7 @@ function evaluateVoiceInterviewContent(transcripts) {
 client.once(Events.ClientReady, async () => {
     try {
         console.log(`\n==================================================`);
-        console.log(`🤖  SPAIN RP - SISTEMA DE WHITELIST Y AUDITORÍA  🤖`);
+        console.log(`🤖  VALLECAS RP - SISTEMA DE WHITELIST Y AUDITORÍA  🤖`);
         console.log(`==================================================`);
         console.log(`🟢 [ESTADO]      Bot conectado como: ${client.user.tag}`);
         console.log(`👑 [CREADOR]     ID: ${OWNER_ID}`);
@@ -2861,7 +2861,7 @@ client.once(Events.ClientReady, async () => {
                 if (state && state.online) {
                     client.user.setPresence({
                         activities: [{
-                            name: `${state.players}/${state.maxPlayers} Jugadores • SPAIN RP`,
+                            name: `${state.players}/${state.maxPlayers} Jugadores • VALLECAS RP`,
                             type: ActivityType.Watching
                         }],
                         status: 'online'
@@ -2869,7 +2869,7 @@ client.once(Events.ClientReady, async () => {
                 } else {
                     client.user.setPresence({
                         activities: [{
-                            name: 'SPAIN RP 🇪🇸',
+                            name: 'VALLECAS RP 🇪🇸',
                             type: ActivityType.Playing
                         }],
                         status: 'online'
@@ -2878,7 +2878,7 @@ client.once(Events.ClientReady, async () => {
             } catch (err) {
                 client.user.setPresence({
                     activities: [{
-                        name: 'SPAIN RP 🇪🇸',
+                        name: 'VALLECAS RP 🇪🇸',
                         type: ActivityType.Playing
                     }],
                     status: 'online'
@@ -2916,7 +2916,7 @@ client.once(Events.ClientReady, async () => {
             }
         }, 4000);
 
-        console.log(`\n🟢 [SISTEMA LISTO] Bot conectado y 100% operativo en Spain RP. ¡Listo para recibir comandos! 🚀\n`);
+        console.log(`\n🟢 [SISTEMA LISTO] Bot conectado y 100% operativo en Vallecas RP. ¡Listo para recibir comandos! 🚀\n`);
     } catch (readyErr) {
         console.error('❌ Error en evento Ready:', readyErr);
     }
@@ -3126,7 +3126,7 @@ async function sendApprovedNotification({ userMention, staffName = 'Equipo de St
     const embedAprobado = new EmbedBuilder()
         .setColor(0x2ECC71) // Verde esmeralda brillante
         .setAuthor({
-            name: 'SISTEMA DE WHITELIST | SPAIN RP',
+            name: 'SISTEMA DE WHITELIST | VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail('attachment://logo.png')
@@ -3134,19 +3134,19 @@ async function sendApprovedNotification({ userMention, staffName = 'Equipo de St
         .setDescription(
             `\u200B\n` +
             `✨ ¡Enhorabuena **${userMention}**! Tu solicitud de Whitelist ha sido aprobada con éxito por el equipo de Staff.\n\n` +
-            `🏙️ Ya puedes acceder al servidor y formar parte de la comunidad de **SPAIN RP** \uD83C\uDDEA\uD83C\uDDF8.\n\n` +
+            `🏙️ Ya puedes acceder al servidor y formar parte de la comunidad de **VALLECAS RP** \uD83C\uDDEA\uD83C\uDDF8.\n\n` +
             `📝 **| Puedes consultar nuestras,**\n` +
             `> ${canalNormativas} ❗\n\n` +
             `📁 **| Si tienes dudas abre un,**\n` +
             `> ${canalTickets} ❗\n\n` +
             `🌍 **| 𝗗𝗶𝘀𝗳𝗿𝘂𝘁𝗮 𝘆 𝗱𝗶𝘃𝗶𝗲𝗿𝘁𝗲𝘁𝗲,**\n` +
             `> ${canalGeneral} ❗\n\n` +
-            `\uD83C\uDDEA\uD83C\uDDF8 **| ¡Disfruta de SPAIN RP! |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
+            `\uD83C\uDDEA\uD83C\uDDF8 **| ¡Disfruta de VALLECAS RP! |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
             `👤 **Solicitante:** ${userMention}\n` +
             `🛡️ **Decidido Por:** ${staffName}`
         )
         .setFooter({
-            text: 'SPAIN RP • ¡Bienvenido a la ciudad!',
+            text: 'VALLECAS RP • ¡Bienvenido a la ciudad!',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
@@ -3227,25 +3227,25 @@ async function sendDeniedNotification({ userMention, staffName = 'Equipo de Staf
     const embedDenegado = new EmbedBuilder()
         .setColor(0xE74C3C) // Rojo carmesí
         .setAuthor({
-            name: 'SISTEMA DE WHITELIST | SPAIN RP',
+            name: 'SISTEMA DE WHITELIST | VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail('attachment://logo.png')
         .setTitle('❌ ¡WHITELIST DENEGADA!')
         .setDescription(
             `\u200B\n` +
-            `⚠️ Hola **${userMention}**, lamentamos informarte que tu solicitud de Whitelist ha sido denegada por el equipo de Staff de **SPAIN RP** \uD83C\uDDEA\uD83C\uDDF8.\n\n` +
+            `⚠️ Hola **${userMention}**, lamentamos informarte que tu solicitud de Whitelist ha sido denegada por el equipo de Staff de **VALLECAS RP** \uD83C\uDDEA\uD83C\uDDF8.\n\n` +
             `📖 Te recomendamos repasar los conceptos de rol y la normativa antes de volver a postularte.\n\n` +
             `📝 **| Puedes repasar la normativa en,**\n` +
             `> ${canalNormativas} ❗\n\n` +
             `📁 **| Si tienes alguna duda consulta en,**\n` +
             `> ${canalTickets} ❗\n\n` +
-            `\uD83C\uDDEA\uD83C\uDDF8 **| SPAIN RP • Sistema de Whitelist |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
+            `\uD83C\uDDEA\uD83C\uDDF8 **| VALLECAS RP • Sistema de Whitelist |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
             `👤 **Solicitante:** ${userMention}\n` +
             `🛡️ **Decidido Por:** ${staffName}`
         )
         .setFooter({
-            text: 'SPAIN RP • Sistema de Whitelist',
+            text: 'VALLECAS RP • Sistema de Whitelist',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
@@ -3317,12 +3317,12 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
     const platformName = isKick ? 'Kick' : (isTikTok ? 'TikTok LIVE' : 'Twitch');
     const platformButtonLabel = isKick ? '🟢 Ver Directo en Kick' : (isTikTok ? '🌸 Ver TikTok LIVE' : '🟣 Ver Directo en Twitch');
     const notificationHeadline = isKick
-        ? `# 🟢 ¡${userMention} ESTÁ EN DIRECTO EN KICK!\n# ¡Entra a apoyar el stream en SPAIN RP!`
+        ? `# 🟢 ¡${userMention} ESTÁ EN DIRECTO EN KICK!\n# ¡Entra a apoyar el stream en VALLECAS RP!`
         : (isTikTok
-            ? `# 🌸 ¡${userMention} ESTÁ EN DIRECTO EN TIKTOK!\n# ¡Entra al LIVE y apoya el stream en SPAIN RP!`
-            : `# 🟣 ¡${userMention} ESTÁ EN DIRECTO EN TWITCH!\n# ¡Entra a apoyar el stream en SPAIN RP!`);
+            ? `# 🌸 ¡${userMention} ESTÁ EN DIRECTO EN TIKTOK!\n# ¡Entra al LIVE y apoya el stream en VALLECAS RP!`
+            : `# 🟣 ¡${userMention} ESTÁ EN DIRECTO EN TWITCH!\n# ¡Entra a apoyar el stream en VALLECAS RP!`);
 
-    const cleanTitle = streamTitle && streamTitle.trim() ? streamTitle.trim() : `Roleplay en vivo en SPAIN RP 🇪🇸 (${platformName})`;
+    const cleanTitle = streamTitle && streamTitle.trim() ? streamTitle.trim() : `Roleplay en vivo en VALLECAS RP 🇪🇸 (${platformName})`;
     const validStreamUrl = streamUrl.startsWith('http') ? streamUrl : `https://${streamUrl}`;
 
     // Canales oficiales interactivos (<#ID>)
@@ -3331,28 +3331,28 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
     const embedStream = new EmbedBuilder()
         .setColor(platformColor)
         .setAuthor({
-            name: `SISTEMA DE DIRECTOS | SPAIN RP 🇪🇸 • ${platformName}`,
+            name: `SISTEMA DE DIRECTOS | VALLECAS RP 🇪🇸 • ${platformName}`,
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail(avatarUrl || (fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()))
         .setTitle(`${platformEmoji} ¡CREADOR EN DIRECTO EN ${platformName.toUpperCase()}!`)
         .setDescription(
             `\u200B\n` +
-            `✨ ¡El creador de contenido **${userMention}** acaba de iniciar transmisión en vivo en **SPAIN RP** 🇪🇸!\n\n` +
+            `✨ ¡El creador de contenido **${userMention}** acaba de iniciar transmisión en vivo en **VALLECAS RP** 🇪🇸!\n\n` +
             `🎮 **Título de la Transmisión:**\n` +
             `> 💬 *"${cleanTitle}"*\n\n` +
             `📺 **Plataforma:** \`${platformName}\`\n` +
-            `🏙️ **Servidor:** **SPAIN RP** 🇪🇸\n\n` +
+            `🏙️ **Servidor:** **VALLECAS RP** 🇪🇸\n\n` +
             `🔗 **| Entra al directo a dejar tu apoyo y follow:**\n` +
             `> ${validStreamUrl} ❗\n\n` +
             `🌍 **| Comenta el directo en la comunidad:**\n` +
             `> ${canalGeneral} ❗\n\n` +
-            `🇪🇸 **| ¡Disfruta del mejor Roleplay en SPAIN RP! |** 🇪🇸\n\n` +
+            `🇪🇸 **| ¡Disfruta del mejor Roleplay en VALLECAS RP! |** 🇪🇸\n\n` +
             `👤 **Streamer:** ${userMention}\n` +
             `🌍 **Notificacion:** @everyone`
         )
         .setFooter({
-            text: `SPAIN RP • Creadores de Contenido Oficiales (${platformName})`,
+            text: `VALLECAS RP • Creadores de Contenido Oficiales (${platformName})`,
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
@@ -3373,7 +3373,7 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
             .setStyle(ButtonStyle.Link)
             .setURL(validStreamUrl),
         new ButtonBuilder()
-            .setLabel('🚀 Conectar a SPAIN RP')
+            .setLabel('🚀 Conectar a VALLECAS RP')
             .setStyle(ButtonStyle.Link)
             .setURL(`https://cfx.re/join/${botConfig.FIVEM_CFX_CODE}`)
     );
@@ -3403,7 +3403,7 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
 }
 
 // ==========================================
-// CONSTRUCTORES: SISTEMA DE BIENVENIDAS OFICIALES (SPAIN RP)
+// CONSTRUCTORES: SISTEMA DE BIENVENIDAS OFICIALES (VALLECAS RP)
 // ==========================================
 function buildWelcomeEmbed(member, guild) {
     const logoPath = path.join(__dirname, 'assets', 'logo.png');
@@ -3426,9 +3426,9 @@ function buildWelcomeEmbed(member, guild) {
     const canalGeneral = botConfig.CHANNEL_GENERAL_ID ? `<#${botConfig.CHANNEL_GENERAL_ID}>` : '`#general`';
 
     const welcomeEmbed = new EmbedBuilder()
-        .setColor(0xE74C3C) // Rojo carmesí España / Spain RP
+        .setColor(0xE74C3C) // Rojo carmesí España / Vallecas RP
         .setAuthor({
-            name: '¡TE DAMOS LA BIENVENIDA A SPAIN RP!',
+            name: '¡TE DAMOS LA BIENVENIDA A VALLECAS RP!',
             iconURL: 'attachment://logo.png'
         })
         .setThumbnail('attachment://logo.png')
@@ -3446,10 +3446,10 @@ function buildWelcomeEmbed(member, guild) {
             `> ${canalTickets} ❗\n\n` +
             `🌍 **| Disfruta y diviértete en,**\n` +
             `> ${canalGeneral} ❗\n\n\n` +
-            `🇪🇸 **| ¡Disfruta de SPAIN RP! |** 🇪🇸\n`
+            `🇪🇸 **| ¡Disfruta de VALLECAS RP! |** 🇪🇸\n`
         )
         .setFooter({
-            text: 'SPAIN RP • Sistema de Bienvenidas',
+            text: 'VALLECAS RP • Sistema de Bienvenidas',
             iconURL: iconURL
         })
         .setTimestamp();
@@ -3548,13 +3548,13 @@ function buildStaffTopRankingEmbed() {
     const topEmbed = new EmbedBuilder()
         .setColor(0xF1C40F)
         .setAuthor({
-            name: 'RANKING DE ATENCIÓN DE STAFF • SPAIN RP',
+            name: 'RANKING DE ATENCIÓN DE STAFF • VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
         .setTitle('🏆 Top Miembros del Equipo con Mejor Calificación')
         .setDescription(desc)
-        .setFooter({ text: 'SPAIN RP • Actualizado automáticamente en tiempo real' })
+        .setFooter({ text: 'VALLECAS RP • Actualizado automáticamente en tiempo real' })
         .setTimestamp();
 
     if (fs.existsSync(topsBannerPath)) {
@@ -3640,14 +3640,14 @@ function buildStaffRatingPanelEmbed() {
     const embed = new EmbedBuilder()
         .setColor(0xF1C40F) // Oro / Amarillo VIP
         .setAuthor({
-            name: 'SISTEMA DE VALORACIONES • SPAIN RP',
+            name: 'SISTEMA DE VALORACIONES • VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
         .setTitle('⭐ ¿CÓMO FUE TU EXPERIENCIA CON EL EQUIPO DE STAFF?')
         .setDescription(
             `\u200B\n` +
-            `¡Bienvenido al sistema oficial de **Calidad y Atención al Usuario** de **SPAIN RP**!\n\n` +
+            `¡Bienvenido al sistema oficial de **Calidad y Atención al Usuario** de **VALLECAS RP**!\n\n` +
             `Tu opinión es fundamental para seguir mejorando nuestro servidor. Si has recibido atención en soporte, tickets, reportes o dudas, puedes valorar la labor del Staff que te atendió.\n\n` +
             `📋 **¿Cómo valorar a un Staff?**\n` +
             `> 1️⃣ Haz clic en el botón **"⭐ Valorar a un Staff"** aquí abajo.\n` +
@@ -3656,10 +3656,10 @@ function buildStaffRatingPanelEmbed() {
             `> 4️⃣ Cuéntanos tu experiencia o comentario sobre la atención recibida.\n\n` +
             `📢 **Canal de publicación de valoraciones:**\n` +
             `> Las valoraciones se enviarán automáticamente a ${canalPublicacion} ❗\n\n` +
-            `🇪🇸 **¡Gracias por ayudar a SPAIN RP!** 🇪🇸`
+            `🇪🇸 **¡Gracias por ayudar a VALLECAS RP!** 🇪🇸`
         )
         .setFooter({
-            text: 'SPAIN RP • Departamento de Calidad y Atención al Usuario',
+            text: 'VALLECAS RP • Departamento de Calidad y Atención al Usuario',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
@@ -3714,7 +3714,7 @@ function buildStaffRatingCardEmbed({ userMention, userAvatar, staffMention, staf
     const embed = new EmbedBuilder()
         .setColor(embedColor)
         .setAuthor({
-            name: 'SISTEMA DE VALORACIONES | SPAIN RP',
+            name: 'SISTEMA DE VALORACIONES | VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail('attachment://logo.png')
@@ -3732,10 +3732,10 @@ function buildStaffRatingCardEmbed({ userMention, userAvatar, staffMention, staf
             `> *"${comment}"*\n\n` +
             `📈 **| Estadísticas Acumuladas del Staff:**\n` +
             `> ⭐ **Promedio General:** \`${average || numRating}/10\` • 📋 **Total:** \`${totalRatings || 1}\` valoraciones\n\n` +
-            `🇪🇸 **¡Gracias por ayudar a SPAIN RP!** 🇪🇸`
+            `🇪🇸 **¡Gracias por ayudar a VALLECAS RP!** 🇪🇸`
         )
         .setFooter({
-            text: 'SPAIN RP • Opiniones y Soporte',
+            text: 'VALLECAS RP • Opiniones y Soporte',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
@@ -3748,7 +3748,7 @@ function buildStaffRatingCardEmbed({ userMention, userAvatar, staffMention, staf
 }
 
 // ==========================================
-// SISTEMA DE PLANTILLAS DE POSTULACIONES (SPAIN RP)
+// SISTEMA DE PLANTILLAS DE POSTULACIONES (VALLECAS RP)
 // ==========================================
 const PLANTILLAS_FILE = path.join(__dirname, 'plantillas.json');
 const lastGeneratedPlantillaByStaff = new Map(); // staffId -> { key, nombre, emoji, contenido, timestamp }
@@ -3769,16 +3769,16 @@ function buildPlantillasPanelEmbed() {
     const panelImgPath = path.join(__dirname, 'assets', 'panel_postulaciones.png');
 
     const embed = new EmbedBuilder()
-        .setColor(0xE67E22) // Naranja Oficial SpainRP
+        .setColor(0xE67E22) // Naranja Oficial VallecasRP
         .setAuthor({
-            name: 'CENTRO DE POSTULACIONES • SPAIN RP',
+            name: 'CENTRO DE POSTULACIONES • VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
         .setTitle('📋 SISTEMA DE PLANTILLAS DE POSTULACIÓN')
         .setDescription(
             `\u200B\n` +
-            `¡Bienvenido al panel central de **Plantillas de Postulaciones Oficiales** de **SPAIN RP**!\n\n` +
+            `¡Bienvenido al panel central de **Plantillas de Postulaciones Oficiales** de **VALLECAS RP**!\n\n` +
             `Aquí el equipo de Staff puede obtener instantáneamente el formato oficial y limpio de cualquier postulación para enviarlo a los usuarios o tickets de soporte.\n\n` +
             `📌 **Plantillas Disponibles en el Sistema:**\n` +
             `> 🎙️ **WL-ORAL** *(OOC, Normativa, Conceptos y Situaciones)*\n` +
@@ -3792,10 +3792,10 @@ function buildPlantillasPanelEmbed() {
             `> 1️⃣ Haz clic en el botón **"📋 Seleccionar Plantilla"** abajo.\n` +
             `> 2️⃣ Elige la plantilla deseada en el selector desplegable.\n` +
             `> 3️⃣ El bot te la entregará y podrás reenviarla con \`!enviar <ID_TICKET>\`.\n\n` +
-            `🇪🇸 **| SPAIN RP • Calidad y Organización |** 🇪🇸`
+            `🇪🇸 **| VALLECAS RP • Calidad y Organización |** 🇪🇸`
         )
         .setFooter({
-            text: 'SPAIN RP • Gestión de Postulaciones y Formularios',
+            text: 'VALLECAS RP • Gestión de Postulaciones y Formularios',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
@@ -3841,16 +3841,16 @@ function buildPlantillaCardEmbed({ plantillaKey, staffId, staffMention, isTicket
     const canalNormativas = `<#${botConfig.CHANNEL_NORMATIVAS_ID || '1517530848658849996'}>`;
 
     const embed = new EmbedBuilder()
-        .setColor(0xE67E22) // Naranja Oficial Spain RP
+        .setColor(0xE67E22) // Naranja Oficial Vallecas RP
         .setAuthor({
-            name: `PLANTILLA OFICIAL • ${plantilla.nombre.toUpperCase()} • SPAIN RP`,
+            name: `PLANTILLA OFICIAL • ${plantilla.nombre.toUpperCase()} • VALLECAS RP`,
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail('attachment://logo.png')
         .setTitle(`${plantilla.emoji || '📋'} Formulario de ${plantilla.nombre}`)
         .setDescription(
             `\u200B\n` +
-            `👋 Estimado usuario, a continuación se te proporciona la **Plantilla Oficial** de **${plantilla.nombre}** para **SPAIN RP** \uD83C\uDDEA\uD83C\uDDF8.\n\n` +
+            `👋 Estimado usuario, a continuación se te proporciona la **Plantilla Oficial** de **${plantilla.nombre}** para **VALLECAS RP** \uD83C\uDDEA\uD83C\uDDF8.\n\n` +
             `📝 **| Puedes consultar la normativa en,**\n` +
             `> ${canalNormativas} ❗\n\n` +
             `📁 **| Si tienes alguna duda consulta en,**\n` +
@@ -3859,11 +3859,11 @@ function buildPlantillaCardEmbed({ plantillaKey, staffId, staffMention, isTicket
             `> 1️⃣ Haz clic en el botón **"📋 Copiar Plantilla"** abajo para obtener el texto limpio.\n` +
             `> 2️⃣ Rellena todos los apartados indicados con asterisco (\`*\`).\n` +
             `> 3️⃣ Envía tu postulación completa en este mismo canal para su revisión.\n\n` +
-            `\uD83C\uDDEA\uD83C\uDDF8 **| ¡Disfruta de SPAIN RP! |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
+            `\uD83C\uDDEA\uD83C\uDDF8 **| ¡Disfruta de VALLECAS RP! |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
             `🛡️ **Generado / Enviado por:** ${staffMention || `<@${staffId}>`}`
         )
         .setFooter({
-            text: 'SPAIN RP • Departamento de Atención y Soporte',
+            text: 'VALLECAS RP • Departamento de Atención y Soporte',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
@@ -3922,7 +3922,7 @@ function buildSubmittedPostulacionEmbed({ member, text, attachments = [] }) {
         nombre = 'Postulación WL-Oral';
         emoji = '🎙️';
         color = 0x1ABC9C; // Turquesa
-    } else if (/WHITELIST SPAIN RP|DATOS OOC|DATOS IC|Historia del personaje/i.test(rawText)) {
+    } else if (/WHITELIST VALLECAS RP|DATOS OOC|DATOS IC|Historia del personaje/i.test(rawText)) {
         plantillaKey = 'whitelist';
         nombre = 'Postulación de Whitelist';
         emoji = '📄';
@@ -4105,7 +4105,7 @@ function buildSubmittedPostulacionEmbed({ member, text, attachments = [] }) {
     const embed = new EmbedBuilder()
         .setColor(color)
         .setAuthor({
-            name: `${nombre.toUpperCase()} • SPAIN RP`,
+            name: `${nombre.toUpperCase()} • VALLECAS RP`,
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
@@ -4118,10 +4118,10 @@ function buildSubmittedPostulacionEmbed({ member, text, attachments = [] }) {
             `\u200B\n` +
             formattedBody + '\n\n' +
             `\u200B\n` +
-            `🇪🇸 **| SPAIN RP • Departamento de Postulaciones |** 🇪🇸`
+            `🇪🇸 **| VALLECAS RP • Departamento de Postulaciones |** 🇪🇸`
         )
         .setFooter({
-            text: `SPAIN RP • Formulario Registrado • ID: ${member.id}`,
+            text: `VALLECAS RP • Formulario Registrado • ID: ${member.id}`,
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
@@ -4140,7 +4140,7 @@ function buildSubmittedPostulacionEmbed({ member, text, attachments = [] }) {
     return { embed, files };
 }
 // ==========================================
-// SISTEMA DE SANCIONES Y MODERACIÓN STAFF (SPAIN RP)
+// SISTEMA DE SANCIONES Y MODERACIÓN STAFF (VALLECAS RP)
 // ==========================================
 const SANCIONES_FILE = path.join(__dirname, 'sanciones.json');
 const pendingSancionesAwaitingImage = new Map(); // staffId -> { targetId, targetTag, reason, punishment, involvedStaff, channelId, expiresAt }
@@ -4198,13 +4198,13 @@ function buildSancionesPanelEmbed() {
     const embed = new EmbedBuilder()
         .setColor(0xE74C3C) // Rojo Moderación / Sanciones
         .setAuthor({
-            name: 'SISTEMA DE SANCIONES • SPAIN RP',
+            name: 'SISTEMA DE SANCIONES • VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
         .setTitle('🚨 REGISTRO OFICIAL DE SANCIONES Y SANCIONADOS')
         .setDescription(
-            `Bienvenido al **Panel Oficial de Registro de Sanciones** para el equipo de Staff de **SPAIN RP** 🇪🇸.\n\n` +
+            `Bienvenido al **Panel Oficial de Registro de Sanciones** para el equipo de Staff de **VALLECAS RP** 🇪🇸.\n\n` +
             `Este canal está destinado a mantener un control estricto, transparente y unificado de todas las faltas, advertencias y expulsiones aplicadas a usuarios en la comunidad.\n\n` +
             `📋 **¿Cómo registrar una nueva sanción?**\n` +
             `> 1️⃣ Pulsa el botón **"🚨 Registrar Sanción"** aquí abajo.\n` +
@@ -4213,7 +4213,7 @@ function buildSancionesPanelEmbed() {
             `💡 *El bot detectará automáticamente tu nombre de Staff y generará el expediente oficial con formato blindado.*`
         )
         .setFooter({
-            text: 'SPAIN RP • Registro Interno Exclusivo de Moderación',
+            text: 'VALLECAS RP • Registro Interno Exclusivo de Moderación',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
@@ -4256,17 +4256,17 @@ function buildSancionCardEmbed({ id, reporterId, reporterTag, targetId, targetTa
         videoSection = `🎥 **Vídeo / Clip de Prueba:**\n> 🔗 [Ver Grabación de Prueba](${videoUrl})\n\n`;
     }
 
-    const galleryUrl = `https://spainrp.es/sanciones/${id || Date.now()}`;
+    const galleryUrl = `https://vallecasrp.es/sanciones/${id || Date.now()}`;
     const mainEmbed = new EmbedBuilder()
         .setColor(0xE74C3C) // Rojo fuego moderación
         .setAuthor({
-            name: 'SISTEMA DE SANCIONES • SPAIN RP',
+            name: 'SISTEMA DE SANCIONES • VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setURL(galleryUrl)
         .setDescription(
             `**🚨 ACTA DISCIPLINARIA • EXPEDIENTE #${id || Date.now().toString().slice(-4)}**\n\n` +
-            `Este expediente certifica la resolución disciplinaria oficial aplicada dentro de la comunidad de **SPAIN RP** 🇪🇸.\n\n` +
+            `Este expediente certifica la resolución disciplinaria oficial aplicada dentro de la comunidad de **VALLECAS RP** 🇪🇸.\n\n` +
             `👤 **| Información del Reporte y Staff:**\n` +
             `> 👮 **Quien reporta:** ${reporterMention}\n` +
             `> 🎯 **A quien se reporta:** ${targetMention}\n` +
@@ -4275,10 +4275,10 @@ function buildSancionCardEmbed({ id, reporterId, reporterTag, targetId, targetTa
             `📝 **| Breve explicación:**\n` +
             `> ${reason || 'Sin explicación adicional'}\n\n` +
             videoSection +
-            `🇪🇸 **| ¡Gracias por ayudar a SPAIN RP! |** 🇪🇸`
+            `🇪🇸 **| ¡Gracias por ayudar a VALLECAS RP! |** 🇪🇸`
         )
         .setFooter({
-            text: 'SPAIN RP • Registro Oficial de Moderación',
+            text: 'VALLECAS RP • Registro Oficial de Moderación',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
@@ -4312,7 +4312,7 @@ function buildSancionCardEmbed({ id, reporterId, reporterTag, targetId, targetTa
 }
 
 // ==========================================
-// SISTEMA DE EVENTOS OFICIALES (SPAIN RP)
+// SISTEMA DE EVENTOS OFICIALES (VALLECAS RP)
 // ==========================================
 const EVENTOS_FILE = path.join(__dirname, 'eventos.json');
 const pendingEventosAwaitingImage = new Map(); // staffId -> { id, reporterId, reporterTag, title, description, hora, lugar, organiza, ping, channelId, expiresAt }
@@ -4369,13 +4369,13 @@ function buildEventosPanelEmbed() {
     const embed = new EmbedBuilder()
         .setColor(0xF1C40F) // Amarillo Oro / Dorado vibrante
         .setAuthor({
-            name: 'SISTEMA DE EVENTOS | SPAIN RP',
+            name: 'SISTEMA DE EVENTOS | VALLECAS RP',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
         .setTitle('🎉 GESTIÓN Y PUBLICACIÓN OFICIAL DE EVENTOS')
         .setDescription(
-            `Bienvenido al **Panel Oficial de Publicación de Eventos** para el equipo de Staff de **SPAIN RP** 🇪🇸.\n\n` +
+            `Bienvenido al **Panel Oficial de Publicación de Eventos** para el equipo de Staff de **VALLECAS RP** 🇪🇸.\n\n` +
             `Este sistema permite anunciar quedadas, exhibiciones, carreras, fiestas y eventos especiales de la ciudad con una maquetación automática y diseño prémium.\n\n` +
             `📋 **¿Cómo publicar un nuevo evento?**\n` +
             `> 1️⃣ Pulsa el botón **"📢 Publicar Evento"** aquí abajo.\n` +
@@ -4384,7 +4384,7 @@ function buildEventosPanelEmbed() {
             `💡 *El bot publicará el anuncio automáticamente en los canales oficiales de eventos con mención @everyone y formato de lujo.*`
         )
         .setFooter({
-            text: 'SPAIN RP • Sistema Oficial de Eventos Staff',
+            text: 'VALLECAS RP • Sistema Oficial de Eventos Staff',
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
@@ -4602,21 +4602,21 @@ function buildEventoCardEmbed({ id, reporterId, reporterTag, title, description,
     }
 
     // 5. Cierre oficial
-    descSections.push(`\n🌍 **| Comenta y comparte el evento con la comunidad:**\n> ${canalGeneral} ❗\n\n🇪🇸 **| ¡Disfruta de SPAIN RP! |** 🇪🇸`);
+    descSections.push(`\n🌍 **| Comenta y comparte el evento con la comunidad:**\n> ${canalGeneral} ❗\n\n🇪🇸 **| ¡Disfruta de VALLECAS RP! |** 🇪🇸`);
 
     const finalDescription = descSections.join('\n');
 
     const mainEmbed = new EmbedBuilder()
         .setColor(0xF1C40F) // Amarillo Oro / Dorado vibrante
         .setAuthor({
-            name: `🎉 | SISTEMA DE EVENTOS | SPAIN RP 👑`,
+            name: `🎉 | SISTEMA DE EVENTOS | VALLECAS RP 👑`,
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
         .setTitle(`${titleEmojiLeft} ${eventTitleClean.toUpperCase()} ${titleEmojiRight}`)
         .setDescription(finalDescription)
         .setFooter({
-            text: `SPAIN RP • Evento Oficial de la Comunidad`,
+            text: `VALLECAS RP • Evento Oficial de la Comunidad`,
             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
         })
         .setTimestamp();
@@ -4740,7 +4740,7 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
             // 1. Enviar mensaje instantáneo de "Analizando Whitelist..."
             const loadingEmbed = new EmbedBuilder()
                 .setColor(0x3498DB) // Azul informativo
-                .setAuthor({ name: 'AUDITORÍA DE WHITELIST • SPAIN RP', iconURL })
+                .setAuthor({ name: 'AUDITORÍA DE WHITELIST • VALLECAS RP', iconURL })
                 .setDescription(
                     `👤 **Solicitante:** ${applicantMention}\n` +
                     `⚙️ **Estado:** \`🔄 Analizando respuestas y narrativa con IA...\`\n` +
@@ -4778,7 +4778,7 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
 
             const finalAuditEmbed = new EmbedBuilder()
                 .setColor(embedColor)
-                .setAuthor({ name: 'AUDITORÍA DE WHITELIST • SPAIN RP', iconURL })
+                .setAuthor({ name: 'AUDITORÍA DE WHITELIST • VALLECAS RP', iconURL })
                 .setDescription(descText);
 
             // 2. Editar el mensaje original con el resultado final
@@ -5252,18 +5252,18 @@ client.on('messageCreate', async (message) => {
 
                 let helpEmbed = new EmbedBuilder()
                     .setColor(isOwner ? 0x9B59B6 : 0xF1C40F)
-                    .setFooter({ text: 'SPAIN RP • Este mensaje se auto-eliminará automáticamente en 30 segundos' })
+                    .setFooter({ text: 'VALLECAS RP • Este mensaje se auto-eliminará automáticamente en 30 segundos' })
                     .setTimestamp();
 
                 if (iconUrl) {
                     helpEmbed.setAuthor({
-                        name: isOwner ? 'GUÍA DE COMANDOS DEL PROPIETARIO • SPAIN RP' : 'GUÍA DE COMANDOS PARA EL EQUIPO DE STAFF • SPAIN RP',
+                        name: isOwner ? 'GUÍA DE COMANDOS DEL PROPIETARIO • VALLECAS RP' : 'GUÍA DE COMANDOS PARA EL EQUIPO DE STAFF • VALLECAS RP',
                         iconURL: iconUrl
                     });
                     helpEmbed.setThumbnail(iconUrl);
                 } else {
                     helpEmbed.setAuthor({
-                        name: isOwner ? 'GUÍA DE COMANDOS DEL PROPIETARIO • SPAIN RP' : 'GUÍA DE COMANDOS PARA EL EQUIPO DE STAFF • SPAIN RP'
+                        name: isOwner ? 'GUÍA DE COMANDOS DEL PROPIETARIO • VALLECAS RP' : 'GUÍA DE COMANDOS PARA EL EQUIPO DE STAFF • VALLECAS RP'
                     });
                 }
 
@@ -5566,7 +5566,7 @@ client.on('messageCreate', async (message) => {
 
                 // Si no pone URL, usamos una URL por defecto para pruebas
                 if (!urlArg) {
-                    urlArg = 'https://twitch.tv/spainrp';
+                    urlArg = 'https://twitch.tv/vallecasrp';
                 }
 
                 const titleArgs = filteredArgs.filter(arg => arg !== urlArg);
@@ -5574,7 +5574,7 @@ client.on('messageCreate', async (message) => {
 
                 if (!streamTitle) {
                     const targetMember = message.guild?.members.cache.get(targetUser.id) || null;
-                    streamTitle = await fetchLiveStreamTitle(urlArg, targetMember, '🔥 Patrullaje y Rol en Directo | SPAIN RP 🇪🇸');
+                    streamTitle = await fetchLiveStreamTitle(urlArg, targetMember, '🔥 Patrullaje y Rol en Directo | VALLECAS RP 🇪🇸');
                 }
 
                 let platform = 'Twitch';
@@ -5635,7 +5635,7 @@ client.on('messageCreate', async (message) => {
 
             if (!targetUser || !targetUser.id || !link) {
                 return message.reply({
-                    content: `❌ **Uso correcto:** \`!addstreamer @usuario <enlace_del_canal> [Título opcional]\`\n📌 *Ejemplos:* \n• **Kick:** \`!addstreamer @usuario https://kick.com/canal Rol en Kick Spain RP\`\n• **Twitch:** \`!addstreamer @usuario https://twitch.tv/canal Rol en Spain RP\`\n• **TikTok:** \`!addstreamer @usuario https://www.tiktok.com/@canal Directo en TikTok\``
+                    content: `❌ **Uso correcto:** \`!addstreamer @usuario <enlace_del_canal> [Título opcional]\`\n📌 *Ejemplos:* \n• **Kick:** \`!addstreamer @usuario https://kick.com/canal Rol en Kick Vallecas RP\`\n• **Twitch:** \`!addstreamer @usuario https://twitch.tv/canal Rol en Vallecas RP\`\n• **TikTok:** \`!addstreamer @usuario https://www.tiktok.com/@canal Directo en TikTok\``
                 });
             }
 
@@ -5646,7 +5646,7 @@ client.on('messageCreate', async (message) => {
             else if (fullUrl.includes('youtube.com') || fullUrl.includes('youtu.be')) platform = 'YouTube';
 
             const titleParts = cleanArgs.filter(arg => arg !== link);
-            const defaultTitle = titleParts.length > 0 ? titleParts.join(' ') : `🔥 Directo de ${platform} en SPAIN RP 🇪🇸`;
+            const defaultTitle = titleParts.length > 0 ? titleParts.join(' ') : `🔥 Directo de ${platform} en VALLECAS RP 🇪🇸`;
 
             const streamerData = {
                 url: fullUrl,
@@ -5669,7 +5669,7 @@ client.on('messageCreate', async (message) => {
 
             const streamSuccessEmbed = new EmbedBuilder()
                 .setColor(platColor)
-                .setAuthor({ name: `SISTEMA DE STREAMERS | ${platform.toUpperCase()} • SPAIN RP 🇪🇸`, iconURL: client.user.displayAvatarURL() })
+                .setAuthor({ name: `SISTEMA DE STREAMERS | ${platform.toUpperCase()} • VALLECAS RP 🇪🇸`, iconURL: client.user.displayAvatarURL() })
                 .setTitle(`${platEmoji} ¡Canal de ${platform} Registrado con Éxito!`)
                 .setDescription(
                     `✨ El streamer ha sido dado de alta en la base de datos oficial.\n\n` +
@@ -5679,7 +5679,7 @@ client.on('messageCreate', async (message) => {
                     `🏷️ **Título por defecto:** *"${defaultTitle}"*\n\n` +
                     `> 💡 *Al usar el panel de directos o iniciar stream se notificará automáticamente a la comunidad.*`
                 )
-                .setFooter({ text: 'SPAIN RP • Creadores de Contenido' })
+                .setFooter({ text: 'VALLECAS RP • Creadores de Contenido' })
                 .setTimestamp();
 
             return message.reply({ embeds: [streamSuccessEmbed] });
@@ -5966,7 +5966,7 @@ client.on('messageCreate', async (message) => {
                 .setColor(userSanciones.length > 0 ? 0xE74C3C : 0x2ECC71)
                 .setTitle(`🚨 Historial Disciplinario • <@${targetUser.id}>`)
                 .setDescription(desc)
-                .setFooter({ text: 'SPAIN RP • Base de Datos de Moderación' })
+                .setFooter({ text: 'VALLECAS RP • Base de Datos de Moderación' })
                 .setTimestamp();
 
             const histMsg = await message.channel.send({ embeds: [histEmbed] }).catch(() => null);
@@ -6025,10 +6025,10 @@ client.on('messageCreate', async (message) => {
             }
 
             const parts = fullText.split('|').map(p => p.trim());
-            const title = parts[0] || 'Evento Oficial SPAIN RP';
+            const title = parts[0] || 'Evento Oficial VALLECAS RP';
             const hora = parts[1] || '';
             const lugar = parts[2] || '';
-            const organiza = parts[3] || 'Staff SPAIN RP';
+            const organiza = parts[3] || 'Staff VALLECAS RP';
             const description = parts.slice(4).join(' | ') || (parts.length === 1 ? parts[0] : '');
 
             const attachment = message.attachments.first();
@@ -6224,7 +6224,7 @@ client.on('messageCreate', async (message) => {
                 .setColor(0xF1C40F)
                 .setTitle('🛡️ Lista de Staffs Valorables en el Menú')
                 .setDescription(desc)
-                .setFooter({ text: 'SPAIN RP • Usa !addstaff y !delstaff para configurar' });
+                .setFooter({ text: 'VALLECAS RP • Usa !addstaff y !delstaff para configurar' });
 
             const listMsg = await message.channel.send({ embeds: [staffListEmbed] }).catch(() => null);
             if (listMsg) setTimeout(() => listMsg.delete().catch(() => { }), 15000);
@@ -6252,14 +6252,14 @@ client.on('messageCreate', async (message) => {
                 const deniedEmbed = new EmbedBuilder()
                     .setColor(0xE74C3C)
                     .setAuthor({
-                        name: 'ACCESO DENEGADO • SEGURIDAD SPAIN RP',
+                        name: 'ACCESO DENEGADO • SEGURIDAD VALLECAS RP',
                         iconURL: iconURL
                     })
                     .setDescription(
                         `⛔ <@${msg.author.id}>, este comando de administración y configuración es de uso **exclusivo para el Propietario / Owner** del bot.\n\n` +
                         `> 🔒 *Tu solicitud ha sido bloqueada y registrada por el sistema de seguridad.*`
                     )
-                    .setFooter({ text: 'SPAIN RP • Mensaje temporal (se auto-eliminará en 5s)' })
+                    .setFooter({ text: 'VALLECAS RP • Mensaje temporal (se auto-eliminará en 5s)' })
                     .setTimestamp();
 
                 const sent = await msg.channel.send({ embeds: [deniedEmbed], files }).catch(() => null);
@@ -6283,7 +6283,7 @@ client.on('messageCreate', async (message) => {
             const adminEmbed = new EmbedBuilder()
                 .setColor(0x9B59B6) // Púrpura Admin
                 .setAuthor({
-                    name: 'PANEL DE CONTROL DEL CREADOR | SPAIN RP 🇪🇸',
+                    name: 'PANEL DE CONTROL DEL CREADOR | VALLECAS RP 🇪🇸',
                     iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                 })
                 .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
@@ -6335,10 +6335,11 @@ client.on('messageCreate', async (message) => {
                     `• \`!setrol streamer <@rol o ID>\`\n` +
                     `• \`!setip <ip:puerto>\` *(Ej: 185.230.52.246:30120)*\n` +
                     `• \`!setcfx <codigo>\` *(Ej: 7b97gmr)*\n` +
-                    `• \`!reiniciar-paneles\` *(Vuelve a enviar los paneles automáticos)*`
+                    `• \`!reiniciar-paneles\` *(Vuelve a enviar los paneles automáticos)*\n` +
+                    `• \`!reiniciar-mensajes\` *(Edita mensajes antiguos del bot a VALLECAS RP)*`
                 )
                 .setFooter({
-                    text: 'SPAIN RP • Configuración Exclusiva del Creador',
+                    text: 'VALLECAS RP • Configuración Exclusiva del Creador',
                     iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                 })
                 .setTimestamp();
@@ -6536,6 +6537,203 @@ client.on('messageCreate', async (message) => {
             return;
         }
 
+        // 7. COMANDO PARA EDITAR MENSAJES HISTÓRICOS (!reiniciar-mensajes)
+        // Busca todos los mensajes enviados por el bot en los canales de texto accesibles
+        // y reemplaza cualquier mención de SPAIN RP por VALLECAS RP (omitiendo mensajes de bienvenida)
+        if (['!reiniciar-mensajes', '!editarmensajes', '!editar-mensajes'].includes(command)) {
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
+
+            const statusMsg = await message.reply({
+                content: '⏳ **Iniciando barrido para editar mensajes enviados por el bot...**\n*Buscando y actualizando cualquier referencia a SPAIN RP por VALLECAS RP (omitiendo bienvenidas).*'
+            }).catch(() => null);
+
+            let totalEdited = 0;
+            let scannedChannels = 0;
+            let totalBotMessages = 0;
+
+            const targetRegex = /SPAIN[\s_-]*RP|Spain[\s_-]*RP|SpainRP|spainrp/gi;
+            const replaceWith = (match) => {
+                if (match === match.toUpperCase()) return 'VALLECAS RP';
+                if (match.toLowerCase() === 'spainrp') return 'VallecasRP';
+                return 'Vallecas RP';
+            };
+
+            function replaceString(str) {
+                if (!str || typeof str !== 'string') return str;
+                return str.replace(targetRegex, replaceWith);
+            }
+
+            function isWelcomeMessage(msg) {
+                // Verificar si es el canal configurado de bienvenidas
+                if (botConfig.CHANNEL_BIENVENIDAS_ID && msg.channelId === botConfig.CHANNEL_BIENVENIDAS_ID) {
+                    return true;
+                }
+                const chName = (msg.channel?.name || '').toLowerCase();
+                if (chName.includes('bienvenid') || chName.includes('welcome')) {
+                    return true;
+                }
+                // Si el contenido o embeds son de bienvenida
+                if (msg.content && /bienvenid/i.test(msg.content)) {
+                    return true;
+                }
+                if (msg.embeds && msg.embeds.length > 0) {
+                    for (const emb of msg.embeds) {
+                        const t = (emb.title || '').toLowerCase();
+                        const a = (emb.author?.name || '').toLowerCase();
+                        const f = (emb.footer?.text || '').toLowerCase();
+                        if (t.includes('bienvenid') || a.includes('bienvenid') || f.includes('bienvenida')) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            try {
+                const textChannels = message.guild.channels.cache.filter(ch =>
+                    ch.isTextBased() &&
+                    ch.viewable &&
+                    ch.permissionsFor(message.guild.members.me)?.has(['ViewChannel', 'ReadMessageHistory'])
+                );
+
+                for (const [chId, channel] of textChannels) {
+                    // Omitir por completo el canal de bienvenidas si está configurado
+                    if (botConfig.CHANNEL_BIENVENIDAS_ID && chId === botConfig.CHANNEL_BIENVENIDAS_ID) {
+                        continue;
+                    }
+                    const chName = (channel.name || '').toLowerCase();
+                    if (chName.includes('bienvenid') || chName.includes('welcome')) {
+                        continue;
+                    }
+
+                    scannedChannels++;
+                    let lastId = null;
+                    let channelDone = false;
+                    let fetchCount = 0;
+
+                    // Escanear hasta 500 mensajes por canal
+                    while (!channelDone && fetchCount < 5) {
+                        fetchCount++;
+                        const options = { limit: 100 };
+                        if (lastId) options.before = lastId;
+
+                        const messages = await channel.messages.fetch(options).catch(() => null);
+                        if (!messages || messages.size === 0) {
+                            channelDone = true;
+                            break;
+                        }
+
+                        lastId = messages.last()?.id;
+
+                        for (const [, msg] of messages) {
+                            if (msg.author.id !== client.user.id) continue;
+                            if (msg.id === statusMsg?.id) continue;
+                            if (isWelcomeMessage(msg)) continue;
+
+                            totalBotMessages++;
+
+                            let needsEdit = false;
+                            let newContent = msg.content;
+                            if (msg.content && targetRegex.test(msg.content)) {
+                                targetRegex.lastIndex = 0;
+                                newContent = replaceString(msg.content);
+                                needsEdit = true;
+                            }
+
+                            const newEmbeds = [];
+                            if (msg.embeds && msg.embeds.length > 0) {
+                                for (const oldEmbed of msg.embeds) {
+                                    const embedData = oldEmbed.toJSON();
+                                    let embedChanged = false;
+
+                                    if (embedData.title && targetRegex.test(embedData.title)) {
+                                        targetRegex.lastIndex = 0;
+                                        embedData.title = replaceString(embedData.title);
+                                        embedChanged = true;
+                                    }
+                                    if (embedData.description && targetRegex.test(embedData.description)) {
+                                        targetRegex.lastIndex = 0;
+                                        embedData.description = replaceString(embedData.description);
+                                        embedChanged = true;
+                                    }
+                                    if (embedData.author && embedData.author.name && targetRegex.test(embedData.author.name)) {
+                                        targetRegex.lastIndex = 0;
+                                        embedData.author.name = replaceString(embedData.author.name);
+                                        embedChanged = true;
+                                    }
+                                    if (embedData.footer && embedData.footer.text && targetRegex.test(embedData.footer.text)) {
+                                        targetRegex.lastIndex = 0;
+                                        embedData.footer.text = replaceString(embedData.footer.text);
+                                        embedChanged = true;
+                                    }
+                                    if (Array.isArray(embedData.fields)) {
+                                        for (const field of embedData.fields) {
+                                            if (field.name && targetRegex.test(field.name)) {
+                                                targetRegex.lastIndex = 0;
+                                                field.name = replaceString(field.name);
+                                                embedChanged = true;
+                                            }
+                                            if (field.value && targetRegex.test(field.value)) {
+                                                targetRegex.lastIndex = 0;
+                                                field.value = replaceString(field.value);
+                                                embedChanged = true;
+                                            }
+                                        }
+                                    }
+
+                                    if (embedChanged) {
+                                        needsEdit = true;
+                                        newEmbeds.push(EmbedBuilder.from(embedData));
+                                    } else {
+                                        newEmbeds.push(EmbedBuilder.from(embedData));
+                                    }
+                                }
+                            }
+
+                            if (needsEdit) {
+                                try {
+                                    await msg.edit({
+                                        content: newContent,
+                                        embeds: newEmbeds.length > 0 ? newEmbeds : undefined
+                                    });
+                                    totalEdited++;
+                                    // Pequeña pausa para no saturar rate limit de Discord
+                                    await new Promise(r => setTimeout(r, 600));
+                                } catch (editErr) {
+                                    console.error(`⚠️ Error al editar mensaje ${msg.id} en #${channel.name}:`, editErr.message);
+                                }
+                            }
+                        }
+
+                        if (messages.size < 100) {
+                            channelDone = true;
+                        }
+                    }
+                }
+
+                const resultText = `✅ **¡Barrido completado con éxito!**\n\n` +
+                    `📊 **Resumen:**\n` +
+                    `> • 📁 Canales revisados: \`${scannedChannels}\`\n` +
+                    `> • 🤖 Mensajes del bot inspeccionados: \`${totalBotMessages}\`\n` +
+                    `> • ✏️ Mensajes actualizados a **VALLECAS RP**: \`${totalEdited}\`\n` +
+                    `> • 🚫 Las bienvenidas han sido conservadas intactas.`;
+
+                if (statusMsg) {
+                    await statusMsg.edit({ content: resultText }).catch(() => { });
+                } else {
+                    await message.channel.send({ content: resultText }).catch(() => { });
+                }
+            } catch (err) {
+                console.error('❌ Error en comando !reiniciar-mensajes:', err);
+                if (statusMsg) {
+                    await statusMsg.edit({ content: `❌ Error durante el barrido de edición: ${err.message}` }).catch(() => { });
+                }
+            }
+            return;
+        }
+
         // ----------------------------------------------------
         // COMANDO DE TESTING: !test-ia <texto> / !analizar-ia (Audita cualquier texto para el Staff)
         // ----------------------------------------------------
@@ -6587,7 +6785,7 @@ client.on('messageCreate', async (message) => {
 
             const testEmbed = new EmbedBuilder()
                 .setColor(embedColor)
-                .setAuthor({ name: 'AUDITORÍA DE WHITELIST • SPAIN RP', iconURL })
+                .setAuthor({ name: 'AUDITORÍA DE WHITELIST • VALLECAS RP', iconURL })
                 .setDescription(testDesc1);
 
             return message.reply({ embeds: [testEmbed], files });
@@ -6647,7 +6845,7 @@ client.on('messageCreate', async (message) => {
 
             const testEmbed = new EmbedBuilder()
                 .setColor(embedColor)
-                .setAuthor({ name: 'AUDITORÍA DE WHITELIST • SPAIN RP', iconURL })
+                .setAuthor({ name: 'AUDITORÍA DE WHITELIST • VALLECAS RP', iconURL })
                 .setDescription(testDesc);
 
             return message.reply({ embeds: [testEmbed], files });
@@ -6717,7 +6915,7 @@ client.on('messageCreate', async (message) => {
             // 3. Crear la tarjeta de auditoría compacta
             const embedAuditoria = new EmbedBuilder()
                 .setColor(embedColor)
-                .setAuthor({ name: 'AUDITORÍA DE WHITELIST • SPAIN RP', iconURL })
+                .setAuthor({ name: 'AUDITORÍA DE WHITELIST • VALLECAS RP', iconURL })
                 .setDescription(simDesc);
 
             // Enviar ÚNICAMENTE la tarjeta de auditoría
@@ -6727,7 +6925,7 @@ client.on('messageCreate', async (message) => {
                     files
                 }).catch(async (errSend) => {
                     console.error('❌ [ERROR AL ENVIAR AUDITORÍA SIMULAR]:', errSend);
-                    const safeAuditoria = EmbedBuilder.from(embedAuditoria).setAuthor({ name: 'AUDITORÍA DE WHITELIST • SPAIN RP', iconURL: client.user.displayAvatarURL() });
+                    const safeAuditoria = EmbedBuilder.from(embedAuditoria).setAuthor({ name: 'AUDITORÍA DE WHITELIST • VALLECAS RP', iconURL: client.user.displayAvatarURL() });
                     await message.channel.send({ embeds: [safeAuditoria] }).catch(e2 => console.error('❌ [ERROR CRÍTICO AL ENVIAR AUDITORÍA]:', e2));
                 });
             } catch (err) {
@@ -6800,7 +6998,7 @@ client.on('messageCreate', async (message) => {
                         `📥 **Mensajes analizados:** \`${learnedCount}\` formularios históricos.\n` +
                         `🤖 **Total patrones de IA calibrados:** \`${Object.keys(data.learnedClichés || {}).length}\`\n` +
                         `👤 **Total patrones humanos calibrados:** \`${Object.keys(data.learnedHumanPatterns || {}).length}\`\n` +
-                        `🚀 *El motor ahora clasifica con precisión quirúrgica basada en el historial de SPAIN RP.*`
+                        `🚀 *El motor ahora clasifica con precisión quirúrgica basada en el historial de VALLECAS RP.*`
                 });
             } catch (err) {
                 console.error('Error al escanear historial:', err);
@@ -6971,7 +7169,7 @@ client.on('messageCreate', async (message) => {
                 const startEmbed = new EmbedBuilder()
                     .setColor(0x3498DB) // Azul informativo
                     .setAuthor({
-                        name: 'AUDITORÍA DE ENTREVISTAS POR VOZ • SPAIN RP',
+                        name: 'AUDITORÍA DE ENTREVISTAS POR VOZ • VALLECAS RP',
                         iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                     })
                     .setTitle('🎙️ Auditoría de Voz Iniciada en Tiempo Real')
@@ -6991,7 +7189,7 @@ client.on('messageCreate', async (message) => {
                             value: 'Escribe **`!cancelar-entrevista`** o **`!salir-voz`** para salir del canal sin generar ficha.'
                         }
                     )
-                    .setFooter({ text: 'SPAIN RP • Speech-to-Text Whisper AI 100% Gratuito' })
+                    .setFooter({ text: 'VALLECAS RP • Speech-to-Text Whisper AI 100% Gratuito' })
                     .setTimestamp();
 
                 return message.reply({ embeds: [startEmbed], files });
@@ -7034,7 +7232,7 @@ client.on('messageCreate', async (message) => {
             const resultEmbed = new EmbedBuilder()
                 .setColor(0x2ECC71) // Verde
                 .setAuthor({
-                    name: 'FICHA DE AUDITORÍA ORAL • SPAIN RP',
+                    name: 'FICHA DE AUDITORÍA ORAL • VALLECAS RP',
                     iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                 })
                 .setTitle('🎙️ Resumen de Entrevista de Voz Completada')
@@ -7059,7 +7257,7 @@ client.on('messageCreate', async (message) => {
                         inline: false
                     }
                 )
-                .setFooter({ text: 'SPAIN RP • Ficha de auditoría 100% efímera (0 MB en disco)' })
+                .setFooter({ text: 'VALLECAS RP • Ficha de auditoría 100% efímera (0 MB en disco)' })
                 .setTimestamp();
 
             const targetFichasChannelId = botConfig.CHANNEL_ENTREVISTAS_ID;
@@ -7282,7 +7480,7 @@ client.on('messageCreate', async (message) => {
                                             const queueAddEmbed = new EmbedBuilder()
                                                 .setColor(0x3498DB)
                                                 .setAuthor({
-                                                    name: 'COLA DE MÚSICA • SPAIN RP',
+                                                    name: 'COLA DE MÚSICA • VALLECAS RP',
                                                     iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                                                 })
                                                 .setTitle(`📥 Añadida a la Cola (Posición #${queue.songs.length})`)
@@ -7335,7 +7533,7 @@ client.on('messageCreate', async (message) => {
                 const chatEmbed = new EmbedBuilder()
                     .setColor(0x9B59B6)
                     .setAuthor({
-                        name: 'CONVERSACIÓN DE VOZ CON IA • SPAIN RP',
+                        name: 'CONVERSACIÓN DE VOZ CON IA • VALLECAS RP',
                         iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                     })
                     .setTitle('🎙️ Chat de Voz con IA Activado')
@@ -7345,7 +7543,7 @@ client.on('messageCreate', async (message) => {
                         `💬 *Dile "Hola Bot..." para iniciar la conversación y a partir de ahí te responderá fluidamente en directo.*\n\n` +
                         `🛑 **Para finalizar:** Escribe **\`!callar\`** o **\`!salir-voz\`**.`
                     )
-                    .setFooter({ text: 'SPAIN RP • Conversación Fluida con Microsoft Neural TTS & Gemini Flash' })
+                    .setFooter({ text: 'VALLECAS RP • Conversación Fluida con Microsoft Neural TTS & Gemini Flash' })
                     .setTimestamp();
 
                 return message.reply({ embeds: [chatEmbed], files });
@@ -7401,7 +7599,7 @@ client.on('messageCreate', async (message) => {
                 const noVoiceEmbed = new EmbedBuilder()
                     .setColor(0xE74C3C)
                     .setAuthor({
-                        name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                        name: 'REPRODUCTOR DE MÚSICA • VALLECAS RP',
                         iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                     })
                     .setDescription(`❌ <@${message.author.id}>, **debes estar conectado a un canal de voz** para reproducir música.`);
@@ -7416,7 +7614,7 @@ client.on('messageCreate', async (message) => {
                 const noQueryEmbed = new EmbedBuilder()
                     .setColor(0x3498DB)
                     .setAuthor({
-                        name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                        name: 'REPRODUCTOR DE MÚSICA • VALLECAS RP',
                         iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                     })
                     .setTitle('🎵 Uso del Comando de Música')
@@ -7527,7 +7725,7 @@ client.on('messageCreate', async (message) => {
                 const queueAddEmbed = new EmbedBuilder()
                     .setColor(0x3498DB) // Azul cola
                     .setAuthor({
-                        name: 'COLA DE MÚSICA • SPAIN RP',
+                        name: 'COLA DE MÚSICA • VALLECAS RP',
                         iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                     })
                     .setTitle(`📥 Añadida a la Cola (Posición #${queue.songs.length})`)
@@ -7546,7 +7744,7 @@ client.on('messageCreate', async (message) => {
                 const searchEmbed = new EmbedBuilder()
                     .setColor(0xF1C40F) // Amarillo Buscando
                     .setAuthor({
-                        name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                        name: 'REPRODUCTOR DE MÚSICA • VALLECAS RP',
                         iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                     })
                     .setDescription(`🔎 **Buscando y preparando canción:** \`${cleanTarget.substring(0, 70)}\`...`);
@@ -7598,7 +7796,7 @@ client.on('messageCreate', async (message) => {
             const stopEmbed = new EmbedBuilder()
                 .setColor(0xE74C3C) // Rojo stop
                 .setAuthor({
-                    name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                    name: 'REPRODUCTOR DE MÚSICA • VALLECAS RP',
                     iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                 })
                 .setDescription('⏹️ **Música detenida y cola de reproducción vaciada.**');
@@ -7626,7 +7824,7 @@ client.on('messageCreate', async (message) => {
                 const noPlayEmbed = new EmbedBuilder()
                     .setColor(0xE74C3C)
                     .setAuthor({
-                        name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                        name: 'REPRODUCTOR DE MÚSICA • VALLECAS RP',
                         iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                     })
                     .setDescription('❌ **No hay ninguna canción reproduciéndose actualmente.**');
@@ -7652,7 +7850,7 @@ client.on('messageCreate', async (message) => {
                 const skipEmbed = new EmbedBuilder()
                     .setColor(0x2ECC71) // Verde skip
                     .setAuthor({
-                        name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                        name: 'REPRODUCTOR DE MÚSICA • VALLECAS RP',
                         iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                     })
                     .setDescription(`⏭️ **Canción saltada:** \`${skippedSong.title || skippedSong.query}\`\n▶️ *Cargando siguiente tema (${queue.songs.length} restantes)...*`);
@@ -7672,7 +7870,7 @@ client.on('messageCreate', async (message) => {
                 const skipEndEmbed = new EmbedBuilder()
                     .setColor(0x95A5A6) // Gris
                     .setAuthor({
-                        name: 'REPRODUCTOR DE MÚSICA • SPAIN RP',
+                        name: 'REPRODUCTOR DE MÚSICA • VALLECAS RP',
                         iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                     })
                     .setDescription(`⏭️ **Canción saltada:** \`${skippedSong.title || skippedSong.query}\`\n⏹️ *No quedan más canciones en la cola.*`);
@@ -7698,7 +7896,7 @@ client.on('messageCreate', async (message) => {
                 const emptyEmbed = new EmbedBuilder()
                     .setColor(0x95A5A6)
                     .setAuthor({
-                        name: 'COLA DE MÚSICA • SPAIN RP',
+                        name: 'COLA DE MÚSICA • VALLECAS RP',
                         iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                     })
                     .setDescription('📭 **La cola de música está vacía.** Usa `!play <canción>` para añadir temas.');
@@ -7722,7 +7920,7 @@ client.on('messageCreate', async (message) => {
             const queueEmbed = new EmbedBuilder()
                 .setColor(0x8A2BE2) // Violeta
                 .setAuthor({
-                    name: 'COLA DE REPRODUCCIÓN • SPAIN RP',
+                    name: 'COLA DE REPRODUCCIÓN • VALLECAS RP',
                     iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                 })
                 .setTitle(`🎶 Lista de Espera (${queue.songs.length} temas)`)
@@ -7772,7 +7970,7 @@ client.on('messageCreate', async (message) => {
                 const leaveEmbed = new EmbedBuilder()
                     .setColor(0xE74C3C)
                     .setAuthor({
-                        name: 'SISTEMA DE VOZ • SPAIN RP',
+                        name: 'SISTEMA DE VOZ • VALLECAS RP',
                         iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                     })
                     .setDescription('👋 **Sesión de voz y música finalizada. Bot desconectado.**');
@@ -7788,7 +7986,7 @@ client.on('messageCreate', async (message) => {
                 const interviewCancelEmbed = new EmbedBuilder()
                     .setColor(0xE74C3C)
                     .setAuthor({
-                        name: 'SISTEMA DE VOZ • SPAIN RP',
+                        name: 'SISTEMA DE VOZ • VALLECAS RP',
                         iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                     })
                     .setDescription('🛑 **Entrevista de voz cancelada y bot desconectado del canal.**');
@@ -7801,7 +7999,7 @@ client.on('messageCreate', async (message) => {
                     const discEmbed = new EmbedBuilder()
                         .setColor(0xE74C3C)
                         .setAuthor({
-                            name: 'SISTEMA DE VOZ • SPAIN RP',
+                            name: 'SISTEMA DE VOZ • VALLECAS RP',
                             iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                         })
                         .setDescription('👋 **Bot desconectado del canal de voz.**');
@@ -7877,7 +8075,7 @@ client.on('messageCreate', async (message) => {
             const successEmbed = new EmbedBuilder()
                 .setColor(0x9146FF) // Morado Twitch
                 .setAuthor({
-                    name: 'SISTEMA DE STREAMERS | TWITCH • SPAIN RP 🇪🇸',
+                    name: 'SISTEMA DE STREAMERS | TWITCH • VALLECAS RP 🇪🇸',
                     iconURL: client.user.displayAvatarURL()
                 })
                 .setTitle('🟣 ¡Canal de Twitch Registrado con Éxito!')
@@ -7890,7 +8088,7 @@ client.on('messageCreate', async (message) => {
                     (customTitle ? `🏷️ **Título por defecto:** *"${customTitle}"*\n` : '') +
                     `\n> 💡 *Al pulsar **"Notificar Twitch"** en el panel se publicará este canal.*`
                 )
-                .setFooter({ text: 'SPAIN RP • Creadores de Contenido Oficiales' })
+                .setFooter({ text: 'VALLECAS RP • Creadores de Contenido Oficiales' })
                 .setTimestamp();
 
             const successMsg = await message.channel.send({ embeds: [successEmbed] }).catch(() => null);
@@ -7928,7 +8126,7 @@ client.on('messageCreate', async (message) => {
             const successEmbed = new EmbedBuilder()
                 .setColor(0xFE2C55) // Rosa TikTok
                 .setAuthor({
-                    name: 'SISTEMA DE STREAMERS | TIKTOK • SPAIN RP 🇪🇸',
+                    name: 'SISTEMA DE STREAMERS | TIKTOK • VALLECAS RP 🇪🇸',
                     iconURL: client.user.displayAvatarURL()
                 })
                 .setTitle('🌸 ¡Canal de TikTok Registrado con Éxito!')
@@ -7941,7 +8139,7 @@ client.on('messageCreate', async (message) => {
                     (customTitle ? `🏷️ **Título por defecto:** *"${customTitle}"*\n` : '') +
                     `\n> 💡 *Al pulsar **"Notificar TikTok"** en el panel se publicará este canal.*`
                 )
-                .setFooter({ text: 'SPAIN RP • Creadores de Contenido Oficiales' })
+                .setFooter({ text: 'VALLECAS RP • Creadores de Contenido Oficiales' })
                 .setTimestamp();
 
             const successMsg = await message.channel.send({ embeds: [successEmbed] }).catch(() => null);
@@ -7979,7 +8177,7 @@ client.on('messageCreate', async (message) => {
             const successEmbed = new EmbedBuilder()
                 .setColor(0x53FC18) // Verde Kick
                 .setAuthor({
-                    name: 'SISTEMA DE STREAMERS | KICK • SPAIN RP 🇪🇸',
+                    name: 'SISTEMA DE STREAMERS | KICK • VALLECAS RP 🇪🇸',
                     iconURL: client.user.displayAvatarURL()
                 })
                 .setTitle('🟢 ¡Canal de Kick Registrado con Éxito!')
@@ -7992,7 +8190,7 @@ client.on('messageCreate', async (message) => {
                     (customTitle ? `🏷️ **Título por defecto:** *"${customTitle}"*\n` : '') +
                     `\n> 💡 *Al pulsar **"Notificar Kick"** en el panel se publicará este canal.*`
                 )
-                .setFooter({ text: 'SPAIN RP • Creadores de Contenido Oficiales' })
+                .setFooter({ text: 'VALLECAS RP • Creadores de Contenido Oficiales' })
                 .setTimestamp();
 
             const successMsg = await message.channel.send({ embeds: [successEmbed] }).catch(() => null);
@@ -8100,9 +8298,9 @@ client.on('messageCreate', async (message) => {
 
             const listEmbed = new EmbedBuilder()
                 .setColor(0x9B59B6)
-                .setTitle('🟣 Base de Datos de Creadores y Streamers (SPAIN RP)')
+                .setTitle('🟣 Base de Datos de Creadores y Streamers (VALLECAS RP)')
                 .setDescription(desc)
-                .setFooter({ text: 'SPAIN RP • Usa !addtwitch, !addkick o !addtiktok' })
+                .setFooter({ text: 'VALLECAS RP • Usa !addtwitch, !addkick o !addtiktok' })
                 .setTimestamp();
 
             const listMsg = await message.channel.send({ embeds: [listEmbed] }).catch(() => null);
@@ -8157,7 +8355,7 @@ client.on('messageCreate', async (message) => {
                 .setColor(0xE74C3C)
                 .setTitle('🚨 Canal de Publicación de Sanciones Configurado')
                 .setDescription(`✅ Los expedientes de sanciones y actas disciplinarias se publicarán ahora en: <#${targetChannel.id}> (\`${targetChannel.id}\`)`)
-                .setFooter({ text: 'SPAIN RP • Configuración Oficial de Moderación' })
+                .setFooter({ text: 'VALLECAS RP • Configuración Oficial de Moderación' })
                 .setTimestamp();
 
             const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
@@ -8189,7 +8387,7 @@ client.on('messageCreate', async (message) => {
                 .setColor(0xE74C3C)
                 .setTitle('📋 Canal del Panel de Sanciones Configurado')
                 .setDescription(`✅ El canal asignado para el Panel interactivo de Sanciones es: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n💡 *Puedes enviar el panel allí escribiendo **\`!panel-sanciones\`**.*`)
-                .setFooter({ text: 'SPAIN RP • Configuración Oficial de Moderación' })
+                .setFooter({ text: 'VALLECAS RP • Configuración Oficial de Moderación' })
                 .setTimestamp();
 
             const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
@@ -8259,7 +8457,7 @@ client.on('messageCreate', async (message) => {
                 .setColor(0x00E5FF)
                 .setTitle('🎉 Canal Principal de Eventos Configurado')
                 .setDescription(`✅ Los anuncios oficiales de eventos se publicarán ahora en el **Canal 1**: <#${targetChannel.id}> (\`${targetChannel.id}\`)`)
-                .setFooter({ text: 'SPAIN RP • Configuración Oficial de Eventos' })
+                .setFooter({ text: 'VALLECAS RP • Configuración Oficial de Eventos' })
                 .setTimestamp();
 
             const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
@@ -8291,7 +8489,7 @@ client.on('messageCreate', async (message) => {
                 .setColor(0x00E5FF)
                 .setTitle('🎉 Segundo Canal de Eventos Configurado (Dual-Channel)')
                 .setDescription(`✅ Los anuncios de eventos se enviarán **también** al **Canal 2**: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n*(Ahora cada evento se publicará a la vez en ambos canales).*`)
-                .setFooter({ text: 'SPAIN RP • Publicación Simultánea de Eventos' })
+                .setFooter({ text: 'VALLECAS RP • Publicación Simultánea de Eventos' })
                 .setTimestamp();
 
             const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
@@ -8323,7 +8521,7 @@ client.on('messageCreate', async (message) => {
                 .setColor(0x00E5FF)
                 .setTitle('📋 Canal del Panel de Eventos Configurado')
                 .setDescription(`✅ El canal asignado para el Panel interactivo de Eventos es: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n💡 *Puedes enviar el panel allí escribiendo **\`!panel-eventos\`**.*`)
-                .setFooter({ text: 'SPAIN RP • Configuración Oficial de Eventos' })
+                .setFooter({ text: 'VALLECAS RP • Configuración Oficial de Eventos' })
                 .setTimestamp();
 
             const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
@@ -8390,7 +8588,7 @@ client.on('messageCreate', async (message) => {
                 .setColor(0xE74C3C)
                 .setTitle('👋 Canal de Bienvenidas Configurado')
                 .setDescription(`✅ Los mensajes de bienvenida con contenedor y banner se publicarán en: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n💡 *Puedes probar cómo queda escribiendo **\`!test-bienvenida\`**.*`)
-                .setFooter({ text: 'SPAIN RP • Sistema Oficial de Bienvenidas' })
+                .setFooter({ text: 'VALLECAS RP • Sistema Oficial de Bienvenidas' })
                 .setTimestamp();
 
             const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
@@ -8759,7 +8957,7 @@ client.on('interactionCreate', async (interaction) => {
         const staffGuideEmbed = new EmbedBuilder()
             .setColor(0xF1C40F) // Amarillo dorado
             .setAuthor({
-                name: 'SISTEMA DE PLANTILLAS • SPAIN RP',
+                name: 'SISTEMA DE PLANTILLAS • VALLECAS RP',
                 iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
             })
             .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
@@ -8772,7 +8970,7 @@ client.on('interactionCreate', async (interaction) => {
                 `> 2️⃣ Escribe en este chat: \`!enviar <#canal_ticket o ID>\`\n\n` +
                 `⏱️ *Esta sesión expirará en **30 segundos** y se cerrará automáticamente para mantener el panel limpio.*`
             )
-            .setFooter({ text: 'SPAIN RP • Gestión de Postulaciones' })
+            .setFooter({ text: 'VALLECAS RP • Gestión de Postulaciones' })
             .setTimestamp();
 
         // Actualizar el mensaje efímero con el contenedor decorado
@@ -8987,7 +9185,7 @@ client.on('interactionCreate', async (interaction) => {
         const options = [];
         for (const sId of staffIds) {
             let label = `Staff (${sId})`;
-            let description = 'Equipo de Staff • SPAIN RP';
+            let description = 'Equipo de Staff • VALLECAS RP';
             let member = interaction.guild?.members?.cache?.get(sId);
             if (!member && interaction.guild) {
                 member = await interaction.guild.members.fetch(sId).catch(() => null);
@@ -9195,9 +9393,9 @@ client.on('interactionCreate', async (interaction) => {
 
         const topEmbed = new EmbedBuilder()
             .setColor(0xF1C40F)
-            .setTitle('🏆 Ranking de Atención de Staff • SPAIN RP')
+            .setTitle('🏆 Ranking de Atención de Staff • VALLECAS RP')
             .setDescription(desc)
-            .setFooter({ text: 'SPAIN RP • Calidad de Soporte' })
+            .setFooter({ text: 'VALLECAS RP • Calidad de Soporte' })
             .setTimestamp();
 
         return interaction.reply({ embeds: [topEmbed], ephemeral: true });
@@ -9580,7 +9778,7 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
         }
 
         const streamUrl = streamingActivity.url || `https://twitch.tv/${streamingActivity.name || ''}`;
-        const streamTitle = streamingActivity.details || streamingActivity.name || 'Roleplay en directo en SPAIN RP \uD83C\uDDEA\uD83C\uDDF8';
+        const streamTitle = streamingActivity.details || streamingActivity.name || 'Roleplay en directo en VALLECAS RP \uD83C\uDDEA\uD83C\uDDF8';
 
         // Detectar plataforma
         let platform = 'Twitch';
