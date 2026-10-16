@@ -53,6 +53,18 @@ process.on('uncaughtException', (err, origin) => {
     console.error('🔥 [EXCEPCIÓN CRÍTICA / UNCAUGHT EXCEPTION]:', err);
 });
 
+// Helper para obtener la ruta del logo oficial (soporta tanto logo.png como Vallecas RP)
+function getLogoPath() {
+    const candidates = [
+        path.join(__dirname, 'assets', 'Vallecas RP_ Legado y Poder Neon.png'),
+        path.join(__dirname, 'assets', 'logo.png')
+    ];
+    for (const c of candidates) {
+        if (fs.existsSync(c)) return c;
+    }
+    return path.join(__dirname, 'assets', 'logo.png');
+}
+
 // Función para purgar archivos temporales de audio sobrantes
 function purgeTempAudioFiles() {
     try {
@@ -1172,7 +1184,7 @@ function getNextRestartString() {
 
 // Función para construir el Embed de Estado del Servidor (Formato idéntico a txAdmin con Logo)
 function buildStatusEmbed(state) {
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const isOnline = state.online;
 
     if (isOnline && !serverOnlineSince) {
@@ -1252,7 +1264,7 @@ async function updateChannelStatusPanel() {
         const row = buildStatusActionRow();
         const files = [];
 
-        const logoPath = path.join(__dirname, 'assets', 'logo.png');
+        const logoPath = getLogoPath();
         if (fs.existsSync(logoPath)) {
             files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
         }
@@ -1283,7 +1295,7 @@ async function updateChannelStatusPanel() {
 
 // Función para construir el Embed del Panel de Streamers (con Logo y Banner oficial)
 function buildStreamPanelEmbed() {
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const imgPanelPath = path.join(__dirname, 'assets', 'panel_directos.png');
 
     const canalStreamers = `<#${botConfig.CHANNEL_STREAMERS_ID || '1517530849032016006'}>`;
@@ -1363,7 +1375,7 @@ async function ensureStreamPanel() {
         const row = buildStreamPanelRow();
         const files = [];
 
-        const logoPath = path.join(__dirname, 'assets', 'logo.png');
+        const logoPath = getLogoPath();
         const imgPanelPath = path.join(__dirname, 'assets', 'panel_directos.png');
         if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
         if (fs.existsSync(imgPanelPath)) files.push(new AttachmentBuilder(imgPanelPath, { name: 'panel_directos.png' }));
@@ -2603,7 +2615,7 @@ async function playNextInQueue(guildId) {
                 queue.lastNowPlayingMsg = null;
             }
 
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const files = [];
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
@@ -2639,7 +2651,7 @@ async function playNextInQueue(guildId) {
     } else {
         console.error(`❌ [FALLO REPRODUCCIÓN]: No se pudo reproducir "${currentSong.query}". Mensaje: ${res?.message}`);
         if (queue.textChannel) {
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const files = [];
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
@@ -2669,7 +2681,7 @@ async function updateNowPlayingEmbed(guildId) {
     const meta = currentSong.meta || { title: currentSong.query, duration: 'N/A', uploader: 'YouTube' };
     const remainingCount = Math.max(0, queue.songs.length - 1);
 
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
 
     const musicEmbed = new EmbedBuilder()
         .setColor(0x8A2BE2) // Morado / Violeta Eléctrico Premium
@@ -3122,7 +3134,7 @@ async function sendApprovedNotification({ userMention, staffName = 'Equipo de St
 
     const imgPngPath = path.join(__dirname, 'assets', 'aprobado.png');
     const imgGifPath = path.join(__dirname, 'assets', 'aprobado.gif');
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const files = [];
 
     if (fs.existsSync(logoPath)) {
@@ -3224,7 +3236,7 @@ async function sendDeniedNotification({ userMention, staffName = 'Equipo de Staf
 
     const imgPngPath = path.join(__dirname, 'assets', 'denegado.png');
     const imgGifPath = path.join(__dirname, 'assets', 'denegado.gif');
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const files = [];
 
     if (fs.existsSync(logoPath)) {
@@ -3294,7 +3306,7 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
         return null;
     }
 
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const imgDirectoPath = path.join(__dirname, 'assets', 'directo.png');
     const imgTiktokPath = path.join(__dirname, 'assets', 'tiktok.png');
     const imgKickPath = path.join(__dirname, 'assets', 'kick.png');
@@ -3416,7 +3428,7 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
 // CONSTRUCTORES: SISTEMA DE BIENVENIDAS OFICIALES (VALLECAS RP)
 // ==========================================
 function buildWelcomeEmbed(member, guild) {
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const bannerPath = path.join(__dirname, 'assets', 'banner_bienvenida.png');
     const files = [];
 
@@ -3530,7 +3542,7 @@ function buildStaffTopRankingEmbed() {
     // Ordenar: mayor promedio primero, y a igualdad de promedio el que más votos tenga
     staffList.sort((a, b) => (b.average - a.average) || (b.totalRatings - a.totalRatings));
 
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const topsBannerPath = path.join(__dirname, 'assets', 'panel_tops.png');
     const files = [];
     if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
@@ -3642,7 +3654,7 @@ async function updateStaffTopRankingPanel() {
 }
 
 function buildStaffRatingPanelEmbed() {
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const panelImgPath = path.join(__dirname, 'assets', 'panel_valoracion.png');
 
     const canalPublicacion = botConfig.CHANNEL_VALORACIONES_ID ? `<#${botConfig.CHANNEL_VALORACIONES_ID}>` : '`No configurado`';
@@ -3707,7 +3719,7 @@ function buildStaffRatingCardEmbed({ userMention, userAvatar, staffMention, staf
         badgeText = '🟡 ATENCIÓN CORRECTA';
     }
 
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const cardImgPath = path.join(__dirname, 'assets', 'valoracion_card.png');
     const panelImgPath = path.join(__dirname, 'assets', 'panel_valoracion.png');
     const files = [];
@@ -3775,7 +3787,7 @@ function getPlantillasData() {
 }
 
 function buildPlantillasPanelEmbed() {
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const panelImgPath = path.join(__dirname, 'assets', 'panel_postulaciones.png');
 
     const embed = new EmbedBuilder()
@@ -3836,7 +3848,7 @@ function buildPlantillaCardEmbed({ plantillaKey, staffId, staffMention, isTicket
         contenido: ''
     };
 
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const panelImgPath = path.join(__dirname, 'assets', 'panel_postulaciones.png');
     const files = [];
 
@@ -3942,7 +3954,7 @@ function buildSubmittedPostulacionEmbed({ member, text, attachments = [] }) {
         return null;
     }
 
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const bannerRecibidaPath = path.join(__dirname, 'assets', 'postulacion_recibida.png');
     const files = [];
     if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
@@ -4203,7 +4215,7 @@ async function saveSancionRecord(sancionObj) {
 }
 
 function buildSancionesPanelEmbed() {
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const bannerPath = path.join(__dirname, 'assets', 'panel_sanciones.png');
     const embed = new EmbedBuilder()
         .setColor(0xE74C3C) // Rojo Moderación / Sanciones
@@ -4246,7 +4258,7 @@ function buildSancionesPanelRow() {
 }
 
 function buildSancionCardEmbed({ id, reporterId, reporterTag, targetId, targetTag, reason, punishment, involvedStaff, imageUrl, imageAttachment, mediaFiles = [], videoUrl = null }) {
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const files = [];
     if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
@@ -4374,7 +4386,7 @@ async function saveEventoRecord(eventoObj) {
 }
 
 function buildEventosPanelEmbed() {
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const bannerPath = path.join(__dirname, 'assets', 'panel_eventos.png');
     const embed = new EmbedBuilder()
         .setColor(0xF1C40F) // Amarillo Oro / Dorado vibrante
@@ -4417,7 +4429,7 @@ function buildEventosPanelRow() {
 }
 
 function buildEventoCardEmbed({ id, reporterId, reporterTag, title, description, hora, lugar, organiza, ping, imageUrl, imageAttachment, mediaFiles = [] }) {
-    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+    const logoPath = getLogoPath();
     const files = [];
     if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
@@ -4739,7 +4751,7 @@ async function handleWhitelistMessage(message, source = 'DESCONOCIDO') {
 
             let textToAudit = sections.length > 0 ? sections.join('\n\n') : fullText;
 
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const files = [];
             let iconURL = client.user.displayAvatarURL();
             if (fs.existsSync(logoPath)) {
@@ -5245,7 +5257,7 @@ client.on('messageCreate', async (message) => {
                 });
 
                 const isOwner = message.author.id === OWNER_ID;
-                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const logoPath = getLogoPath();
                 const hasLogo = fs.existsSync(logoPath);
                 console.log(`   -> 🖼️ Archivo logo.png existe: ${hasLogo}`);
 
@@ -5517,7 +5529,7 @@ client.on('messageCreate', async (message) => {
                 const row = buildStatusActionRow();
                 const files = [];
 
-                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const logoPath = getLogoPath();
                 if (fs.existsSync(logoPath)) {
                     files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
                 }
@@ -5543,7 +5555,7 @@ client.on('messageCreate', async (message) => {
                 const row = buildStatusActionRow();
                 const files = [];
 
-                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const logoPath = getLogoPath();
                 if (fs.existsSync(logoPath)) {
                     files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
                 }
@@ -5710,7 +5722,7 @@ client.on('messageCreate', async (message) => {
                 const row = buildStaffRatingPanelRow();
                 const files = [];
 
-                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const logoPath = getLogoPath();
                 const panelImgPath = path.join(__dirname, 'assets', 'panel_valoracion.png');
                 if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
                 if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_valoracion.png' }));
@@ -5746,7 +5758,7 @@ client.on('messageCreate', async (message) => {
                 const row = buildPlantillasPanelRow();
                 const files = [];
 
-                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const logoPath = getLogoPath();
                 const panelImgPath = path.join(__dirname, 'assets', 'panel_postulaciones.png');
                 if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
                 if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_postulaciones.png' }));
@@ -5876,7 +5888,7 @@ client.on('messageCreate', async (message) => {
                 const row = buildSancionesPanelRow();
                 const files = [];
 
-                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const logoPath = getLogoPath();
                 const panelImgPath = path.join(__dirname, 'assets', 'panel_sanciones.png');
                 if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
                 if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_sanciones.png' }));
@@ -5999,7 +6011,7 @@ client.on('messageCreate', async (message) => {
                 const row = buildEventosPanelRow();
                 const files = [];
 
-                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const logoPath = getLogoPath();
                 const panelImgPath = path.join(__dirname, 'assets', 'panel_eventos.png');
                 if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
                 if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_eventos.png' }));
@@ -6251,7 +6263,7 @@ client.on('messageCreate', async (message) => {
                 // Borrar inmediatamente el comando del chat
                 await msg.delete().catch(() => { });
 
-                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const logoPath = getLogoPath();
                 const files = [];
                 let iconURL = client.user.displayAvatarURL();
                 if (fs.existsSync(logoPath)) {
@@ -6281,7 +6293,7 @@ client.on('messageCreate', async (message) => {
 
         // Función para construir el Embed y Archivos del Panel de Control de Admin
         function buildAdminEmbed(authorId) {
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const files = [];
             if (fs.existsSync(logoPath)) {
                 files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
@@ -6536,14 +6548,58 @@ client.on('messageCreate', async (message) => {
 
         // 6. COMANDO PARA REINICIAR / REENVIAR PANELES (!reiniciar-paneles)
         if (['!reiniciar-paneles', '!recargar-paneles'].includes(command)) {
-            if (message.author.id !== OWNER_ID) {
+            const isOwner = message.author.id === OWNER_ID;
+            const isAdmin = message.member && message.member.permissions.has('Administrator');
+            if (!isOwner && !isAdmin) {
                 return sendDeniedAccessMessage(message);
             }
 
-            await message.reply({ content: '🔄 **Reenviando y actualizando paneles automáticos...**' });
+            const pMsg = await message.reply({ content: '🔄 **Reenviando y actualizando todos los paneles automáticos con el nuevo logo de VALLECAS RP...**' }).catch(() => null);
+
+            // 1. Panel de Directos / Streamers
             if (botConfig.CHANNEL_STREAM_PANEL_ID) await ensureStreamPanel().catch(() => { });
+
+            // 2. Panel de Estado FiveM
             if (botConfig.CHANNEL_STATUS_ID) await updateChannelStatusPanel().catch(() => { });
+
+            // 3. Panel de Tops Staff
             await updateStaffTopRankingPanel().catch(() => { });
+
+            // 4. Panel de Valoraciones Staff (si está configurado)
+            if (botConfig.CHANNEL_VALORACION_PANEL_ID) {
+                try {
+                    const vChannel = message.guild.channels.cache.get(botConfig.CHANNEL_VALORACION_PANEL_ID) || await client.channels.fetch(botConfig.CHANNEL_VALORACION_PANEL_ID).catch(() => null);
+                    if (vChannel) {
+                        const embed = buildStaffRatingPanelEmbed();
+                        const row = buildStaffRatingPanelRow();
+                        const files = [];
+                        const logoPath = getLogoPath();
+                        const panelImgPath = path.join(__dirname, 'assets', 'panel_valoracion.png');
+                        if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+                        if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_valoracion.png' }));
+                        await vChannel.send({ embeds: [embed], components: [row], files }).catch(() => { });
+                    }
+                } catch (e) { }
+            }
+
+            // 5. Panel de Eventos (si está configurado)
+            if (botConfig.CHANNEL_EVENTOS_PANEL_ID) {
+                try {
+                    const eChannel = message.guild.channels.cache.get(botConfig.CHANNEL_EVENTOS_PANEL_ID) || await client.channels.fetch(botConfig.CHANNEL_EVENTOS_PANEL_ID).catch(() => null);
+                    if (eChannel) {
+                        const embed = buildEventosPanelEmbed();
+                        const row = buildEventosPanelRow();
+                        const files = [];
+                        const logoPath = getLogoPath();
+                        const panelImgPath = path.join(__dirname, 'assets', 'panel_eventos.png');
+                        if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+                        if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_eventos.png' }));
+                        await eChannel.send({ embeds: [embed], components: [row], files }).catch(() => { });
+                    }
+                } catch (e) { }
+            }
+
+            if (pMsg) await pMsg.edit({ content: '✅ **¡Todos los paneles han sido reenviados y actualizados con éxito con el logo de VALLECAS RP!**' }).catch(() => { });
             return;
         }
 
@@ -6551,13 +6607,17 @@ client.on('messageCreate', async (message) => {
         // Busca todos los mensajes enviados por el bot en los canales de texto accesibles
         // y reemplaza cualquier mención de SPAIN RP por VALLECAS RP (omitiendo mensajes de bienvenida)
         if (['!reiniciar-mensajes', '!editarmensajes', '!editar-mensajes'].includes(command)) {
-            if (message.author.id !== OWNER_ID) {
+            const isOwner = message.author.id === OWNER_ID;
+            const isAdmin = message.member && message.member.permissions.has('Administrator');
+            if (!isOwner && !isAdmin) {
                 return sendDeniedAccessMessage(message);
             }
 
             const statusMsg = await message.reply({
-                content: '⏳ **Iniciando barrido para editar mensajes enviados por el bot...**\n*Buscando y actualizando cualquier referencia a SPAIN RP por VALLECAS RP (omitiendo bienvenidas).*'
+                content: '⏳ **Iniciando barrido para editar mensajes enviados por el bot...**\n*Buscando y actualizando cualquier referencia a SPAIN RP por VALLECAS RP y renovando el logo.*'
             }).catch(() => null);
+
+            console.log(`🧹 [REINICIAR MENSAJES] Iniciado por ${message.author.tag} (${message.author.id})`);
 
             let totalEdited = 0;
             let scannedChannels = 0;
@@ -6602,13 +6662,14 @@ client.on('messageCreate', async (message) => {
             }
 
             try {
-                const textChannels = message.guild.channels.cache.filter(ch =>
+                const textChannels = Array.from(message.guild.channels.cache.filter(ch =>
                     ch.isTextBased() &&
                     ch.viewable &&
                     ch.permissionsFor(message.guild.members.me)?.has(['ViewChannel', 'ReadMessageHistory'])
-                );
+                ).values());
 
-                for (const [chId, channel] of textChannels) {
+                for (const channel of textChannels) {
+                    const chId = channel.id;
                     // Omitir por completo el canal de bienvenidas si está configurado
                     if (botConfig.CHANNEL_BIENVENIDAS_ID && chId === botConfig.CHANNEL_BIENVENIDAS_ID) {
                         continue;
@@ -6693,6 +6754,12 @@ client.on('messageCreate', async (message) => {
                                         }
                                     }
 
+                                    // Si el embed tiene thumbnail o avatar de logo.png, marcarlo para actualizar siempre con la nueva imagen
+                                    const strEmbed = JSON.stringify(embedData);
+                                    if (strEmbed.includes('logo.png') || strEmbed.includes('attachment://')) {
+                                        embedChanged = true;
+                                    }
+
                                     if (embedChanged) {
                                         needsEdit = true;
                                         newEmbeds.push(EmbedBuilder.from(embedData));
@@ -6704,18 +6771,18 @@ client.on('messageCreate', async (message) => {
 
                             if (needsEdit) {
                                 try {
-                                    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                                    const logoPath = getLogoPath();
                                     const editPayload = {
                                         content: newContent,
                                         embeds: newEmbeds.length > 0 ? newEmbeds : undefined
                                     };
-                                    // Si tiene embebidos con attachment://logo.png y existe el logo en assets, adjuntarlo
+                                    // Adjuntar el archivo nuevo logo.png si los embeds lo usan
                                     if (fs.existsSync(logoPath) && newEmbeds.some(e => JSON.stringify(e.data || e).includes('logo.png'))) {
                                         editPayload.files = [new AttachmentBuilder(logoPath, { name: 'logo.png' })];
                                     }
                                     await msg.edit(editPayload);
                                     totalEdited++;
-                                    // Pequeña pausa para no saturar rate limit de Discord
+                                    // Pequeña pausa para evitar rate limit
                                     await new Promise(r => setTimeout(r, 600));
                                 } catch (editErr) {
                                     console.error(`⚠️ Error al editar mensaje ${msg.id} en #${channel.name}:`, editErr.message);
@@ -6733,7 +6800,7 @@ client.on('messageCreate', async (message) => {
                     `📊 **Resumen:**\n` +
                     `> • 📁 Canales revisados: \`${scannedChannels}\`\n` +
                     `> • 🤖 Mensajes del bot inspeccionados: \`${totalBotMessages}\`\n` +
-                    `> • ✏️ Mensajes actualizados a **VALLECAS RP**: \`${totalEdited}\`\n` +
+                    `> • ✏️ Mensajes y paneles actualizados con nuevo logo y texto: \`${totalEdited}\`\n` +
                     `> • 🚫 Las bienvenidas han sido conservadas intactas.`;
 
                 if (statusMsg) {
@@ -6782,7 +6849,7 @@ client.on('messageCreate', async (message) => {
             if (analysis.aiScore >= 75) embedColor = 0xE74C3C; // Rojo (IA)
             else if (analysis.aiScore >= 40) embedColor = 0xF1C40F; // Amarillo (Duda)
 
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const files = [];
             let iconURL = client.user.displayAvatarURL();
             if (fs.existsSync(logoPath)) {
@@ -6838,7 +6905,7 @@ client.on('messageCreate', async (message) => {
             if (analysis.aiScore >= 75) embedColor = 0xE74C3C; // Rojo (IA)
             else if (analysis.aiScore >= 40) embedColor = 0xF1C40F; // Amarillo (Duda)
 
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const files = [];
             let iconURL = client.user.displayAvatarURL();
             if (fs.existsSync(logoPath)) {
@@ -6911,7 +6978,7 @@ client.on('messageCreate', async (message) => {
             if (analysis.aiScore >= 75) embedColor = 0xE74C3C; // Rojo
             else if (analysis.aiScore >= 40) embedColor = 0xF1C40F; // Amarillo
 
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const files = [];
             let iconURL = client.user.displayAvatarURL();
             if (fs.existsSync(logoPath)) {
@@ -7178,7 +7245,7 @@ client.on('messageCreate', async (message) => {
 
                 receiver.speaking.on('start', handleUserSpeaking);
 
-                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const logoPath = getLogoPath();
                 const files = [];
                 if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
@@ -7241,7 +7308,7 @@ client.on('messageCreate', async (message) => {
             const evaluation = evaluateVoiceInterviewContent(session.transcripts);
             activeVoiceInterviews.delete(message.guild.id);
 
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const files = [];
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
@@ -7489,7 +7556,7 @@ client.on('messageCreate', async (message) => {
                                             // Actualizar el contenedor en reproducción con el nuevo conteo de canciones restantes
                                             await updateNowPlayingEmbed(message.guild.id);
 
-                                            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                                            const logoPath = getLogoPath();
                                             const files = [];
                                             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
@@ -7542,7 +7609,7 @@ client.on('messageCreate', async (message) => {
 
                 receiver.speaking.on('start', handleVoiceChat);
 
-                const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                const logoPath = getLogoPath();
                 const files = [];
                 if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
@@ -7606,7 +7673,7 @@ client.on('messageCreate', async (message) => {
                 }).catch((err) => console.log('⚠️ [ERROR BARRIDO]:', err.message));
             } catch (e) { }
 
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const files = [];
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
@@ -7805,7 +7872,7 @@ client.on('messageCreate', async (message) => {
                 chatSession.player.stop();
             }
 
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const files = [];
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
@@ -7831,7 +7898,7 @@ client.on('messageCreate', async (message) => {
             message.delete().then(() => console.log('🗑️ [BORRADO EXITOSO] Mensaje de !skip eliminado.')).catch(() => { });
             setTimeout(() => message.delete().catch(() => { }), 800);
 
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const files = [];
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
@@ -7903,7 +7970,7 @@ client.on('messageCreate', async (message) => {
         if (['!queue', '!cola', '!playlist'].includes(command)) {
             await message.delete().catch(() => { });
 
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const files = [];
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
@@ -7955,7 +8022,7 @@ client.on('messageCreate', async (message) => {
         if (['!cancelar-entrevista', '!salir-voz', '!kick-voz', '!callar', '!desconectar-voz', '!leave'].includes(command)) {
             await message.delete().catch(() => { });
 
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const files = [];
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
@@ -8043,7 +8110,7 @@ client.on('messageCreate', async (message) => {
             const embed = buildStreamPanelEmbed();
             const row = buildStreamPanelRow();
             const files = [];
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const imgPanelPath = path.join(__dirname, 'assets', 'panel_directos.png');
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
             if (fs.existsSync(imgPanelPath)) files.push(new AttachmentBuilder(imgPanelPath, { name: 'panel_directos.png' }));
@@ -8430,7 +8497,7 @@ client.on('messageCreate', async (message) => {
 
             const embed = buildSancionesPanelEmbed();
             const row = buildSancionesPanelRow();
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const bannerPath = path.join(__dirname, 'assets', 'panel_sanciones.png');
             const files = [];
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
@@ -8564,7 +8631,7 @@ client.on('messageCreate', async (message) => {
 
             const embed = buildEventosPanelEmbed();
             const row = buildEventosPanelRow();
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const bannerPath = path.join(__dirname, 'assets', 'panel_eventos.png');
             const files = [];
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
@@ -8643,7 +8710,7 @@ client.on('messageCreate', async (message) => {
 
             const embed = buildPlantillasPanelEmbed();
             const row = buildPlantillasPanelRow();
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const bannerPath = path.join(__dirname, 'assets', 'panel_postulaciones.png');
             const files = [];
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
@@ -8872,7 +8939,7 @@ client.on('interactionCreate', async (interaction) => {
             const embed = buildStreamPanelEmbed();
             const row = buildStreamPanelRow();
             const files = [];
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             const imgPanelPath = path.join(__dirname, 'assets', 'panel_directos.png');
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
             if (fs.existsSync(imgPanelPath)) files.push(new AttachmentBuilder(imgPanelPath, { name: 'panel_directos.png' }));
@@ -8890,7 +8957,7 @@ client.on('interactionCreate', async (interaction) => {
             const embed = buildStatusEmbed(state);
             const row = buildStatusActionRow();
             const files = [];
-            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const logoPath = getLogoPath();
             if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
             return interaction.reply({ embeds: [embed], components: [row], files, ephemeral: true });
@@ -8966,7 +9033,7 @@ client.on('interactionCreate', async (interaction) => {
         lastGeneratedPlantillaByStaff.set(interaction.user.id, plantillaSession);
 
         // Crear un Embed estético tipo contenedor para el Staff
-        const logoPath = path.join(__dirname, 'assets', 'logo.png');
+        const logoPath = getLogoPath();
         const files = [];
         if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
 
