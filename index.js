@@ -6704,10 +6704,16 @@ client.on('messageCreate', async (message) => {
 
                             if (needsEdit) {
                                 try {
-                                    await msg.edit({
+                                    const logoPath = path.join(__dirname, 'assets', 'logo.png');
+                                    const editPayload = {
                                         content: newContent,
                                         embeds: newEmbeds.length > 0 ? newEmbeds : undefined
-                                    });
+                                    };
+                                    // Si tiene embebidos con attachment://logo.png y existe el logo en assets, adjuntarlo
+                                    if (fs.existsSync(logoPath) && newEmbeds.some(e => JSON.stringify(e.data || e).includes('logo.png'))) {
+                                        editPayload.files = [new AttachmentBuilder(logoPath, { name: 'logo.png' })];
+                                    }
+                                    await msg.edit(editPayload);
                                     totalEdited++;
                                     // Pequeña pausa para no saturar rate limit de Discord
                                     await new Promise(r => setTimeout(r, 600));
