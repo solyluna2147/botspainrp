@@ -2571,36 +2571,88 @@ function playTtsResponseInVoice(text, connection, player) {
             const tempFile = path.join(__dirname, `tts_${Date.now()}_${Math.floor(Math.random() * 1000)}.mp3`);
             let fileGenerated = false;
 
-            // 1. Generación mediante la CLI oficial de edge-tts (es-ES-AlvaroNeural, Hombre Español, fluido +20% de velocidad)
-            const { spawn } = require('child_process');
-            const runEdgeTtsCli = (pythonCmd) => {
-                return new Promise((res) => {
-                    let errOutput = '';
-                    const proc = spawn(pythonCmd, [
-                        '-m', 'edge_tts',
-                        '--voice', 'es-ES-AlvaroNeural',
-                        '--rate', '+20%',
-                        '--pitch', '+0Hz',
-                        '--text', cleanText,
-                        '--write-media', tempFile
-                    ]);
-                    proc.stderr.on('data', (d) => { errOutput += d.toString(); });
-                    proc.on('close', (code) => {
-                        if (code !== 0 && errOutput) {
-                            console.warn(`⚠️ [EDGE-TTS CLI ${pythonCmd} SALIDA ERROR]:`, errOutput.substring(0, 200));
-                        }
-                        res(code === 0 && fs.existsSync(tempFile));
-                    });
-                    proc.on('error', (e) => {
-                        res(false);
-                    });
-                });
-            };
+            // 1. ELEVENLABS (Si se configura ELEVENLABS_API_KEY en variables de entorno)
+            const elevenKey = process.env.ELEVENLABS_API_KEY;
+            if (elevenKey && elevenKey.trim().length > 10) {
+                try {
+                    // Cache inteligente en disco: si ya explicó esta frase antes, no gasta créditos
+                    const crypto = require('crypto');
+                    const textHash = crypto.createHash('md5').update(cleanText).digest('hex');
+                    const cacheDir = path.join(__dirname, 'cache_audio');
+                    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+                    const cachedFilePath = path.join(cacheDir, `${textHash}.mp3`);
 
-            // Intentar con python3, luego python
-            fileGenerated = await runEdgeTtsCli('python3');
+                    if (fs.existsSync(cachedFilePath)) {
+                        fs.copyFileSync(cachedFilePath, tempFile);
+                        fileGenerated = true;
+                        console.log(`🔊 [VOZ ELEVENLABS CACHÉ GRATIS] Reutilizando audio guardado (0 créditos consumidos)`);
+                    } else {
+                        // ID de voz masculina en español o bilingüe de ElevenLabs
+                        const voiceId = process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB'; // Adam / Mateo
+                        const elevenRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'xi-api-key': elevenKey.trim()
+                            },
+                            body: JSON.stringify({
+                                text: cleanText,
+                                model_id: 'eleven_multilingual_v2',
+                                voice_settings: {
+                                    stability: 0.5,
+                                    similarity_boost: 0.75
+                                }
+                            })
+                        });
+
+                        if (elevenRes.ok) {
+                            const audioBuf = Buffer.from(await elevenRes.arrayBuffer());
+                            fs.writeFileSync(tempFile, audioBuf);
+                            fs.writeFileSync(cachedFilePath, audioBuf); // Guardar en caché para siempre
+                            fileGenerated = true;
+                            console.log(`🔊 [VOZ ELEVENLABS ÉXITO] Audio neuronal generado y guardado en caché (${audioBuf.length} bytes)`);
+                        } else {
+                            const errTxt = await elevenRes.text().catch(() => '');
+                            console.warn(`⚠️ [ELEVENLABS ERROR ${elevenRes.status}]: ${errTxt.substring(0, 150)}`);
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`⚠️ [ELEVENLABS ERROR]: ${e.message}`);
+                }
+            }
+
+            // 2. Generación mediante la CLI oficial de edge-tts (es-ES-AlvaroNeural, Hombre Español)
             if (!fileGenerated) {
-                fileGenerated = await runEdgeTtsCli('python');
+                const { spawn } = require('child_process');
+                const runEdgeTtsCli = (pythonCmd) => {
+                    return new Promise((res) => {
+                        let errOutput = '';
+                        const proc = spawn(pythonCmd, [
+                            '-m', 'edge_tts',
+                            '--voice', 'es-ES-AlvaroNeural',
+                            '--rate', '+20%',
+                            '--pitch', '+0Hz',
+                            '--text', cleanText,
+                            '--write-media', tempFile
+                        ]);
+                        proc.stderr.on('data', (d) => { errOutput += d.toString(); });
+                        proc.on('close', (code) => {
+                            if (code !== 0 && errOutput) {
+                                console.warn(`⚠️ [EDGE-TTS CLI ${pythonCmd} SALIDA ERROR]:`, errOutput.substring(0, 200));
+                            }
+                            res(code === 0 && fs.existsSync(tempFile));
+                        });
+                        proc.on('error', (e) => {
+                            res(false);
+                        });
+                    });
+                };
+
+                // Intentar con python3, luego python
+                fileGenerated = await runEdgeTtsCli('python3');
+                if (!fileGenerated) {
+                    fileGenerated = await runEdgeTtsCli('python');
+                }
             }
 
             if (fileGenerated && fs.existsSync(tempFile)) {
@@ -2626,7 +2678,7 @@ function playTtsResponseInVoice(text, connection, player) {
 
                 player.on(AudioPlayerStatus.Idle, onIdle);
                 player.play(resource);
-                console.log(`🔊 [VOZ NEURONAL ÁLVARO (HOMBRE)] Reproduciendo fluido (+20% vel): "${cleanText.substring(0, 60)}..."`);
+                console.log(`🔊 [VOZ NEURONAL REPRODUCIENDO]: "${cleanText.substring(0, 60)}..."`);
 
                 setTimeout(() => {
                     if (!resolved) {
