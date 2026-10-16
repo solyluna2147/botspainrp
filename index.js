@@ -2886,6 +2886,16 @@ client.once(Events.ClientReady, async () => {
             }
         };
 
+        // Cambiar apodo del bot a VALLECAS RP en todos los servidores
+        try {
+            for (const guild of client.guilds.cache.values()) {
+                const me = guild.members.me;
+                if (me && me.permissions.has('ChangeNickname')) {
+                    await me.setNickname('VALLECAS RP').catch(() => { });
+                }
+            }
+        } catch (nickErr) { }
+
         // 1. Actualización inicial de presencia (en segundo plano)
         updateBotPresence().catch(() => { });
 

@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: bot-spainrp
+    name: bot-vallecasrp
     runtime: node
     plan: free
     buildCommand: npm install
