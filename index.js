@@ -2129,36 +2129,41 @@ function pcmToWavBuffer(pcmBuffer, sampleRate = 48000, numChannels = 1, bitDepth
     return Buffer.concat([header, pcmBuffer]);
 }
 
-// Transcripción en streaming con Hugging Face Inference API (Modelo Whisper)
+// Transcripción de audio en streaming ultra-rápida (Groq Whisper, Gemini Flash o HuggingFace)
 async function transcribeAudioBufferWithHF(wavBuffer) {
-    const hfToken = process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
-    if (!hfToken) {
-        console.warn('⚠️ [HF WHISPER] No se ha configurado HUGGINGFACE_API_KEY en las variables de entorno de Render.');
-        return '';
-    }
     if (!wavBuffer || wavBuffer.length < 2000) return '';
 
-    // Modelos Whisper en Hugging Face (priorizando modelos abiertos y comunitarios sin bloqueo de cuota Pro)
-    const endpoints = [
-        'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo',
-        'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3',
-        'https://router.huggingface.co/hf-inference/models/openai/whisper-medium',
-        'https://router.huggingface.co/hf-inference/models/openai/whisper-base',
-        'https://router.huggingface.co/hf-inference/models/Systran/faster-whisper-large-v3'
-    ];
-
-    for (const url of endpoints) {
+    // 1. PRIORIDAD MÁXIMA: GROQ API (Whisper Large v3 Turbo, 100% Gratuito, ultra-rápido ~200ms)
+    const groqKey = process.env.GROQ_API_KEY;
+    if (groqKey && groqKey.trim().length > 5) {
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-            const res = await fetch(url, {
+            // Armar multipart/form-data manualmente para Groq
+            const boundary = '----WebKitFormBoundary' + Math.random().toString(36).substring(2);
+            const CRLF = '\r\n';
+            const preamble = Buffer.from(
+                `--${boundary}${CRLF}` +
+                `Content-Disposition: form-data; name="model"${CRLF}${CRLF}` +
+                `whisper-large-v3-turbo${CRLF}` +
+                `--${boundary}${CRLF}` +
+                `Content-Disposition: form-data; name="language"${CRLF}${CRLF}` +
+                `es${CRLF}` +
+                `--${boundary}${CRLF}` +
+                `Content-Disposition: form-data; name="file"; filename="audio.wav"${CRLF}` +
+                `Content-Type: audio/wav${CRLF}${CRLF}`
+            );
+            const postamble = Buffer.from(`${CRLF}--${boundary}--${CRLF}`);
+            const bodyBuffer = Buffer.concat([preamble, wavBuffer, postamble]);
+
+            const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${hfToken.trim()}`,
-                    'Content-Type': 'audio/wav'
+                    'Authorization': `Bearer ${groqKey.trim()}`,
+                    'Content-Type': `multipart/form-data; boundary=${boundary}`
                 },
-                body: wavBuffer,
+                body: bodyBuffer,
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
@@ -2167,17 +2172,98 @@ async function transcribeAudioBufferWithHF(wavBuffer) {
                 const data = await res.json();
                 const text = (data.text || '').trim();
                 if (text) {
-                    console.log(`🎙️ [HF WHISPER ÉXITO (${url.split('/').pop()})]: "${text}"`);
+                    console.log(`🎙️ [GROQ WHISPER ÉXITO]: "${text}"`);
                     return text;
                 }
             } else {
-                const errBody = await res.text().catch(() => '');
-                console.warn(`⚠️ [HF WHISPER HTTP ${res.status}] en ${url.split('/').pop()}: ${errBody.substring(0, 120)}`);
+                const errText = await res.text().catch(() => '');
+                console.warn(`⚠️ [GROQ WHISPER HTTP ${res.status}]: ${errText.substring(0, 150)}`);
             }
         } catch (e) {
-            console.warn(`⚠️ [HF WHISPER ERROR en ${url.split('/').pop()}]: ${e.message}`);
+            console.warn(`⚠️ [GROQ WHISPER ERROR]: ${e.message}`);
         }
     }
+
+    // 2. ALTERNATIVA: GOOGLE GEMINI FLASH (Entiende audio/wav directamente de forma gratuita)
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (geminiKey && geminiKey.trim().length > 5) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+            const base64Audio = wavBuffer.toString('base64');
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey.trim()}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [
+                            { text: 'Transcribe exactamente en español las palabras habladas en este audio sin agregar ningún comentario adicional:' },
+                            { inlineData: { mimeType: 'audio/wav', data: base64Audio } }
+                        ]
+                    }],
+                    generationConfig: { temperature: 0.1, maxOutputTokens: 120 }
+                }),
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            if (res.ok) {
+                const data = await res.json();
+                const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+                if (text) {
+                    console.log(`🎙️ [GEMINI FLASH AUDIO ÉXITO]: "${text}"`);
+                    return text;
+                }
+            }
+        } catch (e) {
+            console.warn(`⚠️ [GEMINI FLASH AUDIO ERROR]: ${e.message}`);
+        }
+    }
+
+    // 3. ALTERNATIVA: HUGGING FACE INFERENCE (Si la cuenta tiene créditos)
+    const hfToken = process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
+    if (hfToken && hfToken.trim().length > 5) {
+        const endpoints = [
+            'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo',
+            'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3'
+        ];
+
+        for (const url of endpoints) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${hfToken.trim()}`,
+                        'Content-Type': 'audio/wav'
+                    },
+                    body: wavBuffer,
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (res.ok) {
+                    const data = await res.json();
+                    const text = (data.text || '').trim();
+                    if (text) {
+                        console.log(`🎙️ [HF WHISPER ÉXITO (${url.split('/').pop()})]: "${text}"`);
+                        return text;
+                    }
+                } else {
+                    const errBody = await res.text().catch(() => '');
+                    console.warn(`⚠️ [HF WHISPER HTTP ${res.status}] en ${url.split('/').pop()}: ${errBody.substring(0, 100)}`);
+                    break; // Si da 402 (sin saldo en HF), no seguir probando en bucle para no causar lag
+                }
+            } catch (e) {
+                console.warn(`⚠️ [HF WHISPER ERROR]: ${e.message}`);
+                break;
+            }
+        }
+    }
+
     return '';
 }
 
@@ -2188,18 +2274,28 @@ async function generateAiVoiceChatResponse(userPrompt, history = []) {
     const timeString = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
     const dateString = now.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
 
-    const cleanInput = (userPrompt || '').replace(/^(bot|oye bot|hola bot|mira bot|dime bot|escucha bot)[\s,:]*/i, '').trim();
+    // Limpiar invocaciones comunes como "bot, explícame...", "bot explicame...", "oye bot...", etc.
+    const cleanInput = (userPrompt || '')
+        .replace(/^(bot|oye bot|hola bot|mira bot|dime bot|escucha bot)[\s,:]*(expl[ií]came|explica|qu[eé]\s+es|qu[eé]\s+significa|dime|cu[aá]ntame)?[\s,:]*/i, '')
+        .trim();
     const lower = (userPrompt || '').toLowerCase();
 
     // 1. DICCIONARIO COMPLETO, EXTENSO Y VARIADO DE DEFINICIONES DE ROLEPLAY (Entonación 100% Humana de España)
     const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-    // Concepto: VALORAR VIDA
-    if (/\b(valorar|valoracion|valoro)\s*(la)?\s*vida\b/i.test(lower) || /\b(vida)\b/i.test(lower) && /\b(qu[eé]\s+es|explica|dime)\b/i.test(lower)) {
+    // Concepto: VALORAR VIDA / NVV
+    if (/\b(valorar|valoracion|valoro)\s*(la)?\s*vida\b/i.test(lower) || (/\b(vida)\b/i.test(lower) && /\b(qu[eé]\s+es|explica|expl[ií]came|dime)\b/i.test(lower))) {
         return pickRandom([
             `¡Hombre, valorar vida es el pilar sagrado de todo el servidor! Significa que debes interpretar que tu personaje siente un miedo real a morir o sufrir daños graves. Por ejemplo, si vas por la calle y alguien te saca un arma o te encañona entre tres personas, no puedes ir de valiente, vacilarles ni intentar sacar tú una pipa, sino que tienes que cooperar, levantar las manos y hacer lo que te digan para salvar el pellejo.`,
             `Pues mira, valorar vida básicamente consiste en poner la integridad física de tu personaje por encima de cualquier orgullo o dinero. En la vida real nadie se arriesga a recibir un tiro por no entregar una cartera, pues en el rol igual: si estás en clara desventaja o bajo amenaza directa de muerte, debes acatar las órdenes y temer por tu vida porque solo tienes una.`,
             `¡Claro crack! Valorar vida es no hacerte el héroe de película. Si te están apuntando por la espalda o estás acorralado, tu instinto natural debe ser sobrevivir. No puedes sacar un arma de la nada cuando ya te tienen encañonado ni saltar de un coche a doscientos por hora porque tu personaje no es inmortal.`
+        ]);
+    }
+
+    if (/\b(nvv|nula valoracion|nula vida|no valorar vida)\b/i.test(lower)) {
+        return pickRandom([
+            `¡Nula Valoración de Vida o NVV ocurre cuando pasas olímpicamente del peligro! Si estás encañonado por varias personas armadas y decides vacilarles, salir corriendo como si nada o sacar un arma estando en clara inferioridad, estás cometiendo NVV y es motivo de sanción directa.`,
+            `¡Exacto fenómeno! Todo personaje en Vallecas RP debe actuar con coherencia y sentido de supervivencia. Ignorar una amenaza de muerte directa o lanzarse al vacío desde un puente para huir de la policía es una nula valoración de vida de manual.`
         ]);
     }
 
@@ -2239,21 +2335,86 @@ async function generateAiVoiceChatResponse(userPrompt, history = []) {
         ]);
     }
 
-    // Concepto: PK (Player Kill)
-    if (/\b(pk|player kill|playerkill)\b/i.test(lower) && !/\b(ck)\b/i.test(lower)) {
+    // Concepto: PKT (Player Kill Total / Facción)
+    if (/\b(pkt|pk total|player kill total|pk de faccion|pk faccional)\b/i.test(lower)) {
         return pickRandom([
-            `¡El Player Kill o PK es la pérdida de memoria de los acontecimientos recientes cuando tu personaje queda inconsciente en un rol y es reanimado en el hospital! Tu personaje sigue vivo, pero olvida todo lo relacionado con esa escena, quién le disparó o por qué estaba allí.`,
-            `Pues mira, existen dos tipos: el PK parcial, donde olvidas únicamente el tiroteo o situación concreta que te llevó al hospital; y el PK total, donde olvidas por completo a una banda, trabajo o grupo con el que tenías relación para desvincularte de ellos definitivamente.`,
-            `¡Exacto crack! Al recibir un PK no pierdes tu personaje ni tu dinero, simplemente limpias la memoria de los hechos que provocaron tu muerte temporal para evitar rencores y venganzas sin sentido.`
+            `¡El PKT o Player Kill Total es cuando tu personaje olvida de forma absoluta y permanente toda la historia, vivencias, contactos y secretos vinculados a una facción, banda o trabajo específico! Suele ocurrir cuando abandonas una banda criminal o te expulsan de una organización: tu personaje sigue vivo, pero olvida completamente a ese grupo y no puede volver a rolear nada relacionado con ellos.`,
+            `Pues mira crack, el PKT se diferencia del PK normal en que es total respecto a un grupo o entorno. Pierdes todos los recuerdos de quiénes eran tus compañeros, dónde tenían la sede y qué delitos cometiste con ellos, actuando a partir de ese momento como un completo desconocido para ellos.`,
+            `¡Claro fenómeno! Un PKT te permite desvincularte limpiamente de una facción para empezar una nueva etapa en la ciudad sin rencores ni información privilegiada en tu cabeza.`
+        ]);
+    }
+
+    // Concepto: PK (Player Kill parcial o común)
+    if (/\b(pk|player kill|playerkill)\b/i.test(lower) && !/\b(ck|pkt|total)\b/i.test(lower)) {
+        return pickRandom([
+            `¡El Player Kill o PK es la pérdida de memoria de los acontecimientos recientes cuando tu personaje queda inconsciente en un rol y es reanimado en el hospital! Tu personaje sigue vivo, pero olvida todo lo relacionado con esa escena concreta: quién le disparó, los motivos inmediatos o la conversación previa.`,
+            `Pues mira crack, al recibir un PK tu personaje despierta en el hospital sin recordar el tiroteo o el altercado que lo llevó allí. No pierdes tus propiedades ni tu dinero, simplemente limpias la memoria de los hechos inmediatos para evitar venganzas absurdas.`,
+            `¡Exacto crack! Con el PK evitas el rencor de rol. Sigues viviendo tu vida con normalidad, pero borras de tu cabeza la última situación de conflicto.`
         ]);
     }
 
     // Concepto: CK (Character Kill)
     if (/\b(ck|character kill|characterkill|muerte definitiva)\b/i.test(lower)) {
         return pickRandom([
-            `¡El Character Kill o CK es la muerte absoluta, definitiva e irreversible de tu personaje! Su historia se cierra por completo, pierde todas sus propiedades y relaciones, y estás obligado a crearte un personaje nuevo desde cero con otra identidad.`,
-            `Pues mira, un CK puede ser solicitado voluntariamente por ti cuando quieres terminar la historia de tu personaje, o puede ser solicitado por una facción oficial o la policía mediante un trámite administrativo con el Staff si existen motivos de peso suficientes.`,
+            `¡El Character Kill o CK es la muerte absoluta, definitiva e irreversible de tu personaje! Su historia se cierra por completo, pierde todas sus propiedades, vehículos y relaciones, y estás obligado a crearte un personaje nuevo desde cero con otra identidad.`,
+            `Pues mira, un CK puede ser voluntario, si tú mismo decides darle un final épico a tu historia, o administrativo por parte del Staff o una facción oficial si existe un expediente con motivos graves y bien justificados.`,
             `¡Hombre, el CK es lo más drástico en el roleplay! Significa que tu personaje deja de existir para siempre en la ciudad de Vallecas RP y no puedes volver a utilizar ni su nombre ni su trasfondo.`
+        ]);
+    }
+
+    // Concepto: RK (Revenge Kill)
+    if (/\b(rk|revenge kill|revenge killing|venganza)\b/i.test(lower)) {
+        return pickRandom([
+            `¡El Revenge Kill o RK es cuando tu personaje muere o cae abatido en un rol, despierta en el hospital tras el PK, y regresa directamente al lugar de los hechos a vengarse de los que le abatieron! Está totalmente prohibido porque tu personaje ha olvidado la escena y no tiene motivo para volver.`,
+            `Pues mira crack, tras recibir atención médica o reaparecer, no puedes tomarte la justicia por tu mano contra quien te tumbó hace cinco minutos. Eso rompe la regla de PK y es sancionado como Revenge Kill.`
+        ]);
+    }
+
+    // Concepto: FAIRPLAY
+    if (/\b(fairplay|fair play|juego limpio|deportividad)\b/i.test(lower)) {
+        return pickRandom([
+            `¡El Fairplay o juego limpio es la esencia que hace grande a Vallecas RP! Consiste en aceptar que no siempre se puede ganar. Hay que dar pie a que los demás también disfruten del rol, ofrecer salidas creativas y no abusar de números o ventajas mecánicas para aplastar al rival.`,
+            `Pues mira crack, un buen roleplayer disfruta tanto cuando gana una persecución como cuando le atrapa la policía y rolea el interrogatorio con calma. El Fairplay es priorizar la diversión colectiva sobre el ganar a toda costa.`
+        ]);
+    }
+
+    // Concepto: BAD DRIVING
+    if (/\b(bad driving|baddriving|conduccion temeraria|conducir mal|saltos)\b/i.test(lower)) {
+        return pickRandom([
+            `¡Bad Driving es conducir de una manera completamente irreal y absurda! Por ejemplo, ir a toda velocidad con un superdeportivo por lo alto de una montaña de rocas, usar escaleras como rampas para volar por los tejados, o meterse en dirección contraria sin ningún motivo de peso.`,
+            `Pues mira crack, tu vehículo debe manejarse con coherencia respecto al terreno. Si vas en un turismo normal no puedes meterte monte a través como si fuera un todoterreno ni saltar puentes como si fueras de dibujos animados.`
+        ]);
+    }
+
+    // Concepto: CARJACKING (CJ)
+    if (/\b(carjacking|car jacking|cj|robar coche sin rol)\b/i.test(lower)) {
+        return pickRandom([
+            `¡El CarJacking o CJ consiste en bajar a un conductor de su vehículo a la fuerza o subirte a un coche ajeno y llevártelo sin haber realizado ningún tipo de rol o interacción previa! No puedes llegar a un semáforo, abrir la puerta y robar el coche por la cara.`,
+            `Pues mira, para sustraer un vehículo con conductor dentro debes encañonarle, rolear la intimidación o usar herramientas adecuadas mediante comandos de rol con coherencia.`
+        ]);
+    }
+
+    // Concepto: FORZAR ROL
+    if (/\b(forzar rol|forzar el rol)\b/i.test(lower)) {
+        return pickRandom([
+            `¡Forzar Rol es cuando obligas a otro usuario a realizar una acción o a sufrir una consecuencia sin darle ninguna posibilidad de defenderse o responder! Por ejemplo, tirar un comando diciendo "le rompo el brazo y le quito todo" sin consultar si es posible mediante un comando de entorno.`,
+            `Pues mira crack, el rol es una conversación mutua. Siempre debes dejar que la otra persona reaccione ante tus acciones para mantener el equilibrio y la deportividad.`
+        ]);
+    }
+
+    // Concepto: COMANDOS /ME Y /DO
+    if (/\b(me y do|comando me|comando do|\/me|\/do)\b/i.test(lower)) {
+        return pickRandom([
+            `¡Los comandos /me y /do son el corazón de la interpretación! El /me se utiliza exclusivamente para describir acciones físicas que realiza tu personaje y que las animaciones del juego no muestran, por ejemplo: "/me saca una cartera de su bolsillo". Y el /do se usa para describir el entorno, hacer preguntas sobre el estado de otro personaje o reflejar sensaciones, por ejemplo: "/do ¿se apreciaría el olor a pólvora?".`,
+            `Pues mira crack, una regla de oro: ¡nunca se miente por /do! Mentir en un /do sobre si llevas armas o si estás consciente es considerado una falta muy grave de rol.`
+        ]);
+    }
+
+    // Concepto: INICIACIÓN DE ROL / TIROTEO
+    if (/\b(iniciacion|iniciar rol|iniciar tiroteo|tiroteo|iniciacion de rol)\b/i.test(lower)) {
+        return pickRandom([
+            `¡La Iniciación de Rol es el aviso claro e inequívoco que debes dar antes de abrir fuego o atacar a alguien! Debes hablarle con claridad, darle órdenes razonables y esperar a que responda o se niegue. No vale decir media palabra a cien metros y disparar a traición.`,
+            `Pues mira, para que un tiroteo sea legal en Vallecas RP debe haber una interacción verbal clara donde la otra parte comprenda el peligro y tenga opción de defenderse o rendirse.`
         ]);
     }
 
@@ -2286,14 +2447,6 @@ async function generateAiVoiceChatResponse(userPrompt, history = []) {
         return pickRandom([
             `¡Una Zona Segura es un punto neurálgico del mapa, como los hospitales, las comisarías de policía o los garajes centrales, donde está estrictamente prohibido cometer cualquier acto delictivo, sacar armas, secuestrar o iniciar altercados!`,
             `Pues mira, si alguien está escapando de un tiroteo o persecución, no puede refugiarse en una Zona Segura para evitar que le atrapen, ya que eso se considera evasión de rol.`
-        ]);
-    }
-
-    // Concepto: NULA VALORACIÓN DE VIDA (NVV)
-    if (/\b(nvv|nula valoracion|nula vida)\b/i.test(lower)) {
-        return pickRandom([
-            `¡Nula valoración de vida es pasar olímpicamente del peligro cuando estás encañonado por varias personas armadas, vacilar a tus agresores, o negarte a levantar las manos actuando como si fueras de hierro!`,
-            `¡Exacto fenómeno! Todo personaje debe comportarse con sensatez humana ante una situación de riesgo mortal evidente.`
         ]);
     }
 
@@ -2406,82 +2559,88 @@ Responde de forma clara y hablada en 2 o 3 frases explicativas con ritmo humano.
     return `¡Te escucho perfectamente crack! Pregúntame sobre cualquier normativa como valorar vida, PG, MG o VDM y te lo explico con todo detalle.`;
 }
 
-// Reproducir audio TTS de alta fidelidad y velocidad natural directamente en el canal de voz
+// Reproducir audio TTS de alta fidelidad, fluido, masculino y con entonación natural de España
 function playTtsResponseInVoice(text, connection, player) {
     return new Promise(async (resolve) => {
         if (!text || !connection || !player) return resolve();
         try {
+            // Limpiar formato y caracteres extraños
             const cleanText = text.replace(/[*_~`#"]/g, '').trim().substring(0, 1000);
             if (!cleanText) return resolve();
 
-            // 1. Voz Neuronal de Microsoft (Álvaro - Hombre Español natural con entonación humana y velocidad perfecta)
-            try {
-                const { EdgeTTS } = require('node-edge-tts');
-                const tempFile = path.join(__dirname, `tts_${Date.now()}_${Math.floor(Math.random() * 1000)}.mp3`);
-                const tts = new EdgeTTS({
-                    voice: 'es-ES-AlvaroNeural',
-                    rate: '+15%', // Velocidad humana óptima (ágil, dinámica y sin lentitud)
-                    pitch: '+1Hz', // Matiz tonal más cercano y expresivo
-                    volume: '+0%'
+            const tempFile = path.join(__dirname, `tts_${Date.now()}_${Math.floor(Math.random() * 1000)}.mp3`);
+            let fileGenerated = false;
+
+            // 1. Generación mediante la CLI oficial de edge-tts (es-ES-AlvaroNeural, Hombre Español, fluido +20% de velocidad)
+            const { spawn } = require('child_process');
+            const runEdgeTtsCli = (pythonCmd) => {
+                return new Promise((res) => {
+                    const proc = spawn(pythonCmd, [
+                        '-m', 'edge_tts',
+                        '--voice', 'es-ES-AlvaroNeural',
+                        '--rate', '+20%',
+                        '--pitch', '+0Hz',
+                        '--text', cleanText,
+                        '--write-media', tempFile
+                    ]);
+                    proc.on('close', (code) => res(code === 0 && fs.existsSync(tempFile)));
+                    proc.on('error', () => res(false));
                 });
+            };
 
-                await tts.ttsPromise(cleanText, tempFile);
-
-                if (fs.existsSync(tempFile)) {
-                    const resource = createAudioResource(fs.createReadStream(tempFile), {
-                        inputType: StreamType.Arbitrary
-                    });
-
-                    let resolved = false;
-                    const cleanupTempFile = () => {
-                        try {
-                            if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-                        } catch (e) { }
-                    };
-
-                    const onIdle = () => {
-                        if (!resolved) {
-                            resolved = true;
-                            player.off(AudioPlayerStatus.Idle, onIdle);
-                            setTimeout(cleanupTempFile, 1500);
-                            resolve();
-                        }
-                    };
-
-                    player.on(AudioPlayerStatus.Idle, onIdle);
-                    player.play(resource);
-                    console.log(`🔊 [VOZ NEURONAL ÁLVARO] Reproduciendo (${cleanText.substring(0, 60)}...)...`);
-
-                    // Seguridad por si el evento Idle no salta
-                    setTimeout(() => {
-                        if (!resolved) {
-                            resolved = true;
-                            player.off(AudioPlayerStatus.Idle, onIdle);
-                            cleanupTempFile();
-                            resolve();
-                        }
-                    }, 35000);
-                    return;
-                }
-            } catch (edgeErr) {
-                console.error('Edge TTS error, usando fallback:', edgeErr.message);
+            // Intentar primero con python, luego python3
+            fileGenerated = await runEdgeTtsCli('python');
+            if (!fileGenerated) {
+                fileGenerated = await runEdgeTtsCli('python3');
             }
 
-            // 2. Fallback con Google TTS
+            if (fileGenerated && fs.existsSync(tempFile)) {
+                const resource = createAudioResource(fs.createReadStream(tempFile), {
+                    inputType: StreamType.Arbitrary
+                });
+
+                let resolved = false;
+                const cleanupTempFile = () => {
+                    try {
+                        if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+                    } catch (e) { }
+                };
+
+                const onIdle = () => {
+                    if (!resolved) {
+                        resolved = true;
+                        player.off(AudioPlayerStatus.Idle, onIdle);
+                        setTimeout(cleanupTempFile, 1500);
+                        resolve();
+                    }
+                };
+
+                player.on(AudioPlayerStatus.Idle, onIdle);
+                player.play(resource);
+                console.log(`🔊 [VOZ NEURONAL ÁLVARO (HOMBRE)] Reproduciendo fluido (+20% vel): "${cleanText.substring(0, 60)}..."`);
+
+                setTimeout(() => {
+                    if (!resolved) {
+                        resolved = true;
+                        player.off(AudioPlayerStatus.Idle, onIdle);
+                        cleanupTempFile();
+                        resolve();
+                    }
+                }, 35000);
+                return;
+            }
+
+            // Fallback en caso extremo
             const base64Audio = await googleTTS.getAudioBase64(cleanText.substring(0, 200), {
                 lang: 'es',
                 slow: false,
                 timeout: 6000
             });
-
             const audioBuffer = Buffer.from(base64Audio, 'base64');
             const audioStream = Readable.from(audioBuffer);
-            const resource = createAudioResource(audioStream, {
-                inputType: StreamType.Arbitrary
-            });
-
+            const resource = createAudioResource(audioStream, { inputType: StreamType.Arbitrary });
             player.play(resource);
-            console.log(`🔊 [VOZ TTS] Reproduciendo respuesta de voz...`);
+            console.log(`🔊 [VOZ TTS FALLBACK] Reproduciendo...`);
             setTimeout(resolve, 8000);
         } catch (err) {
             console.error('Error al reproducir TTS:', err.message);
@@ -7464,10 +7623,12 @@ client.on('messageCreate', async (message) => {
                                     return;
                                 }
 
-                                // Debe dirigirse directamente al Bot (ej: "Bot, qué es...", "Oye Bot...", "Bot dime...")
-                                const hasBotTrigger = /\b(bot|boc|boot|botsito)\b/i.test(lower);
-                                if (!hasBotTrigger) {
-                                    return; // Silencio absoluto si no le preguntan a él directamente
+                                // Debe dirigirse estrictamente al Bot (ej: "Bot, explícame...", "Bot qué es...", "Oye Bot...", "Bot...")
+                                // Si estás hablando con otra persona en la llamada sin decir "Bot", se descarta en silencio absoluto
+                                const isStrictBotCall = /^(bot|oye bot|hola bot|mira bot|dime bot|escucha bot)\b/i.test(lower) || /\b(bot)\b/i.test(lower);
+                                if (!isStrictBotCall) {
+                                    // Silencio absoluto: no le están hablando al bot
+                                    return;
                                 }
 
                                 // Obtener el nombre del usuario real que habló en la llamada
@@ -7609,17 +7770,23 @@ client.on('messageCreate', async (message) => {
                 const chatEmbed = new EmbedBuilder()
                     .setColor(0xD900FF)
                     .setAuthor({
-                        name: 'CONVERSACIÓN DE VOZ CON IA • VALLECAS RP',
+                        name: 'PROFESOR DE NORMATIVAS Y ASISTENTE IA • VALLECAS RP',
                         iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
                     })
-                    .setTitle('🎙️ Chat de Voz con IA Activado')
+                    .setTitle('🎙️ Asistente de Voz y Normativas Activado')
                     .setDescription(
-                        `👤 **Usuario:** <@${message.author.id}>\n` +
+                        `👤 **Iniciado por:** <@${message.author.id}>\n` +
                         `🔊 **Canal de Voz:** <#${voiceChannel.id}>\n\n` +
-                        `💬 *Dile "Hola Bot..." para iniciar la conversación y a partir de ahí te responderá fluidamente en directo.*\n\n` +
-                        `🛑 **Para finalizar:** Escribe **\`!callar\`** o **\`!salir-voz\`**.`
+                        `📚 **¿Cómo preguntarle las normativas?**\n` +
+                        `Habla por el micrófono y dile:\n` +
+                        `> 🗣️ *"Bot, explícame qué es VDM..."*\n` +
+                        `> 🗣️ *"Bot, explícame el PKT..."*\n` +
+                        `> 🗣️ *"Bot, explícame qué es valorar vida..."*\n` +
+                        `> 🗣️ *"Bot, explícame el CK, PG o Fairplay..."*\n\n` +
+                        `🎧 **El bot te responderá al instante con voz humana 100% gratuita y sin límites.**\n\n` +
+                        `🛑 **Para desconectarlo:** Escribe **\`!callar\`** o **\`!salir-voz\`**.`
                     )
-                    .setFooter({ text: 'VALLECAS RP • Conversación Fluida con Microsoft Neural TTS & Gemini Flash' })
+                    .setFooter({ text: 'VALLECAS RP • Voz Neuronal Microsoft de Alta Definición' })
                     .setTimestamp();
 
                 return message.reply({ embeds: [chatEmbed], files });
