@@ -2575,6 +2575,7 @@ function playTtsResponseInVoice(text, connection, player) {
             const { spawn } = require('child_process');
             const runEdgeTtsCli = (pythonCmd) => {
                 return new Promise((res) => {
+                    let errOutput = '';
                     const proc = spawn(pythonCmd, [
                         '-m', 'edge_tts',
                         '--voice', 'es-ES-AlvaroNeural',
@@ -2583,15 +2584,23 @@ function playTtsResponseInVoice(text, connection, player) {
                         '--text', cleanText,
                         '--write-media', tempFile
                     ]);
-                    proc.on('close', (code) => res(code === 0 && fs.existsSync(tempFile)));
-                    proc.on('error', () => res(false));
+                    proc.stderr.on('data', (d) => { errOutput += d.toString(); });
+                    proc.on('close', (code) => {
+                        if (code !== 0 && errOutput) {
+                            console.warn(`⚠️ [EDGE-TTS CLI ${pythonCmd} SALIDA ERROR]:`, errOutput.substring(0, 200));
+                        }
+                        res(code === 0 && fs.existsSync(tempFile));
+                    });
+                    proc.on('error', (e) => {
+                        res(false);
+                    });
                 });
             };
 
-            // Intentar primero con python, luego python3
-            fileGenerated = await runEdgeTtsCli('python');
+            // Intentar con python3, luego python
+            fileGenerated = await runEdgeTtsCli('python3');
             if (!fileGenerated) {
-                fileGenerated = await runEdgeTtsCli('python3');
+                fileGenerated = await runEdgeTtsCli('python');
             }
 
             if (fileGenerated && fs.existsSync(tempFile)) {
