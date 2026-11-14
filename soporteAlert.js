@@ -56,8 +56,11 @@ let tiempoEsperaMinutos = 5; // Por defecto 5 minutos
 let audioCache = null; // Buffer en memoria RAM para cero latencia
 let isPlayingAlert = false;
 let userJoinTimes = new Map(); // userId -> timestamp de entrada
-let lastAlertPlayedAt = 0; // Para cooldown general
-const COOLDOWN_ENTRE_ALERTAS_MS = 60 * 1000; // Mínimo 1 minuto entre rondas de aviso
+let activeConnection = null; // Referencia a la conexión actual para corte inmediato si atienden
+let activePlayer = null; // Referencia al reproductor actual
+let stopCurrentTour = false; // Flag para cancelar la ronda si la sala de espera queda vacía
+let lastAlertPlayedAt = 0; // Para cooldown entre rondas completas
+const COOLDOWN_ENTRE_RONDAS_MS = 30 * 1000; // 30 segundos de cooldown entre rondas de aviso
 
 /**
  * Carga o refresca el audio desde MongoDB a memoria RAM
@@ -132,6 +135,33 @@ function isMemberStaff(member) {
 }
 
 /**
+ * Corta inmediatamente cualquier reproducción o conexión activa
+ */
+function abortPlaybackImmediately(reason = 'Desconexión forzada') {
+    stopCurrentTour = true;
+    if (activePlayer) {
+        try { activePlayer.stop(true); } catch (e) { }
+        activePlayer = null;
+    }
+    if (activeConnection) {
+        try { activeConnection.destroy(); } catch (e) { }
+        activeConnection = null;
+    }
+    isPlayingAlert = false;
+    console.log(`⏹️ [SOPORTE ALERT] ${reason}.`);
+}
+
+/**
+ * Comprueba si la sala de espera está vacía de usuarios
+ */
+function isWaitRoomEmpty(guild) {
+    const waitChannel = guild.channels.cache.get(CANAL_ESPERA_ID);
+    if (!waitChannel || !waitChannel.isVoiceBased()) return true;
+    const count = waitChannel.members.filter(m => !m.user.bot).size;
+    return count === 0;
+}
+
+/**
  * Reproduce el audio en un canal de voz y se desconecta de inmediato al terminar
  */
 async function playAlertInChannel(channel) {
@@ -141,6 +171,10 @@ async function playAlertInChannel(channel) {
             console.warn('⚠️ [SOPORTE ALERT] No hay audio disponible para reproducir.');
             return false;
         }
+    }
+
+    if (stopCurrentTour || isWaitRoomEmpty(channel.guild)) {
+        return false;
     }
 
     let connection = null;
@@ -153,13 +187,28 @@ async function playAlertInChannel(channel) {
             selfMute: false
         });
 
+        activeConnection = connection;
+
         // Esperar conexión lista
         await entersState(connection, VoiceConnectionStatus.Ready, 7000);
 
-        // Pequeño margen de 350ms para que Discord abra el flujo de audio limpio
-        await new Promise(res => setTimeout(res, 350));
+        if (stopCurrentTour || isWaitRoomEmpty(channel.guild)) {
+            try { connection.destroy(); } catch (e) { }
+            activeConnection = null;
+            return false;
+        }
+
+        // Pequeño margen de 300ms para que Discord abra el flujo de audio limpio
+        await new Promise(res => setTimeout(res, 300));
+
+        if (stopCurrentTour || isWaitRoomEmpty(channel.guild)) {
+            try { connection.destroy(); } catch (e) { }
+            activeConnection = null;
+            return false;
+        }
 
         const player = createAudioPlayer();
+        activePlayer = player;
         const stream = Readable.from(audioCache);
         const resource = createAudioResource(stream);
 
@@ -170,7 +219,7 @@ async function playAlertInChannel(channel) {
         await new Promise((resolve) => {
             const timeout = setTimeout(() => {
                 resolve();
-            }, 15000); // Máximo 15s por seguridad
+            }, 12000);
 
             player.on(AudioPlayerStatus.Idle, () => {
                 clearTimeout(timeout);
@@ -188,6 +237,8 @@ async function playAlertInChannel(channel) {
         try {
             connection.destroy();
         } catch (e) { }
+        activeConnection = null;
+        activePlayer = null;
 
         console.log(`✅ [SOPORTE ALERT] Locución reproducida con éxito en ${channel.name}.`);
         return true;
@@ -196,6 +247,8 @@ async function playAlertInChannel(channel) {
         if (connection) {
             try { connection.destroy(); } catch (e) { }
         }
+        activeConnection = null;
+        activePlayer = null;
         return false;
     }
 }
@@ -204,12 +257,12 @@ async function playAlertInChannel(channel) {
  * Analiza los canales de soporte:
  * - Descarta canales con usuarios NO staff (ya están atendiendo / ocupados)
  * - Descarta staffs ensordecidos (no escuchan nada)
- * - Clasifica canales libres con staffs activos:
- *   - Prioridad 1: Canales con staffs sin silenciar (escuchan y pueden hablar)
- *   - Prioridad 2: Canales donde todos los staffs estén silenciados (al menos escuchan)
+ * - Retorna lista ordenada:
+ *   1º Canales con staffs sin silenciar (preferencia)
+ *   2º Canales con staffs silenciados que al menos escuchan (segundos)
  */
-function getEligibleSupportChannels(guild) {
-    const listPriority1 = []; // Staffs 100% libres (ni ensordecidos ni silenciados)
+function getOrderedSupportChannels(guild) {
+    const listPriority1 = []; // Staffs ni ensordecidos ni silenciados
     const listPriority2 = []; // Staffs silenciados pero no ensordecidos
 
     for (const channelId of CANALES_SOPORTE_IDS) {
@@ -220,10 +273,9 @@ function getEligibleSupportChannels(guild) {
         if (members.size === 0) continue; // Canal vacío
 
         // 1. ¿Hay algún usuario que NO sea Staff?
-        // Si hay alguien que no es staff, el canal está OCUPADO atendiendo un ticket/soporte.
+        // Si hay alguien que no es staff, el canal está OCUPADO atendiendo -> NO molestar
         const hasNonStaff = members.some(m => !isMemberStaff(m));
         if (hasNonStaff) {
-            // Canal ocupado atendiendo a un usuario -> NO molestar
             continue;
         }
 
@@ -237,15 +289,15 @@ function getEligibleSupportChannels(guild) {
 
             const isDeaf = vs.deaf || vs.selfDeaf;
             if (isDeaf) {
-                // Ensordecido: no escucha nada, se ignora este staff
+                // Ensordecido: se ignora este staff
                 continue;
             }
 
-            hasHearingStaff = true; // Al menos escucha
+            hasHearingStaff = true; // No está ensordecido, puede escuchar
 
             const isMuted = vs.mute || vs.selfMute;
             if (!isMuted) {
-                hasUnmutedStaff = true; // Ni muteado ni ensordecido
+                hasUnmutedStaff = true; // Además puede hablar
             }
         }
 
@@ -256,12 +308,8 @@ function getEligibleSupportChannels(guild) {
         }
     }
 
-    // Si hay canales de Prioridad 1 (staffs ni muteados ni ensordecidos), se avisan esos
-    // Si no hay ninguno de Prioridad 1 pero hay de Prioridad 2 (staffs silenciados que sí escuchan), se avisan esos
-    if (listPriority1.length > 0) {
-        return listPriority1;
-    }
-    return listPriority2;
+    // Devuelve primero los que tienen preferencia y luego los silenciados, todos seguidos del tirón
+    return [...listPriority1, ...listPriority2];
 }
 
 /**
@@ -270,7 +318,7 @@ function getEligibleSupportChannels(guild) {
 async function checkWaitRoom(guild) {
     if (!sistemaActivo) return; // Si está desactivado, no hace nada
     if (isPlayingAlert) return;
-    if (Date.now() - lastAlertPlayedAt < COOLDOWN_ENTRE_ALERTAS_MS) return;
+    if (Date.now() - lastAlertPlayedAt < COOLDOWN_ENTRE_RONDAS_MS) return;
 
     const waitChannel = guild.channels.cache.get(CANAL_ESPERA_ID);
     if (!waitChannel || !waitChannel.isVoiceBased()) return;
@@ -306,35 +354,43 @@ async function checkWaitRoom(guild) {
 
     if (!usuarioHaSuperado) return;
 
-    // Obtener los canales elegibles para avisar
-    const channelsToAlert = getEligibleSupportChannels(guild);
+    // Obtener los canales ordenados: primero preferencia, luego silenciados
+    const channelsToAlert = getOrderedSupportChannels(guild);
     if (!channelsToAlert || channelsToAlert.length === 0) {
-        // Todos los canales están ocupados, vacíos o los staffs están ensordecidos
         return;
     }
 
     isPlayingAlert = true;
+    stopCurrentTour = false;
     let algunaAlertaReproducida = false;
 
     try {
-        console.log(`📢 [SOPORTE ALERT] Usuario lleva más de ${tiempoEsperaMinutos}m esperando. Avisando en ${channelsToAlert.length} canal(es) de soporte disponibles...`);
+        console.log(`📢 [SOPORTE ALERT] Usuario superó ${tiempoEsperaMinutos}m. Avisando en ${channelsToAlert.length} canal(es) de soporte del tirón...`);
 
-        // Va canal por canal reproduciendo la locución
+        // Recorre los canales del tirón en orden de preferencia
         for (const targetChannel of channelsToAlert) {
+            // Si durante el proceso el usuario ya fue atendido o se fue, se corta del tirón
+            if (stopCurrentTour || isWaitRoomEmpty(guild)) {
+                console.log('⏹️ [SOPORTE ALERT] La sala de espera ha quedado vacía o el usuario fue atendido. Cancelando ronda restante.');
+                break;
+            }
+
             const ok = await playAlertInChannel(targetChannel);
             if (ok) {
                 algunaAlertaReproducida = true;
-                // Pequeña pausa de 500ms entre canal y canal para que Discord no se sature
-                await new Promise(r => setTimeout(r, 500));
+                // Pequeña pausa de 300ms entre canal y canal para no saturar WebRTC
+                await new Promise(r => setTimeout(r, 300));
             }
         }
     } finally {
         isPlayingAlert = false;
+        activeConnection = null;
+        activePlayer = null;
     }
 
     if (algunaAlertaReproducida) {
         lastAlertPlayedAt = Date.now();
-        // Reseteamos el reloj para que no vuelva a sonar hasta que pase otro ciclo de minutos
+        // Reseteamos el reloj del ciclo para que vuelva a avisar solo cuando pase el tiempo establecido
         for (const [userId] of userJoinTimes) {
             userJoinTimes.set(userId, Date.now());
         }
@@ -349,31 +405,39 @@ function initSoporteAlert(client) {
     loadAudioFromDB();
     loadSettingsFromDB();
 
-    // 2. Evento voiceStateUpdate para gestionar entradas/salidas de la sala de espera
+    // 2. Evento voiceStateUpdate para gestionar entradas/salidas en tiempo real
     client.on('voiceStateUpdate', (oldState, newState) => {
-        if (!sistemaActivo) return;
         const userId = newState.id;
-        if (newState.member && newState.member.user.bot) return;
+        const member = newState.member || oldState.member;
+        if (member && member.user && member.user.bot) return;
 
         // Entró al canal de espera
         if (newState.channelId === CANAL_ESPERA_ID && oldState.channelId !== CANAL_ESPERA_ID) {
             userJoinTimes.set(userId, Date.now());
         }
 
-        // Salió del canal de espera
+        // Salió del canal de espera (o fue movido/atendido a un soporte)
         if (oldState.channelId === CANAL_ESPERA_ID && newState.channelId !== CANAL_ESPERA_ID) {
             userJoinTimes.delete(userId);
+
+            // Si ya no queda nadie esperando en la sala, abortar inmediatamente cualquier audio activo
+            const guild = oldState.guild || newState.guild;
+            if (guild && isWaitRoomEmpty(guild)) {
+                if (isPlayingAlert || activeConnection) {
+                    abortPlaybackImmediately('La sala de espera ha quedado vacía (usuario atendido/salido). Desconectando bot');
+                }
+            }
         }
     });
 
-    // 3. Intervalo de chequeo periódico cada 10 segundos
+    // 3. Intervalo de chequeo periódico cada 5 segundos
     setInterval(() => {
         try {
             for (const [, guild] of client.guilds.cache) {
                 checkWaitRoom(guild).catch(() => {});
             }
         } catch (e) { }
-    }, 10 * 1000);
+    }, 5 * 1000);
 
     // 4. Comando !locu
     client.on('messageCreate', async (message) => {
@@ -406,6 +470,7 @@ function initSoporteAlert(client) {
                 try {
                     await setActiveInDB(false);
                     userJoinTimes.clear();
+                    abortPlaybackImmediately('Locución desactivada manualmente');
                     return message.reply({ content: '🔴 **Locución DESACTIVADA:** El bot ya no entrará a avisar a los canales de soporte.' });
                 } catch (e) {
                     return message.reply({ content: '❌ Error al guardar en la base de datos.' });
@@ -443,7 +508,7 @@ function initSoporteAlert(client) {
         }
     });
 
-    console.log('🛡️ [SOPORTE ALERT] Sistema independiente de alerta de soporte iniciado correctamente con lógica multi-canal y detección de canales ocupados.');
+    console.log('🛡️ [SOPORTE ALERT] Sistema afinado: orden de preferencia del tirón, cancelación instantánea si atienden al usuario.');
 }
 
 module.exports = initSoporteAlert;
