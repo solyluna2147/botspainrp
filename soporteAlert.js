@@ -6,8 +6,7 @@ const {
     createAudioResource,
     AudioPlayerStatus,
     VoiceConnectionStatus,
-    entersState,
-    getVoiceConnection
+    entersState
 } = require('@discordjs/voice');
 
 // Esquema para audios almacenados en MongoDB
@@ -40,6 +39,7 @@ const CANALES_SOPORTE_IDS = [
 ];
 
 // Estado en memoria
+let sistemaActivo = true; // Interruptor ON/OFF
 let tiempoEsperaMinutos = 5; // Por defecto 5 minutos
 let audioCache = null; // Buffer en memoria RAM para cero latencia
 let isPlayingAlert = false;
@@ -65,17 +65,23 @@ async function loadAudioFromDB() {
 }
 
 /**
- * Carga los minutos configurados desde la BD
+ * Carga los ajustes de configuración desde MongoDB
  */
-async function loadMinutesFromDB() {
+async function loadSettingsFromDB() {
     try {
-        const setting = await BotSetting.findOne({ key: 'locucion_espera_minutos' });
-        if (setting && typeof setting.value === 'number') {
-            tiempoEsperaMinutos = setting.value;
+        const settingMin = await BotSetting.findOne({ key: 'locucion_espera_minutos' });
+        if (settingMin && typeof settingMin.value === 'number') {
+            tiempoEsperaMinutos = settingMin.value;
             console.log(`⏱️ [SOPORTE ALERT] Minutos de espera configurados: ${tiempoEsperaMinutos} min.`);
         }
+
+        const settingActive = await BotSetting.findOne({ key: 'locucion_espera_activo' });
+        if (settingActive && typeof settingActive.value === 'boolean') {
+            sistemaActivo = settingActive.value;
+            console.log(`🔘 [SOPORTE ALERT] Estado de la locución: ${sistemaActivo ? 'ACTIVADA' : 'DESACTIVADA'}.`);
+        }
     } catch (err) {
-        console.error('❌ [SOPORTE ALERT] Error cargando minutos desde BD:', err.message);
+        console.error('❌ [SOPORTE ALERT] Error cargando ajustes desde BD:', err.message);
     }
 }
 
@@ -87,6 +93,18 @@ async function setMinutesInDB(minutes) {
     await BotSetting.findOneAndUpdate(
         { key: 'locucion_espera_minutos' },
         { value: minutes },
+        { upsert: true, returnDocument: 'after' }
+    );
+}
+
+/**
+ * Guarda el estado activo/inactivo en MongoDB
+ */
+async function setActiveInDB(active) {
+    sistemaActivo = active;
+    await BotSetting.findOneAndUpdate(
+        { key: 'locucion_espera_activo' },
+        { value: active },
         { upsert: true, returnDocument: 'after' }
     );
 }
@@ -195,6 +213,7 @@ function findAvailableSupportChannel(guild) {
  * Verifica si algún usuario en espera ya superó el tiempo límite
  */
 async function checkWaitRoom(guild) {
+    if (!sistemaActivo) return; // Si está desactivado, no hace nada
     if (isPlayingAlert) return;
     if (Date.now() - lastAlertPlayedAt < COOLDOWN_ENTRE_ALERTAS_MS) return;
 
@@ -242,7 +261,7 @@ async function checkWaitRoom(guild) {
     console.log(`📢 [SOPORTE ALERT] Usuario lleva más de ${tiempoEsperaMinutos}m esperando. Avisando en ${target.channel.name} (${target.count} staffs activos)...`);
     const success = await playAlertInChannel(target.channel);
     if (success) {
-        // Reseteamos el reloj del usuario para que no vuelva a sonar hasta que pase otro ciclo de minutos
+        // Reseteamos el reloj para que no vuelva a sonar hasta que pase otro ciclo de minutos
         for (const [userId] of userJoinTimes) {
             userJoinTimes.set(userId, Date.now());
         }
@@ -253,12 +272,13 @@ async function checkWaitRoom(guild) {
  * Inicializador del sistema
  */
 function initSoporteAlert(client) {
-    // 1. Cargar datos iniciales
+    // 1. Cargar datos iniciales desde MongoDB
     loadAudioFromDB();
-    loadMinutesFromDB();
+    loadSettingsFromDB();
 
     // 2. Evento voiceStateUpdate para gestionar entradas/salidas de la sala de espera
     client.on('voiceStateUpdate', (oldState, newState) => {
+        if (!sistemaActivo) return;
         const userId = newState.id;
         if (newState.member && newState.member.user.bot) return;
 
@@ -282,13 +302,13 @@ function initSoporteAlert(client) {
         } catch (e) { }
     }, 10 * 1000);
 
-    // 4. Comando !locu <minutos>
+    // 4. Comando !locu
     client.on('messageCreate', async (message) => {
         if (message.author.bot || !message.guild) return;
 
         const content = message.content.trim();
         if (content.toLowerCase().startsWith('!locu')) {
-            // Verificar permisos (Administrador o gestionar canales / servidor)
+            // Verificar permisos (Administrador o gestionar servidor)
             const isStaff = message.member.permissions.has('Administrator') ||
                 message.member.permissions.has('ManageGuild') ||
                 message.member.permissions.has('ManageChannels');
@@ -298,28 +318,57 @@ function initSoporteAlert(client) {
             }
 
             const args = content.split(/\s+/);
-            const nuevoTiempo = parseFloat(args[1]);
+            const subCmd = (args[1] || '').toLowerCase();
 
-            if (isNaN(nuevoTiempo) || nuevoTiempo <= 0) {
-                return message.reply({
-                    content: `ℹ️ **Configuración actual:** La locución suena cuando un usuario lleva **${tiempoEsperaMinutos} minutos** esperando.\n👉 Usa \`!locu <minutos>\` para cambiarlo (ej: \`!locu 5\` o \`!locu 3\`).`
-                });
-            }
-
-            try {
-                await setMinutesInDB(nuevoTiempo);
-                // Si cambiaron el tiempo, refrescamos el timestamp de los que ya están en espera
-                for (const [userId] of userJoinTimes) {
-                    userJoinTimes.set(userId, Date.now());
+            // Opción 1: Activar
+            if (subCmd === 'on' || subCmd === 'activar') {
+                try {
+                    await setActiveInDB(true);
+                    return message.reply({ content: `🟢 **Locución ACTIVADA:** El sistema avisará en los canales de soporte cuando alguien lleve **${tiempoEsperaMinutos} min** esperando.` });
+                } catch (e) {
+                    return message.reply({ content: '❌ Error al guardar en la base de datos.' });
                 }
-
-                return message.reply({
-                    content: `✅ **Tiempo de locución actualizado:** Ahora la locución sonará si un usuario pasa más de **${nuevoTiempo} minutos** en la sala de espera.`
-                });
-            } catch (err) {
-                console.error(err);
-                return message.reply({ content: '❌ Ocurrió un error al guardar la configuración en la base de datos.' });
             }
+
+            // Opción 2: Desactivar
+            if (subCmd === 'off' || subCmd === 'desactivar') {
+                try {
+                    await setActiveInDB(false);
+                    userJoinTimes.clear();
+                    return message.reply({ content: '🔴 **Locución DESACTIVADA:** El bot ya no entrará a avisar a los canales de soporte.' });
+                } catch (e) {
+                    return message.reply({ content: '❌ Error al guardar en la base de datos.' });
+                }
+            }
+
+            // Opción 3: Cambiar tiempo numérico (!locu 5)
+            const nuevoTiempo = parseFloat(subCmd);
+            if (!isNaN(nuevoTiempo) && nuevoTiempo > 0) {
+                try {
+                    await setMinutesInDB(nuevoTiempo);
+                    for (const [userId] of userJoinTimes) {
+                        userJoinTimes.set(userId, Date.now());
+                    }
+
+                    return message.reply({
+                        content: `✅ **Tiempo de locución actualizado:** Ahora avisará tras **${nuevoTiempo} minutos** de espera (Estado: **${sistemaActivo ? '🟢 ACTIVADO' : '🔴 DESACTIVADO'}**).`
+                    });
+                } catch (err) {
+                    console.error(err);
+                    return message.reply({ content: '❌ Error al guardar en la base de datos.' });
+                }
+            }
+
+            // Por defecto: Mostrar estado actual y ayuda
+            return message.reply({
+                content: `ℹ️ **Panel de control de la locución:**\n` +
+                    `• **Estado actual:** ${sistemaActivo ? '🟢 **ACTIVADO**' : '🔴 **DESACTIVADO**'}\n` +
+                    `• **Tiempo de espera:** **${tiempoEsperaMinutos} minutos**\n\n` +
+                    `**Comandos disponibles:**\n` +
+                    `👉 \`!locu on\` ➔ Activa la locución\n` +
+                    `👉 \`!locu off\` ➔ Desactiva la locución\n` +
+                    `👉 \`!locu <minutos>\` ➔ Cambia el tiempo (ej: \`!locu 5\` o \`!locu 3\`)`
+            });
         }
     });
 
@@ -327,4 +376,3 @@ function initSoporteAlert(client) {
 }
 
 module.exports = initSoporteAlert;
-
