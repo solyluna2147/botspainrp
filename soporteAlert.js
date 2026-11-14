@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { Readable } = require('stream');
 const fs = require('fs');
 const path = require('path');
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const {
     joinVoiceChannel,
     createAudioPlayer,
@@ -198,7 +198,7 @@ function formatDuration(ms) {
     const totalSecs = Math.floor(ms / 1000);
     const mins = Math.floor(totalSecs / 60);
     const secs = totalSecs % 60;
-    if (mins === 0) return `${secs} segundos`;
+    if (mins === 0) return `${secs} s`;
     return `${mins} min ${secs} s`;
 }
 
@@ -367,46 +367,87 @@ function getOrderedSupportChannelsAndStaffs(guild) {
 }
 
 /**
- * Envía el informe detallado al canal de sanciones de staff
+ * Envía el informe detallado al canal de sanciones de staff con el diseño limpio y thumbnail superior
  */
-async function sendSanctionReport(guild, { motivo, staffsInvolucrados, usuariosAfectados, tiempoEsperadoMs, avisosEmitidos }) {
+async function sendSanctionReport(guild, { motivo, staffsInvolucrados, usuariosAfectados, tiempoEsperadoMs, avisosEmitidos, client }) {
     try {
-        const canalSanciones = guild.channels.cache.get(CANAL_SANCIONES_STAFF_ID);
+        // Obtenemos el canal con fetch para asegurar disponibilidad total
+        let canalSanciones = guild.channels.cache.get(CANAL_SANCIONES_STAFF_ID);
         if (!canalSanciones) {
-            console.error(`❌ [SOPORTE ALERT] No se encontró el canal de sanciones (${CANAL_SANCIONES_STAFF_ID})`);
+            try {
+                canalSanciones = await guild.channels.fetch(CANAL_SANCIONES_STAFF_ID);
+            } catch (e) { }
+        }
+        if (!canalSanciones && client) {
+            try {
+                canalSanciones = await client.channels.fetch(CANAL_SANCIONES_STAFF_ID);
+            } catch (e) { }
+        }
+
+        if (!canalSanciones) {
+            console.error(`❌ [SOPORTE ALERT] No se pudo obtener el canal de sanciones (${CANAL_SANCIONES_STAFF_ID})`);
             return;
         }
 
-        const staffTags = staffsInvolucrados.length > 0
-            ? staffsInvolucrados.map(s => `<@${s.id}> (\`${s.user ? s.user.tag : s.id}\`)`).join('\n')
-            : '⚠️ *Ningún staff disponible con audio activo (todos ensordecidos o canales vacíos)*';
+        // Formato limpio con blockquotes (>) idéntico al de valoraciones
+        const staffLines = staffsInvolucrados.length > 0
+            ? staffsInvolucrados.map(s => `> <@${s.id}> ❗ \`(${s.user ? s.user.tag : s.id})\``).join('\n')
+            : '> ⚠️ *Ningún staff disponible con audio activo*';
 
-        const userTags = usuariosAfectados.length > 0
-            ? usuariosAfectados.map(u => `• <@${u.id}> (\`${u.tag}\`) — Espera: **${formatDuration(u.timeMs)}**`).join('\n')
-            : '• *Usuarios no identificados*';
+        const userLines = usuariosAfectados.length > 0
+            ? usuariosAfectados.map(u => `> <@${u.id}> ❗ \`(${u.tag})\` • Espera: \`${formatDuration(u.timeMs)}\``).join('\n')
+            : '> • *Usuarios no identificados*';
+
+        const isAbandono = motivo.includes('ABANDONÓ');
+        const badgeTitle = isAbandono 
+            ? '🔴 USUARIO ABANDONÓ POR FALTA DE ATENCIÓN'
+            : '⚠️ LLAMADAS DE SOPORTE DESATENDIDAS (3er AVISO)';
+        const embedColor = isAbandono ? 0xE74C3C : 0xE67E22;
+
+        const logoPath = path.join(__dirname, 'assets', 'logo.png');
+        const files = [];
+        let logoAttachment = null;
+        if (fs.existsSync(logoPath)) {
+            logoAttachment = new AttachmentBuilder(logoPath, { name: 'logo.png' });
+            files.push(logoAttachment);
+        }
+
+        const iconUrl = logoAttachment ? 'attachment://logo.png' : (guild.iconURL() || undefined);
 
         const embed = new EmbedBuilder()
-            .setColor(motivo.includes('ABANDONÓ') ? 0xE74C3C : 0xE67E22)
-            .setTitle(motivo.includes('ABANDONÓ') ? '🚨 [INFORME DISCIPLINARIO] Usuario Abandonó la Sala por Falta de Atención' : '⚠️ [INFORME DISCIPLINARIO] Llamadas de Soporte Desatendidas (3er Aviso)')
-            .setDescription(`Se ha registrado una incidencia disciplinaria en la atención de la sala de espera de soporte.`)
-            .addFields(
-                { name: '📌 Motivo del Informe', value: motivo, inline: false },
-                { name: '⏱️ Tiempo Máximo de Espera', value: `\`${formatDuration(tiempoEsperadoMs)}\``, inline: true },
-                { name: '📢 Avisos por Voz Emitidos', value: `\`${avisosEmitidos} avisos\``, inline: true },
-                { name: '👤 Usuario(s) Afectado(s)', value: userTags, inline: false },
-                { name: '🛡️ Staffs Disponibles Notificados', value: staffTags, inline: false }
+            .setColor(embedColor)
+            .setAuthor({
+                name: 'SISTEMA DE CONTROL Y RENDIMIENTO | VALLECAS RP',
+                iconURL: iconUrl
+            })
+            .setTitle(badgeTitle)
+            .setThumbnail(iconUrl)
+            .setDescription(
+                `\u200B\n` +
+                `📌 **| Motivo del Informe:**\n` +
+                `> ${motivo}\n\n` +
+                `👤 **| Usuario(s) Afectado(s):**\n` +
+                `${userLines}\n\n` +
+                `🛡️ **| Staffs Disponibles Notificados:**\n` +
+                `${staffLines}\n\n` +
+                `⏱️ **| Tiempo de Espera:** \`${formatDuration(tiempoEsperadoMs)}\` • 📢 **Avisos Emitidos:** \`${avisosEmitidos} avisos\`\n\n` +
+                `⚖️ **Informe remitido automáticamente a la Administración de VALLECAS RP**`
             )
-            .setFooter({ text: 'Sistema Automatizado de Supervisión y Rendimiento de Soporte', iconURL: guild.iconURL() || undefined })
+            .setFooter({
+                text: 'VALLECAS RP • Supervisión de Soporte',
+                iconURL: iconUrl
+            })
             .setTimestamp();
 
-        // Mención directa en texto para que los staffs involucrados reciban ping
+        // Mención fuera del embed para que llegue la alerta sonora
         const mentionText = staffsInvolucrados.length > 0
             ? `🔔 **Atención Staffs en servicio:** ${staffsInvolucrados.map(s => `<@${s.id}>`).join(' ')}`
             : `🔔 **Aviso a Administración:**`;
 
         await canalSanciones.send({
             content: mentionText,
-            embeds: [embed]
+            embeds: [embed],
+            files: files
         });
 
         console.log(`📋 [SOPORTE ALERT] Informe disciplinario publicado con éxito en el canal de sanciones.`);
@@ -418,7 +459,7 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, usuariosA
 /**
  * Chequeo periódico de la sala de espera
  */
-async function checkWaitRoom(guild) {
+async function checkWaitRoom(guild, client) {
     if (!sistemaActivo) return;
     if (isPlayingVoice) return;
 
@@ -478,10 +519,7 @@ async function checkWaitRoom(guild) {
             staffAlertCount++; // Incrementamos aviso (1, 2, 3...)
             let staffAlertOk = false;
 
-            // Selección exacta de los 3 audios para Staff:
-            // Aviso 1 -> audioStaff1Cache (espera_soporte.mp3)
-            // Aviso 2 -> audioStaff2Cache (aviso_2.mp3)
-            // Aviso 3 o superior -> audioSancionCache (sancion_staffs.mp3)
+            // Selección exacta de audios
             let audioToPlay = null;
             let audioLabel = '';
 
@@ -517,7 +555,7 @@ async function checkWaitRoom(guild) {
             if (staffAlertOk) {
                 lastStaffAlertAt = Date.now();
 
-                // Si es el 3er aviso y aún no se envió el informe de sanción, publicarlo en el canal de sanciones
+                // Si es el 3er aviso y aún no se envió el informe de sanción, publicarlo INMEDIATAMENTE
                 if (staffAlertCount >= 3 && !sanctionReportSent) {
                     sanctionReportSent = true;
                     const usuariosList = [];
@@ -534,7 +572,8 @@ async function checkWaitRoom(guild) {
                         staffsInvolucrados: staffMembers,
                         usuariosAfectados: usuariosList,
                         tiempoEsperadoMs: maxWaitTime,
-                        avisosEmitidos: staffAlertCount
+                        avisosEmitidos: staffAlertCount,
+                        client: client
                     });
                 }
             }
@@ -586,7 +625,7 @@ function initSoporteAlert(client) {
 
                     const { staffMembers } = getOrderedSupportChannelsAndStaffs(guild);
                     await sendSanctionReport(guild, {
-                        motivo: '🔴 El usuario se marchó de la sala de espera sin haber sido atendido tras esperar largo tiempo.',
+                        motivo: 'El usuario se marchó de la sala de espera sin haber sido atendido tras esperar largo tiempo.',
                         staffsInvolucrados: staffMembers,
                         usuariosAfectados: [{
                             id: userId,
@@ -594,7 +633,8 @@ function initSoporteAlert(client) {
                             timeMs: timeWaitingMs
                         }],
                         tiempoEsperadoMs: timeWaitingMs,
-                        avisosEmitidos: staffAlertCount
+                        avisosEmitidos: staffAlertCount,
+                        client: client
                     });
                 }
             }
@@ -614,7 +654,7 @@ function initSoporteAlert(client) {
     setInterval(() => {
         try {
             for (const [, guild] of client.guilds.cache) {
-                checkWaitRoom(guild).catch(() => {});
+                checkWaitRoom(guild, client).catch(() => {});
             }
         } catch (e) { }
     }, 5 * 1000);
@@ -684,7 +724,7 @@ function initSoporteAlert(client) {
         }
     });
 
-    console.log('🛡️ [SOPORTE ALERT] Sistema completo activo: Secuencia escalada de audios (Aviso 1, Aviso 2, Sanción 3) + locución de espera usuarios.');
+    console.log('🛡️ [SOPORTE ALERT] Sistema completo activo: Mensajes con diseño limpio idéntico a valoraciones (sin banners, thumbnail superior).');
 }
 
 module.exports = initSoporteAlert;
