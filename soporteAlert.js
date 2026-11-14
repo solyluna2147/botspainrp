@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 const { Readable } = require('stream');
+const fs = require('fs');
+const path = require('path');
 const {
     joinVoiceChannel,
     createAudioPlayer,
@@ -38,6 +40,16 @@ const CANALES_SOPORTE_IDS = [
     '1517530849334136851'  // SOPORTE 5
 ];
 
+// Rol de staff por defecto (obtenido de config.json)
+let ROLE_STAFF_ID = '1538191116610838691';
+try {
+    const configPath = path.join(__dirname, 'config.json');
+    if (fs.existsSync(configPath)) {
+        const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        if (cfg.ROLE_STAFF_ID) ROLE_STAFF_ID = cfg.ROLE_STAFF_ID;
+    }
+} catch (e) { }
+
 // Estado en memoria
 let sistemaActivo = true; // Interruptor ON/OFF
 let tiempoEsperaMinutos = 5; // Por defecto 5 minutos
@@ -45,7 +57,7 @@ let audioCache = null; // Buffer en memoria RAM para cero latencia
 let isPlayingAlert = false;
 let userJoinTimes = new Map(); // userId -> timestamp de entrada
 let lastAlertPlayedAt = 0; // Para cooldown general
-const COOLDOWN_ENTRE_ALERTAS_MS = 60 * 1000; // Mínimo 1 minuto entre avisos globales
+const COOLDOWN_ENTRE_ALERTAS_MS = 60 * 1000; // Mínimo 1 minuto entre rondas de aviso
 
 /**
  * Carga o refresca el audio desde MongoDB a memoria RAM
@@ -110,6 +122,16 @@ async function setActiveInDB(active) {
 }
 
 /**
+ * Determina si un miembro es Staff
+ */
+function isMemberStaff(member) {
+    if (!member || member.user.bot) return false;
+    if (ROLE_STAFF_ID && member.roles.cache.has(ROLE_STAFF_ID)) return true;
+    if (member.permissions.has('Administrator') || member.permissions.has('ManageGuild') || member.permissions.has('ManageChannels')) return true;
+    return false;
+}
+
+/**
  * Reproduce el audio en un canal de voz y se desconecta de inmediato al terminar
  */
 async function playAlertInChannel(channel) {
@@ -120,9 +142,6 @@ async function playAlertInChannel(channel) {
             return false;
         }
     }
-
-    if (isPlayingAlert) return false;
-    isPlayingAlert = true;
 
     let connection = null;
     try {
@@ -170,7 +189,6 @@ async function playAlertInChannel(channel) {
             connection.destroy();
         } catch (e) { }
 
-        lastAlertPlayedAt = Date.now();
         console.log(`✅ [SOPORTE ALERT] Locución reproducida con éxito en ${channel.name}.`);
         return true;
     } catch (err) {
@@ -179,34 +197,71 @@ async function playAlertInChannel(channel) {
             try { connection.destroy(); } catch (e) { }
         }
         return false;
-    } finally {
-        isPlayingAlert = false;
     }
 }
 
 /**
- * Busca si hay algún canal de soporte con staffs que no estén muteados ni ensordecidos
+ * Analiza los canales de soporte:
+ * - Descarta canales con usuarios NO staff (ya están atendiendo / ocupados)
+ * - Descarta staffs ensordecidos (no escuchan nada)
+ * - Clasifica canales libres con staffs activos:
+ *   - Prioridad 1: Canales con staffs sin silenciar (escuchan y pueden hablar)
+ *   - Prioridad 2: Canales donde todos los staffs estén silenciados (al menos escuchan)
  */
-function findAvailableSupportChannel(guild) {
+function getEligibleSupportChannels(guild) {
+    const listPriority1 = []; // Staffs 100% libres (ni ensordecidos ni silenciados)
+    const listPriority2 = []; // Staffs silenciados pero no ensordecidos
+
     for (const channelId of CANALES_SOPORTE_IDS) {
         const channel = guild.channels.cache.get(channelId);
         if (!channel || !channel.isVoiceBased()) continue;
 
-        // Buscar miembros humanos en ese canal que NO estén muteados ni ensordecidos
-        const activeMembers = channel.members.filter(member => {
-            if (member.user.bot) return false;
-            const vs = member.voice;
-            if (!vs) return false;
-            const isMuted = vs.mute || vs.selfMute;
-            const isDeaf = vs.deaf || vs.selfDeaf;
-            return !isMuted && !isDeaf;
-        });
+        const members = channel.members.filter(m => !m.user.bot);
+        if (members.size === 0) continue; // Canal vacío
 
-        if (activeMembers.size > 0) {
-            return { channel, count: activeMembers.size };
+        // 1. ¿Hay algún usuario que NO sea Staff?
+        // Si hay alguien que no es staff, el canal está OCUPADO atendiendo un ticket/soporte.
+        const hasNonStaff = members.some(m => !isMemberStaff(m));
+        if (hasNonStaff) {
+            // Canal ocupado atendiendo a un usuario -> NO molestar
+            continue;
+        }
+
+        // 2. Solo hay staffs en el canal: filtramos según su estado de voz
+        let hasUnmutedStaff = false;
+        let hasHearingStaff = false;
+
+        for (const [, staffMember] of members) {
+            const vs = staffMember.voice;
+            if (!vs) continue;
+
+            const isDeaf = vs.deaf || vs.selfDeaf;
+            if (isDeaf) {
+                // Ensordecido: no escucha nada, se ignora este staff
+                continue;
+            }
+
+            hasHearingStaff = true; // Al menos escucha
+
+            const isMuted = vs.mute || vs.selfMute;
+            if (!isMuted) {
+                hasUnmutedStaff = true; // Ni muteado ni ensordecido
+            }
+        }
+
+        if (hasUnmutedStaff) {
+            listPriority1.push(channel);
+        } else if (hasHearingStaff) {
+            listPriority2.push(channel);
         }
     }
-    return null;
+
+    // Si hay canales de Prioridad 1 (staffs ni muteados ni ensordecidos), se avisan esos
+    // Si no hay ninguno de Prioridad 1 pero hay de Prioridad 2 (staffs silenciados que sí escuchan), se avisan esos
+    if (listPriority1.length > 0) {
+        return listPriority1;
+    }
+    return listPriority2;
 }
 
 /**
@@ -237,7 +292,7 @@ async function checkWaitRoom(guild) {
     const tiempoLimiteMs = tiempoEsperaMinutos * 60 * 1000;
     let usuarioHaSuperado = false;
 
-    for (const [userId, member] of waitingUsers) {
+    for (const [userId] of waitingUsers) {
         if (!userJoinTimes.has(userId)) {
             userJoinTimes.set(userId, now);
         } else {
@@ -251,16 +306,34 @@ async function checkWaitRoom(guild) {
 
     if (!usuarioHaSuperado) return;
 
-    // Buscar canal con staff activo
-    const target = findAvailableSupportChannel(guild);
-    if (!target) {
-        // No hay staff disponible (o todos están muteados/ensordecidos)
+    // Obtener los canales elegibles para avisar
+    const channelsToAlert = getEligibleSupportChannels(guild);
+    if (!channelsToAlert || channelsToAlert.length === 0) {
+        // Todos los canales están ocupados, vacíos o los staffs están ensordecidos
         return;
     }
 
-    console.log(`📢 [SOPORTE ALERT] Usuario lleva más de ${tiempoEsperaMinutos}m esperando. Avisando en ${target.channel.name} (${target.count} staffs activos)...`);
-    const success = await playAlertInChannel(target.channel);
-    if (success) {
+    isPlayingAlert = true;
+    let algunaAlertaReproducida = false;
+
+    try {
+        console.log(`📢 [SOPORTE ALERT] Usuario lleva más de ${tiempoEsperaMinutos}m esperando. Avisando en ${channelsToAlert.length} canal(es) de soporte disponibles...`);
+
+        // Va canal por canal reproduciendo la locución
+        for (const targetChannel of channelsToAlert) {
+            const ok = await playAlertInChannel(targetChannel);
+            if (ok) {
+                algunaAlertaReproducida = true;
+                // Pequeña pausa de 500ms entre canal y canal para que Discord no se sature
+                await new Promise(r => setTimeout(r, 500));
+            }
+        }
+    } finally {
+        isPlayingAlert = false;
+    }
+
+    if (algunaAlertaReproducida) {
+        lastAlertPlayedAt = Date.now();
         // Reseteamos el reloj para que no vuelva a sonar hasta que pase otro ciclo de minutos
         for (const [userId] of userJoinTimes) {
             userJoinTimes.set(userId, Date.now());
@@ -308,10 +381,8 @@ function initSoporteAlert(client) {
 
         const content = message.content.trim();
         if (content.toLowerCase().startsWith('!locu')) {
-            // Verificar permisos (Administrador o gestionar servidor)
-            const isStaff = message.member.permissions.has('Administrator') ||
-                message.member.permissions.has('ManageGuild') ||
-                message.member.permissions.has('ManageChannels');
+            // Verificar permisos (Administrador o gestionar servidor o rol Staff)
+            const isStaff = isMemberStaff(message.member);
 
             if (!isStaff) {
                 return message.reply({ content: '❌ No tienes permisos para configurar la locución de soporte.' });
@@ -324,7 +395,7 @@ function initSoporteAlert(client) {
             if (subCmd === 'on' || subCmd === 'activar') {
                 try {
                     await setActiveInDB(true);
-                    return message.reply({ content: `🟢 **Locución ACTIVADA:** El sistema avisará en los canales de soporte cuando alguien lleve **${tiempoEsperaMinutos} min** esperando.` });
+                    return message.reply({ content: `🟢 **Locución ACTIVADA:** El bot avisará en los canales de soporte libres cuando alguien lleve **${tiempoEsperaMinutos} min** esperando.` });
                 } catch (e) {
                     return message.reply({ content: '❌ Error al guardar en la base de datos.' });
                 }
@@ -372,7 +443,7 @@ function initSoporteAlert(client) {
         }
     });
 
-    console.log('🛡️ [SOPORTE ALERT] Sistema independiente de alerta de soporte iniciado correctamente.');
+    console.log('🛡️ [SOPORTE ALERT] Sistema independiente de alerta de soporte iniciado correctamente con lógica multi-canal y detección de canales ocupados.');
 }
 
 module.exports = initSoporteAlert;
