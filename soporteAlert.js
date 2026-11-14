@@ -9,7 +9,8 @@ const {
     createAudioResource,
     AudioPlayerStatus,
     VoiceConnectionStatus,
-    entersState
+    entersState,
+    NoSubscriberBehavior
 } = require('@discordjs/voice');
 
 // Esquema para audios almacenados en MongoDB
@@ -238,12 +239,16 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
             return false;
         }
 
-        const player = createAudioPlayer();
+        const player = createAudioPlayer({
+            behaviors: {
+                noSubscriber: NoSubscriberBehavior.Play
+            }
+        });
         activePlayer = player;
+        connection.subscribe(player);
+
         const stream = Readable.from(audioBuffer);
         const resource = createAudioResource(stream);
-
-        connection.subscribe(player);
         player.play(resource);
 
         await new Promise((resolve) => {
@@ -511,8 +516,11 @@ async function checkWaitRoom(guild, client) {
         }
     }
 
-    // 2. AVISO A STAFFS
-    if (usuarioHaSuperadoStaffTime && (now - lastStaffAlertAt >= 30 * 1000)) {
+    // 2. AVISO A STAFFS (Solo si han pasado los minutos configurados desde el último aviso)
+    const tiempoEntreAvisosMs = tiempoEsperaMinutos * 60 * 1000;
+    const yaTocaAvisar = (lastStaffAlertAt === 0) || ((now - lastStaffAlertAt) >= tiempoEntreAvisosMs);
+
+    if (usuarioHaSuperadoStaffTime && yaTocaAvisar) {
         const { channels, staffMembers } = getOrderedSupportChannelsAndStaffs(guild);
         if (channels.length > 0 && !isPlayingVoice) {
             stopCurrentTour = false;
