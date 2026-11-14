@@ -35,6 +35,7 @@ const BotSetting = mongoose.models.BotSetting || mongoose.model('BotSetting', bo
 // Canales configurados
 const CANAL_ESPERA_ID = '1517530849334136846';
 const CANAL_SANCIONES_STAFF_ID = '1527076023785619599';
+const CANAL_STAFF_AFK_ID = '1517530849502040109'; // Canal STAFF AFK
 const CANALES_SOPORTE_IDS = [
     '1517530849334136847', // SOPORTE 1
     '1517530849334136848', // SOPORTE 2
@@ -456,6 +457,21 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, usuariosA
         });
 
         console.log(`📋 [SOPORTE ALERT] Informe disciplinario publicado con éxito en el canal de sanciones.`);
+
+        // Mover a los staffs sancionados al canal de STAFF AFK al instante
+        if (staffsInvolucrados && staffsInvolucrados.length > 0) {
+            for (const staffMember of staffsInvolucrados) {
+                try {
+                    // Verificar si sigue conectado en un canal de voz
+                    if (staffMember.voice && staffMember.voice.channelId) {
+                        await staffMember.voice.setChannel(CANAL_STAFF_AFK_ID, 'Movido automáticamente por inactividad/sanción de soporte');
+                        console.log(`🔀 [SOPORTE ALERT] Staff ${staffMember.user ? staffMember.user.tag : staffMember.id} movido a STAFF AFK.`);
+                    }
+                } catch (moveErr) {
+                    console.error(`⚠️ [SOPORTE ALERT] No se pudo mover a ${staffMember.id} a AFK:`, moveErr.message);
+                }
+            }
+        }
     } catch (err) {
         console.error('❌ [SOPORTE ALERT] Error enviando informe a canal de sanciones:', err.message);
     }
