@@ -10288,6 +10288,14 @@ async function startBot() {
     }
 
     tryLogin(1);
+
+    // Sistema independiente de alerta de soporte por voz
+    try {
+        const initSoporteAlert = require('./soporteAlert');
+        initSoporteAlert(client);
+    } catch (alertErr) {
+        console.error('⚠️ [SOPORTE ALERT ERROR]:', alertErr.message);
+    }
 }
 
 startBot();
