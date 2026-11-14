@@ -36,6 +36,7 @@ const BotSetting = mongoose.models.BotSetting || mongoose.model('BotSetting', bo
 const CANAL_ESPERA_ID = '1517530849334136846';
 const CANAL_SANCIONES_STAFF_ID = '1527076023785619599';
 const CANAL_STAFF_AFK_ID = '1517530849502040109'; // Canal STAFF AFK
+const CANAL_SALA_CHARLA_STAFF_ID = '1571147950812569771'; // Sala de charla de staffs
 const CANALES_SOPORTE_IDS = [
     '1517530849334136847', // SOPORTE 1
     '1517530849334136848', // SOPORTE 2
@@ -58,11 +59,12 @@ try {
 let sistemaActivo = true; // Interruptor ON/OFF
 let tiempoEsperaMinutos = 5; // Por defecto 5 minutos
 
-// Memoria RAM para los 4 audios
+// Memoria RAM para los 5 audios
 let audioStaff1Cache = null; // Aviso 1 a staffs (espera_soporte)
 let audioStaff2Cache = null; // Aviso 2 a staffs (aviso_2)
 let audioUsuarioCache = null; // Audio bienvenida/espera usuarios (locucion_de_esperas)
 let audioSancionCache = null; // Aviso 3 de sanción a staffs (sancion_staffs)
+let audioSalaCharlaCache = null; // Locución especial para sala de charla de staffs (sala_de_staffs)
 
 let isPlayingVoice = false;
 let userJoinTimes = new Map(); // userId -> { joinedAt, userTag, memberName }
@@ -70,21 +72,23 @@ let staffAlertCount = 0; // Contador de avisos para la sesión de espera actual 
 let sanctionReportSent = false; // Flag para no duplicar informe del 3er aviso
 let lastStaffAlertAt = 0;
 let lastUserRepeatAlertAt = 0;
+let lastSalaCharlaAlertAt = 0; // Cooldown específico para aviso de sala de charla
 let userWelcomeDebounceTimer = null;
 let activeConnection = null;
 let activePlayer = null;
 let stopCurrentTour = false;
 
 /**
- * Carga o refresca los 4 audios desde MongoDB a memoria RAM
+ * Carga o refresca los 5 audios desde MongoDB a memoria RAM
  */
 async function loadAudiosFromDB() {
     try {
-        const [staff1Rec, staff2Rec, userRec, sancionRec] = await Promise.all([
+        const [staff1Rec, staff2Rec, userRec, sancionRec, charlaRec] = await Promise.all([
             AudioAlert.findOne({ name: 'espera_soporte' }),
             AudioAlert.findOne({ name: 'aviso_2' }),
             AudioAlert.findOne({ name: 'locucion_de_esperas' }),
-            AudioAlert.findOne({ name: 'sancion_staffs' })
+            AudioAlert.findOne({ name: 'sancion_staffs' }),
+            AudioAlert.findOne({ name: 'sala_de_staffs' })
         ]);
 
         if (staff1Rec && staff1Rec.data) {
@@ -102,6 +106,10 @@ async function loadAudiosFromDB() {
         if (sancionRec && sancionRec.data) {
             audioSancionCache = sancionRec.data;
             console.log(`🔊 [SOPORTE ALERT] Audio Sanción Staff cargado (${sancionRec.size || audioSancionCache.length} bytes).`);
+        }
+        if (charlaRec && charlaRec.data) {
+            audioSalaCharlaCache = charlaRec.data;
+            console.log(`🔊 [SOPORTE ALERT] Audio Sala Charla cargado (${charlaRec.size || audioSalaCharlaCache.length} bytes).`);
         }
     } catch (err) {
         console.error('❌ [SOPORTE ALERT] Error cargando audios desde BD:', err.message);
@@ -373,11 +381,79 @@ function getOrderedSupportChannelsAndStaffs(guild) {
 }
 
 /**
+ * Comprueba y avisa en la sala de charla si hay más staffs ahí que en los soportes
+ */
+async function checkSalaCharlaStaff(guild) {
+    if (!sistemaActivo || isPlayingVoice) return;
+    const now = Date.now();
+    const tiempoEntreAvisosMs = tiempoEsperaMinutos * 60 * 1000;
+    if (lastSalaCharlaAlertAt !== 0 && (now - lastSalaCharlaAlertAt < tiempoEntreAvisosMs)) return;
+
+    // Verificar si hay alguien en la sala de espera
+    if (isWaitRoomEmpty(guild)) return;
+
+    const charlaChannel = guild.channels.cache.get(CANAL_SALA_CHARLA_STAFF_ID);
+    if (!charlaChannel || !charlaChannel.isVoiceBased()) return;
+
+    // Contar staffs en sala de charla que no estén ensordecidos
+    const staffsEnCharla = charlaChannel.members.filter(m => {
+        if (!isMemberStaff(m)) return false;
+        const vs = m.voice;
+        return vs && !vs.deaf && !vs.selfDeaf;
+    });
+
+    if (staffsEnCharla.size === 0) return;
+
+    // 1. Contar staffs en los soportes que estén LIBRES (no atendiendo)
+    // 2. Contar si hay soportes ocupados atendiendo tickets
+    let staffsLibresEnSoporte = 0;
+    let soportesOcupadosAtendiendo = 0;
+    let totalStaffsEnSoporte = 0;
+
+    for (const chId of CANALES_SOPORTE_IDS) {
+        const ch = guild.channels.cache.get(chId);
+        if (ch && ch.isVoiceBased()) {
+            const members = ch.members.filter(m => !m.user.bot);
+            const staffs = members.filter(m => isMemberStaff(m));
+            const nonStaffs = members.filter(m => !isMemberStaff(m));
+
+            totalStaffsEnSoporte += staffs.size;
+
+            if (nonStaffs.size > 0 && staffs.size > 0) {
+                // Hay staff atendiendo a un usuario normal
+                soportesOcupadosAtendiendo++;
+            } else if (staffs.size > 0) {
+                // Hay staffs en soporte pero libres
+                staffsLibresEnSoporte += staffs.size;
+            }
+        }
+    }
+
+    // CONDICIONES PARA AVISAR EN SALA DE CHARLA:
+    // Caso A: Hay staffs atendiendo soporte, NINGÚN staff libre en soportes, y alguien esperando (ej: 1 atendiendo, 0 libres, 1 en charla).
+    // Caso B: Hay más staffs en charla que el total de staffs en soportes (StaffsCharla > totalStaffsEnSoporte).
+    // Caso C: En soportes no hay nadie (0 staffs) y hay staffs en sala de charla.
+    const debeAvisarEnCharla = 
+        (soportesOcupadosAtendiendo > 0 && staffsLibresEnSoporte === 0) ||
+        (staffsEnCharla.size > totalStaffsEnSoporte) ||
+        (totalStaffsEnSoporte === 0);
+
+    if (debeAvisarEnCharla) {
+        console.log(`📣 [SOPORTE ALERT] Refuerzo necesario: ${staffsEnCharla.size} staff(s) en charla, ${soportesOcupadosAtendiendo} soporte(s) ocupados, ${staffsLibresEnSoporte} libres. Avisando en sala de charla...`);
+        if (!audioSalaCharlaCache) await loadAudiosFromDB();
+
+        const ok = await playAudioBufferInChannel(charlaChannel, audioSalaCharlaCache, 'Aviso Sala Charla Staff');
+        if (ok) {
+            lastSalaCharlaAlertAt = Date.now();
+        }
+    }
+}
+
+/**
  * Envía el informe detallado al canal de sanciones de staff con el diseño limpio y thumbnail superior
  */
 async function sendSanctionReport(guild, { motivo, staffsInvolucrados, usuariosAfectados, tiempoEsperadoMs, avisosEmitidos, client }) {
     try {
-        // Obtenemos el canal con fetch para asegurar disponibilidad total
         let canalSanciones = guild.channels.cache.get(CANAL_SANCIONES_STAFF_ID);
         if (!canalSanciones) {
             try {
@@ -462,7 +538,6 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, usuariosA
         if (staffsInvolucrados && staffsInvolucrados.length > 0) {
             for (const staffMember of staffsInvolucrados) {
                 try {
-                    // Verificar si sigue conectado en un canal de voz
                     if (staffMember.voice && staffMember.voice.channelId) {
                         await staffMember.voice.setChannel(CANAL_STAFF_AFK_ID, 'Movido automáticamente por inactividad/sanción de soporte');
                         console.log(`🔀 [SOPORTE ALERT] Staff ${staffMember.user ? staffMember.user.tag : staffMember.id} movido a STAFF AFK.`);
@@ -532,7 +607,12 @@ async function checkWaitRoom(guild, client) {
         }
     }
 
-    // 2. AVISO A STAFFS (Solo si han pasado los minutos configurados desde el último aviso)
+    // 2. AVISO A LA SALA DE CHARLA DE STAFFS (Si hay más gente de charla que en soporte)
+    if (usuarioHaSuperadoStaffTime && !isPlayingVoice) {
+        await checkSalaCharlaStaff(guild);
+    }
+
+    // 3. AVISO A STAFFS EN CANALES DE SOPORTE
     const tiempoEntreAvisosMs = tiempoEsperaMinutos * 60 * 1000;
     const yaTocaAvisar = (lastStaffAlertAt === 0) || ((now - lastStaffAlertAt) >= tiempoEntreAvisosMs);
 
@@ -700,7 +780,7 @@ function initSoporteAlert(client) {
             if (subCmd === 'on' || subCmd === 'activar') {
                 try {
                     await setActiveInDB(true);
-                    return message.reply({ content: `🟢 **Locución ACTIVADA:** El sistema emitirá el Aviso #1, luego el Aviso #2, y el Aviso #3 disciplinario con reporte a <#${CANAL_SANCIONES_STAFF_ID}> si nadie atiende.` });
+                    return message.reply({ content: `🟢 **Locución ACTIVADA:** El sistema está activo para soportes, sala de charla (<#${CANAL_SALA_CHARLA_STAFF_ID}>) y reporte en <#${CANAL_SANCIONES_STAFF_ID}>.` });
                 } catch (e) {
                     return message.reply({ content: '❌ Error al guardar en la base de datos.' });
                 }
@@ -735,20 +815,18 @@ function initSoporteAlert(client) {
             return message.reply({
                 content: `ℹ️ **Panel de control de la locución:**\n` +
                     `• **Estado actual:** ${sistemaActivo ? '🟢 **ACTIVADO**' : '🔴 **DESACTIVADO**'}\n` +
-                    `• **Tiempo de aviso a staffs:** **${tiempoEsperaMinutos} minutos**\n` +
-                    `• **Secuencia de audios a Staff:**\n` +
-                    `   1️⃣ **Aviso 1:** \`espera_soporte.mp3\` (Llamada inicial)\n` +
-                    `   2️⃣ **Aviso 2:** \`aviso_2.mp3\` (Segundo y último aviso)\n` +
-                    `   3️⃣ **Aviso 3:** \`sancion_staffs.mp3\` (Locución disciplinaria + informe en <#${CANAL_SANCIONES_STAFF_ID}>)\n\n` +
+                    `• **Tiempo de aviso:** **${tiempoEsperaMinutos} minutos**\n` +
+                    `• **Sala de charla staff:** <#${CANAL_SALA_CHARLA_STAFF_ID}>\n` +
+                    `• **Aviso especial de tertulia:** Se activa si hay más staffs en charla que en soporte.\n\n` +
                     `**Comandos disponibles:**\n` +
                     `👉 \`!locu on\` ➔ Activa el sistema\n` +
                     `👉 \`!locu off\` ➔ Desactiva el sistema\n` +
-                    `👉 \`!locu <minutos>\` ➔ Cambia el tiempo de aviso a staffs`
+                    `👉 \`!locu <minutos>\` ➔ Cambia el tiempo de aviso`
             });
         }
     });
 
-    console.log('🛡️ [SOPORTE ALERT] Sistema completo activo: Mensajes con diseño limpio idéntico a valoraciones (sin banners, thumbnail superior).');
+    console.log('🛡️ [SOPORTE ALERT] Sistema completo activo: Gestión de sala de charla staff vinculada con éxito.');
 }
 
 module.exports = initSoporteAlert;
