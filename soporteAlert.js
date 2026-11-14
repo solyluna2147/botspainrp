@@ -329,15 +329,16 @@ function scheduleUserWelcomeAlert(guild) {
 }
 
 /**
- * Analiza canales de soporte libres con staffs disponibles:
- * - Descarta canales con personas no-staff (ocupados en soporte)
- * - Descarta staffs ensordecidos
- * - Retorna ordenados: 1º no-silenciados, 2º silenciados
- * - También devuelve la lista de miembros Staffs detectados
+ * Analiza canales de soporte con staffs disponibles:
+ * - Prioridad 1: Canales con staffs libres (sin personas atendiendo) y sin silenciar
+ * - Prioridad 2: Canales con staffs libres silenciados (que escuchan)
+ * - Prioridad 3: Canales donde estén los staffs aunque haya personas atendiendo (si están todos juntos y no hay ningún otro canal libre)
+ * - En todos los casos descarta staffs ensordecidos
  */
 function getOrderedSupportChannelsAndStaffs(guild) {
-    const listPriority1 = [];
-    const listPriority2 = [];
+    const listPriority1 = []; // Canales libres con staffs sin silenciar
+    const listPriority2 = []; // Canales libres con staffs silenciados
+    const listPriorityOccupied = []; // Canales donde hay staffs con alguien atendiendo
     const allAvailableStaffMembers = [];
 
     for (const channelId of CANALES_SOPORTE_IDS) {
@@ -347,14 +348,15 @@ function getOrderedSupportChannelsAndStaffs(guild) {
         const members = channel.members.filter(m => !m.user.bot);
         if (members.size === 0) continue;
 
-        // Si hay algún no-staff, está ocupado atendiendo
+        const staffsInChannel = members.filter(m => isMemberStaff(m));
+        if (staffsInChannel.size === 0) continue; // No hay staffs aquí
+
         const hasNonStaff = members.some(m => !isMemberStaff(m));
-        if (hasNonStaff) continue;
 
         let hasUnmutedStaff = false;
         let hasHearingStaff = false;
 
-        for (const [, staffMember] of members) {
+        for (const [, staffMember] of staffsInChannel) {
             const vs = staffMember.voice;
             if (!vs) continue;
             const isDeaf = vs.deaf || vs.selfDeaf;
@@ -367,15 +369,34 @@ function getOrderedSupportChannelsAndStaffs(guild) {
             if (!isMuted) hasUnmutedStaff = true;
         }
 
-        if (hasUnmutedStaff) {
-            listPriority1.push(channel);
-        } else if (hasHearingStaff) {
-            listPriority2.push(channel);
+        if (hasHearingStaff) {
+            if (!hasNonStaff) {
+                // Canal libre (sin usuario no-staff)
+                if (hasUnmutedStaff) {
+                    listPriority1.push(channel);
+                } else {
+                    listPriority2.push(channel);
+                }
+            } else {
+                // Hay staffs reunidos aquí con alguien
+                listPriorityOccupied.push(channel);
+            }
         }
     }
 
+    // Si hay canales libres sin atender a nadie, se eligen esos primero
+    const freeChannels = [...listPriority1, ...listPriority2];
+    if (freeChannels.length > 0) {
+        return {
+            channels: freeChannels,
+            staffMembers: allAvailableStaffMembers
+        };
+    }
+
+    // Si NO hay ningún canal libre porque están todos los staffs reunidos en uno atendiendo o acompañando:
+    // El bot entra a avisar a ese canal igualmente para que sepan que hay alguien en espera
     return {
-        channels: [...listPriority1, ...listPriority2],
+        channels: listPriorityOccupied,
         staffMembers: allAvailableStaffMembers
     };
 }
