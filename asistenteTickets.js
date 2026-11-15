@@ -158,19 +158,24 @@ function detectTicketCategory(channel) {
 }
 
 // Comprueba si algún Staff ya ha hablado en el canal
-async function hasStaffParticipated(channel) {
+// EXCLUYE expresamente al creador del ticket para que sus mensajes NUNCA lo descalifiquen
+async function hasStaffParticipated(channel, ticketOwnerId = null) {
     try {
         const messages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
         if (!messages) return false;
 
         for (const msg of messages.values()) {
-            // Ignorar bots (King, nuestro bot, etc.)
             if (msg.author.bot) continue;
 
-            // Verificar si el autor tiene rol de staff o permisos de admin
+            // Si es el usuario que abrió el ticket, NO es staff atendiendo
+            if (ticketOwnerId && msg.author.id === ticketOwnerId) continue;
+
+            // Verificar si otro usuario que habló tiene rol de staff o permisos de admin
             const member = msg.member || await channel.guild.members.fetch(msg.author.id).catch(() => null);
             if (member && (member.roles.cache.has(ROLE_STAFF_ID) || member.permissions.has(PermissionFlagsBits.Administrator))) {
-                return true; // Ya intervino un miembro del Staff
+                // Verificar que no sea el mismo que abrió el ticket
+                if (ticketOwnerId && member.id === ticketOwnerId) continue;
+                return true; // Un staff distinto ya intervino
             }
         }
         return false;
@@ -496,12 +501,6 @@ async function processExistingTicket(channel, triggerUser = null) {
     try {
         if (!isValidTicketCategory(channel)) return false;
 
-        // Si ya hay mensajes de un staff, ABORTAR
-        const staffInvolved = await hasStaffParticipated(channel);
-        if (staffInvolved) {
-            return 'STAFF_EXISTS';
-        }
-
         const category = detectTicketCategory(channel);
         const fetchedMessages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
         if (!fetchedMessages || fetchedMessages.size === 0) return false;
@@ -509,6 +508,7 @@ async function processExistingTicket(channel, triggerUser = null) {
         const chronological = Array.from(fetchedMessages.values()).reverse();
         let ticketOwner = null;
 
+        // 1. Detectar al dueño del ticket (mención en el embed de King o primer usuario no-bot)
         for (const msg of chronological) {
             if (msg.author.bot && msg.mentions.users.size > 0) {
                 const nonBotMention = msg.mentions.users.find(u => !u.bot);
@@ -517,11 +517,9 @@ async function processExistingTicket(channel, triggerUser = null) {
                     break;
                 }
             }
-            if (!msg.author.bot && !ticketOwner) {
-                ticketOwner = msg.author;
-            }
         }
 
+        // Si no lo encontramos en menciones, buscar en permisos del canal
         if (!ticketOwner) {
             const userPerm = channel.permissionOverwrites.cache.find(po => po.type === 1 && po.id !== channel.client.user.id);
             if (userPerm) {
@@ -529,14 +527,42 @@ async function processExistingTicket(channel, triggerUser = null) {
             }
         }
 
+        // Si sigue sin aparecer, el primer autor que no sea bot
+        if (!ticketOwner) {
+            for (const msg of chronological) {
+                if (!msg.author.bot) {
+                    ticketOwner = msg.author;
+                    break;
+                }
+            }
+        }
+
         if (!ticketOwner) return false;
 
+        // 2. Comprobar si un Staff DISTINTO al usuario ya habló en el ticket
+        const staffInvolved = await hasStaffParticipated(channel, ticketOwner.id);
+        if (staffInvolved) {
+            return 'STAFF_EXISTS';
+        }
+
+        // 3. Recopilar mensajes del usuario
         const userMsgs = chronological
             .filter(m => m.author.id === ticketOwner.id)
             .map(m => ({ content: m.content, timestamp: m.createdAt }));
 
-        if (userMsgs.length === 0) return false;
+        // CASO A: El usuario aún NO ha respondido nada en el ticket
+        // El asistente virtual toma la iniciativa, habla al usuario y le pregunta qué necesita
+        if (userMsgs.length === 0) {
+            // Verificar si el asistente ya envió la bienvenida antes para no duplicar
+            const botSentWelcome = chronological.some(m => m.author.id === channel.client.user.id);
+            if (!botSentWelcome) {
+                await sendCategoryWelcome(channel, ticketOwner, category);
+                return 'WELCOMED';
+            }
+            return 'WAITING_USER';
+        }
 
+        // CASO B: El usuario ya ha escrito (como @brynツ) -> Generar resumen detallado para el Staff
         const allUserText = userMsgs.map(m => m.content).join('\n');
         const normalized = normalizeSlang(allUserText);
 
@@ -742,10 +768,9 @@ module.exports = function initAsistenteTickets(client) {
             // 5. Procesar TODOS los tickets sin atención de las 4 categorías
             if (contentLower === '!procesartodos') {
                 if (!isStaff) return;
-                const statusMsg = await message.channel.send('🔍 *Obteniendo canales de las 4 categorías oficiales...*');
+                const statusMsg = await message.channel.send('🔍 *Analizando canales de las 4 categorías oficiales...*');
 
                 try {
-                    // Forzar fetch de canales para que no dependa de la caché
                     const allChannels = await message.guild.channels.fetch();
                     const targetChannels = allChannels.filter(c => c && isValidTicketCategory(c) && c.isTextBased());
 
@@ -753,21 +778,23 @@ module.exports = function initAsistenteTickets(client) {
                         return statusMsg.edit('⚠️ No se encontraron canales de texto dentro de las 4 categorías de tickets.');
                     }
 
-                    let processedCount = 0;
+                    let summarizedCount = 0;
+                    let welcomedCount = 0;
                     let skippedCount = 0;
 
                     for (const [, ch] of targetChannels) {
-                        const staffActive = await hasStaffParticipated(ch);
-                        if (!staffActive) {
-                            const ok = await processExistingTicket(ch);
-                            if (ok === true) processedCount++;
-                            else skippedCount++;
-                        } else {
-                            skippedCount++;
-                        }
+                        const res = await processExistingTicket(ch);
+                        if (res === true) summarizedCount++;
+                        else if (res === 'WELCOMED') welcomedCount++;
+                        else skippedCount++;
                     }
 
-                    return statusMsg.edit(`✅ **Proceso completado:** Se han analizado y generado resúmenes para **${processedCount}** ticket(s) desatendidos. (Saltados ${skippedCount} por ya tener Staff o sin mensajes).`);
+                    return statusMsg.edit(
+                        `✅ **Proceso completado con éxito:**\n` +
+                        `> 📋 **Resúmenes para Staff generados:** \`${summarizedCount}\` ticket(s)\n` +
+                        `> 👋 **Tickets vacíos donde el asistente habló al usuario:** \`${welcomedCount}\` ticket(s)\n` +
+                        `> 🛡️ **Saltados (con Staff atendiendo o cerrados):** \`${skippedCount}\` ticket(s)`
+                    );
                 } catch (err) {
                     console.error('Error en !procesartodos:', err);
                     return statusMsg.edit(`❌ Error al procesar canales: ${err.message}`);
