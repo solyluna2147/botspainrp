@@ -1401,8 +1401,24 @@ module.exports = function initAsistenteTickets(client) {
             }
 
             // ==========================================
-            // SEGURIDAD: BOTONES DE ACCIÓN EXCLUSIVOS PARA STAFF
+            // SEGURIDAD: BOTONES DE ACCIÓN EXCLUSIVOS PARA STAFF EN ASISTENTE
             // ==========================================
+            // Lista blanca de botones propios del asistente que requieren permisos de Staff
+            const staffOnlyPrefixes = [
+                'btn_stream_approve_',
+                'btn_stream_deny_',
+                'btn_dona_bizum_',
+                'btn_dona_paypal_',
+                'btn_dona_done_',
+                'btn_ban_unban_',
+                'btn_ban_reject_'
+            ];
+
+            const isAsistenteStaffButton = staffOnlyPrefixes.some(prefix => customId.startsWith(prefix));
+
+            // Si no es un botón de Staff de este módulo, dejar que otros listeners (como el panel de valoración en index.js) lo procesen
+            if (!isAsistenteStaffButton) return;
+
             const isStaff = interaction.member?.roles.cache.has(ROLE_STAFF_ID) || interaction.member?.permissions.has(PermissionFlagsBits.Administrator);
 
             if (!isStaff) {
