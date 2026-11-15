@@ -156,6 +156,33 @@ async function hasStaffParticipated(channel, ticketOwnerId = null, excludedUserI
         const messages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
         if (!messages) return false;
 
+        // Si no nos pasaron ticketOwnerId, intentar resolver quién abrió el ticket desde los mensajes de King/bienvenida
+        let resolvedOwnerId = ticketOwnerId;
+        if (!resolvedOwnerId) {
+            for (const msg of messages.values()) {
+                if (msg.author.bot) {
+                    if (msg.mentions.users.size > 0) {
+                        const nonBot = msg.mentions.users.find(u => !u.bot);
+                        if (nonBot) {
+                            resolvedOwnerId = nonBot.id;
+                            break;
+                        }
+                    }
+                    if (msg.embeds && msg.embeds.length > 0) {
+                        for (const embed of msg.embeds) {
+                            const embedText = `${embed.title || ''} ${embed.description || ''}`;
+                            const mentionMatch = embedText.match(/<@!?(\d{17,20})>/);
+                            if (mentionMatch) {
+                                resolvedOwnerId = mentionMatch[1];
+                                break;
+                            }
+                        }
+                        if (resolvedOwnerId) break;
+                    }
+                }
+            }
+        }
+
         for (const msg of messages.values()) {
             // Ignorar todos los bots (King, el bot de tickets, MEE6, etc.)
             if (msg.author.bot) continue;
@@ -166,7 +193,7 @@ async function hasStaffParticipated(channel, ticketOwnerId = null, excludedUserI
             }
 
             // Si es el creador del ticket, SUS MENSAJES NUNCA SON DE UN STAFF ATENDIENDO
-            if (ticketOwnerId && msg.author.id === ticketOwnerId) continue;
+            if (resolvedOwnerId && msg.author.id === resolvedOwnerId) continue;
 
             // Si es quien ejecutó el comando
             if (excludedUserId && msg.author.id === excludedUserId) continue;
@@ -408,18 +435,18 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
 
     try {
         const categoryPrompts = {
-            donaciones: 'Eres el Asistente Virtual Oficial de Donaciones de VALLECAS RP (servidor de FiveM español). Tu misión es atender de forma súper cordial, amable y cercana al usuario. En el servidor se aceptan donaciones exclusivamente por BIZUM y PAYPAL (nada de Tebex). Vendemos coches VIP, casas/MLO, packs VIP, dinero IC, armas y desbaneos de pago. Si el usuario te dice qué busca o pide precios, anímale, sé empático y dile que un encargado de donaciones le tomará los datos para la entrega. No inventes precios exactos en euros si no los sabes, di que administración le dará el importe exacto.',
-            apelacion: 'Eres el Asistente Virtual Oficial de Apelaciones de VALLECAS RP (servidor de FiveM español). Sé empático, cordial y comprensivo. Muchos usuarios vienen arrepentidos por tirar de F8, calentar la cabeza o cometer errores de rol. Pregúntale con educación si tiene alguna prueba o si quiere aportar más detalles de lo sucedido, y explícale que su caso será revisado con justicia por la Administración.',
-            streamer: 'Eres el Asistente Virtual de Creadores y Streamers de VALLECAS RP. Felicítale amablemente por crear contenido en el servidor. Pídele sus canales de Twitch, Kick o TikTok y anímale.',
-            soporte: 'Eres el Asistente Técnico y de Soporte de VALLECAS RP. Sé servicial y empático, pregunta detalles del bug o problema y transmítele tranquilidad de que el equipo lo solucionará.'
+            donaciones: 'Eres el Asistente Virtual Oficial de Donaciones de VALLECAS RP (servidor de FiveM español). Tu misión es atender de forma súper cordial, amable y cercana al usuario. En el servidor se aceptan donaciones exclusivamente por BIZUM y PAYPAL (nada de Tebex). Se ofrecen coches VIP, casas/MLO, packs VIP, dinero IC, armas y desbaneos de pago. Si el usuario te dice qué busca o pide información, sé muy empático, salúdalo con calidez y dile que los encargados de donaciones le tomarán nota enseguida para la entrega. No inventes precios exactos en euros.',
+            apelacion: 'Eres el Asistente Virtual Oficial de Apelaciones de VALLECAS RP (servidor de FiveM español). Sé muy empático, cordial y comprensivo. Muchos usuarios vienen pidiendo disculpas por tirar de F8, calentar la cabeza o cometer errores de rol. Analiza exactamente lo que te dice, agradécele la sinceridad y pregúntale educadamente si tiene alguna prueba (clip de Medal/YouTube) o si desea añadir algún detalle más para que la Administración revise su caso con la mayor rapidez.',
+            streamer: 'Eres el Asistente Virtual de Creadores y Streamers de VALLECAS RP. Felicítale amablemente por crear contenido o querer retransmitir en el servidor. Pídele cordialmente sus enlaces de Twitch, Kick o TikTok y deséale mucha suerte.',
+            soporte: 'Eres el Asistente de Soporte y Atención al Ciudadano de VALLECAS RP (servidor de FiveM español). Tu misión es conversar de manera humana, cordial y cercana con el usuario para averiguar su problema. Analiza su mensaje con atención (por ejemplo si te dice que tiene un bug, un fallo de inventario, crash, etc.) y pregúntale amablemente qué le ha sucedido exactamente o en qué momento le ocurre para que los moderadores y desarrolladores puedan solucionárselo de inmediato.'
         };
 
         const systemPrompt = (categoryPrompts[category] || categoryPrompts.soporte) +
             '\nREGLAS OBLIGATORIAS:\n' +
-            '1. Responde SIEMPRE en español de España de forma cordial, educada y natural, como un moderador real de Discord.\n' +
-            '2. Máximo 2 o 3 párrafos cortos y claros.\n' +
+            '1. Responde SIEMPRE en español de España de forma cordial, educada, cercana y 100% natural, como una persona de atención al usuario en Discord.\n' +
+            '2. Máximo 1 o 2 párrafos concisos y bien redactados.\n' +
             '3. NUNCA pidas la ID de FiveM.\n' +
-            '4. No uses saludos excesivamente robóticos ni plantillas vacías.';
+            '4. Responde de forma directa y personalizada a lo que el usuario acaba de escribir.';
 
         const conversationHistory = userMessages.slice(-4).map(m => ({
             role: 'user',
@@ -1093,11 +1120,27 @@ module.exports = function initAsistenteTickets(client) {
             if (!isValidTicketCategory(message.channel)) return;
 
             // 2. Si ya hay mensajes de un Staff en este ticket, EL ASISTENTE SE RETIRA
-            const staffActive = await hasStaffParticipated(message.channel);
+            // Comprobamos si hay algún staff atendiendo (excluyendo al que acaba de escribir si es el creador del ticket)
+            const staffActive = await hasStaffParticipated(message.channel, message.author.id);
             if (staffActive) return;
 
-            // 3. Si el que acaba de escribir es un Staff, no intervenir
-            if (isStaff) return;
+            // 3. Si el que acaba de escribir es un Staff, solo ignorar si NO es el creador del ticket
+            // (Si un staff o admin abre un ticket de soporte/donación para probar o como usuario, el bot SÍ le debe atender)
+            let isAuthorTicketOwner = false;
+            try {
+                // Comprobar si el autor fue mencionado en los primeros mensajes del ticket por el bot King
+                const pinnedOrFirst = await message.channel.messages.fetch({ limit: 10 }).catch(() => null);
+                if (pinnedOrFirst) {
+                    for (const m of pinnedOrFirst.values()) {
+                        if (m.author.bot && (m.content.includes(message.author.id) || (m.embeds && m.embeds.some(e => `${e.title || ''} ${e.description || ''}`.includes(message.author.id))))) {
+                            isAuthorTicketOwner = true;
+                            break;
+                        }
+                    }
+                }
+            } catch (e) { }
+
+            if (isStaff && !isAuthorTicketOwner) return;
 
             const channelId = message.channel.id;
             let session = await TicketSession.findOne({ channelId });
@@ -1154,25 +1197,25 @@ module.exports = function initAsistenteTickets(client) {
 
                 await session.save();
 
-                // Si mandó links o es streamer
-                if (streamLinks.length > 0 || (category === 'streamer' && session.userMessages.length === 1)) {
-                    await sendStaffSummary(message.channel, session);
-                    return;
-                }
+                // 1. EL ASISTENTE HABLA SIEMPRE CON EL USUARIO PRIMERO
+                // Analiza lo que dijo el usuario y le responde de manera inteligente, cordial y humana
+                await handleUserConversation(message.channel, message.author, category, combinedText, session);
 
-                // Si faltan datos clave, hablar con el usuario en lugar de soltar el resumen directamente
-                const needsMoreInfo = (category === 'apelacion' && !idFound) || (category === 'donaciones' && !session.extractedData.donationItem);
-
-                if (needsMoreInfo) {
-                    await handleUserConversation(message.channel, message.author, category, combinedText, session);
-                    return;
-                }
-
-                // Generar resumen inicial únicamente si no ha sido atendido
-                if (session.userMessages.length === 1 || session.status === 'open') {
-                    session.status = 'summarized';
-                    await session.save();
-                    await sendStaffSummary(message.channel, session);
+                // 2. Si es la primera interacción o el usuario ya detalló su petición, generamos la ficha resumen para el Staff
+                const hasDetailedEnough = combinedText.length > 25 || session.userMessages.length >= 2 || streamLinks.length > 0 || session.extractedData.donationItem;
+                if (hasDetailedEnough && session.status !== 'summarized') {
+                    // Esperar 2 segundos tras responder al usuario para que no sea un bombardeo simultáneo
+                    setTimeout(async () => {
+                        try {
+                            const staffCheck = await hasStaffParticipated(message.channel);
+                            if (staffCheck) return;
+                            session.status = 'summarized';
+                            await session.save();
+                            await sendStaffSummary(message.channel, session);
+                        } catch (e) {
+                            console.error('Error enviando resumen posterior:', e.message);
+                        }
+                    }, 2500);
                 }
             }, 3500);
 
