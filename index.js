@@ -10304,6 +10304,14 @@ async function startBot() {
     } catch (ticketsErr) {
         console.error('⚠️ [ASISTENTE TICKETS ERROR]:', ticketsErr.message);
     }
+
+    // Sistema independiente de Consultas IA para Staff
+    try {
+        const initConsultasAI = require('./consultasAI');
+        initConsultasAI(client);
+    } catch (consultasErr) {
+        console.error('⚠️ [CONSULTAS AI ERROR]:', consultasErr.message);
+    }
 }
 
 startBot();
