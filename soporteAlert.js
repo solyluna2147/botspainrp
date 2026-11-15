@@ -287,6 +287,9 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
             return false;
         }
 
+        const tempAudioFile = path.join(__dirname, `locu_temp_${Date.now()}_${Math.floor(Math.random() * 1000)}.mp3`);
+        fs.writeFileSync(tempAudioFile, audioBuffer);
+
         const player = createAudioPlayer({
             behaviors: {
                 noSubscriber: NoSubscriberBehavior.Play
@@ -295,8 +298,8 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
         activePlayer = player;
         connection.subscribe(player);
 
-        const stream = Readable.from(audioBuffer);
-        const resource = createAudioResource(stream, {
+        const fileStream = fs.createReadStream(tempAudioFile);
+        const resource = createAudioResource(fileStream, {
             inputType: StreamType.Arbitrary
         });
 
@@ -304,33 +307,42 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
 
         await new Promise((resolve) => {
             let hasStartedPlaying = false;
-            const timeout = setTimeout(() => {
-                console.log(`⏱️ [SOPORTE ALERT] Timeout alcanzado para ${label} (18s). Desconectando.`);
+            let resolved = false;
+
+            const cleanupTemp = () => {
+                try {
+                    if (fs.existsSync(tempAudioFile)) fs.unlinkSync(tempAudioFile);
+                } catch (e) { }
+            };
+
+            const finish = () => {
+                if (resolved) return;
+                resolved = true;
+                clearTimeout(timeout);
+                cleanupTemp();
                 resolve();
-            }, 18000);
+            };
+
+            const timeout = setTimeout(() => {
+                console.log(`⏱️ [SOPORTE ALERT] Timeout alcanzado para ${label} (25s). Desconectando.`);
+                finish();
+            }, 25000);
 
             player.on('stateChange', (oldState, newState) => {
                 if (newState.status === AudioPlayerStatus.Playing) {
                     hasStartedPlaying = true;
                 }
                 if (newState.status === AudioPlayerStatus.Idle) {
-                    // Si pasó a Idle instantáneamente sin haber llegado a Playing, esperar un momento o registrar
-                    if (!hasStartedPlaying) {
-                        setTimeout(() => {
-                            clearTimeout(timeout);
-                            resolve();
-                        }, 500);
-                    } else {
-                        clearTimeout(timeout);
-                        resolve();
+                    if (hasStartedPlaying) {
+                        // Esperar 400ms tras terminar para no cortar el final del audio
+                        setTimeout(finish, 400);
                     }
                 }
             });
 
             player.on('error', (err) => {
                 console.error(`❌ [SOPORTE ALERT] Error en player (${label}):`, err.message);
-                clearTimeout(timeout);
-                resolve();
+                finish();
             });
         });
 
@@ -760,10 +772,9 @@ function initSoporteAlert(client) {
         }
     });
 
-    // 3. Auto-mantenimiento preventivo cada 10 minutos (limpia sockets de voz colgados y refresca memoria)
+    // 3. Auto-mantenimiento preventivo cada 1 minuto (limpia sockets de voz colgados y refresca memoria)
     setInterval(() => {
         try {
-            console.log('🧹 [SOPORTE ALERT] Ejecutando auto-mantenimiento preventivo de voz...');
             for (const [, guild] of client.guilds.cache) {
                 // Si la sala de espera está vacía y no está sonando nada, asegurar desconexión limpia absoluta
                 if (!isPlayingVoice && isWaitRoomEmpty(guild)) {
@@ -771,7 +782,7 @@ function initSoporteAlert(client) {
                 }
             }
         } catch (e) { }
-    }, 10 * 60 * 1000); // Cada 10 minutos
+    }, 60 * 1000); // Cada 1 minuto exacto
 
     // 4. Evento voiceStateUpdate para gestionar entradas y salidas
     client.on('voiceStateUpdate', async (oldState, newState) => {
