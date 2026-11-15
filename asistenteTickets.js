@@ -90,7 +90,7 @@ const STREAMERS_FILE = path.join(__dirname, 'streamers.json');
 
 // Estado global en memoria
 let asistenteActivado = true;
-let canalAprendizajeId = null;
+let canalAprendizajeId = '1571488286789079080'; // Canal oficial de aprendizaje
 const userMessageBuffers = new Map();
 
 // Helper para obtener el logo oficial
@@ -267,12 +267,12 @@ async function summarizeReasonWithAI(category, text) {
     if (groqKey) {
         try {
             const systemPrompt =
-                'Eres el sistema inteligente de triaje y análisis de tickets de VALLECAS RP (servidor FiveM español).\n' +
-                'Tu objetivo es leer los mensajes del usuario (aunque tengan faltas de ortografía, jerga, abreviaciones o frases cortas como "tengo un bug" o "tire f8 perdon") y redactar un motivo formal, detallado y claro para el Staff.\n' +
-                'REGLAS:\n' +
-                '1. Devuelve un texto directo de 1 o 2 frases bien redactadas.\n' +
-                '2. Especifica con claridad qué le ocurre o qué solicita el usuario (ej: "El usuario solicita asistencia técnica debido a un bug en el servidor", "El usuario solicita revisión de su baneo tras admitir haber desconectado por F8 en rol y pedir disculpas", "El usuario solicita información para adquirir un vehículo VIP mediante Bizum").\n' +
-                '3. No incluyas saludos ni preámbulos, responde SOLO el motivo.';
+                'Eres el sistema inteligente de triaje de tickets de VALLECAS RP (servidor FiveM español).\n' +
+                'Tu objetivo es redactar un motivo formal, objetivo y claro de 1 sola frase para el Staff basándote ESTRICTAMENTE en lo que ha dicho el usuario.\n' +
+                'REGLAS CRÍTICAS:\n' +
+                '1. NUNCA inventes motivos, excusas o detalles que el usuario no haya mencionado explícitamente (prohibido inventar temas de munición, tiroteos, coches u otros hechos si el usuario no los dijo).\n' +
+                '2. Cíñete 100% a las palabras y hechos del usuario.\n' +
+                '3. Responde directamente con 1 sola frase sin preámbulos ni comillas.';
 
             const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
@@ -284,10 +284,10 @@ async function summarizeReasonWithAI(category, text) {
                     model: 'qwen/qwen3.8-27b',
                     messages: [
                         { role: 'system', content: systemPrompt },
-                        { role: 'user', content: `Categoría: ${category}\nMensajes del usuario:\n"${text}"` }
+                        { role: 'user', content: `Categoría: ${category}\nMensaje del usuario: "${text}"` }
                     ],
-                    max_tokens: 150,
-                    temperature: 0.3
+                    max_tokens: 100,
+                    temperature: 0.1
                 })
             });
 
@@ -485,7 +485,7 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
     try {
         const categoryPrompts = {
             donaciones: 'Eres el Asistente Oficial de Donaciones de VALLECAS RP (servidor de FiveM GTA V roleplay español). Habla en español de España de forma cercana, humana y breve (máximo 1 o 2 párrafos). Todo se refiere a la tienda del servidor (coches VIP in-game, casas/MLOs, negocios, dinero IC o desbaneos de pago por Bizum y PayPal). Si preguntan por precios de locales o coches, explícales con amabilidad que la administración y encargados de donaciones le darán el importe exacto y disponibilidad.',
-            apelacion: 'Eres el Asistente Oficial de Apelaciones de VALLECAS RP (servidor de FiveM GTA V roleplay). Sé empático, cercano y comprensivo. Muchos usuarios vienen pidiendo disculpas por tirar de F8, calentar la cabeza en rol o sanciones administrativas. Habla en 1 o 2 párrafos cortos preguntando amablemente si tiene clip/pruebas de lo ocurrido para que la Administración pueda valorar su caso.',
+            apelacion: 'Eres el Asistente Oficial de Apelaciones de VALLECAS RP (servidor de FiveM GTA V roleplay). Sé empático, cercano y comprensivo. Muchos usuarios vienen pidiendo disculpas por tirar de F8, calentar la cabeza en rol o sanciones administrativas. Si el usuario ha adjuntado una captura, imagen o enlace de clip, reconóceselo y dile que la Administración la tendrá en cuenta. NUNCA digas que no tiene pruebas o que no dispone de clip si el usuario ya ha adjuntado una imagen o vídeo. Habla en 1 o 2 párrafos cortos.',
             streamer: 'Eres el Asistente de Creadores y Streamers de VALLECAS RP (servidor de FiveM roleplay). Felicítale de forma cercana y pídele sus enlaces de Twitch, Kick o TikTok para que el Staff revise sus estadísticas.',
             soporte: 'Eres el Asistente de Soporte y Atención al Ciudadano de VALLECAS RP (servidor de FiveM GTA V roleplay español). CONTEXTO OBLIGATORIO: Todo ocurre dentro del juego FiveM (scripts, llaves de coche, garajes, mecánicos in-game, inventario, bugs de sincronización, reconectar). NUNCA hables como un mecánico de coches de la vida real ni preguntes por baterías de coches reales ni talleres del mundo real. Responde de forma muy humana, comprensiva y breve (máximo 1 o 2 párrafos cortos).'
         };
@@ -493,10 +493,11 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
         const systemPrompt = (categoryPrompts[category] || categoryPrompts.soporte) +
             '\nREGLAS OBLIGATORIAS:\n' +
             '1. Estás en un servidor de FiveM (GTA V Roleplay). No confundas el juego con la vida real.\n' +
-            '2. Si el usuario no ha especificado qué le ocurre (solo saluda o pone frases vacías), salúdalo y pídele que detalle qué duda o problema tiene en el servidor.\n' +
-            '3. Responde siempre en español de España, de forma cercana y conversacional.\n' +
-            '4. Máximo 1 o 2 párrafos cortos y directos (prohibido hacer listas largas ni textos aburridos).\n' +
-            '5. NUNCA pidas la ID de FiveM.';
+            '2. Si el usuario ha subido una captura, clip o imagen, reconócesela amablemente ("He visto que has adjuntado una captura/prueba...") y no digas jamás que no tiene pruebas.\n' +
+            '3. Si el usuario no ha especificado qué le ocurre (solo saluda o pone frases vacías), salúdalo y pídele que detalle qué duda o problema tiene en el servidor.\n' +
+            '4. Responde siempre en español de España, de forma cercana y conversacional.\n' +
+            '5. Máximo 1 o 2 párrafos cortos y directos (prohibido hacer listas largas ni textos aburridos).\n' +
+            '6. NUNCA pidas la ID de FiveM.';
 
         const conversationHistory = userMessages.slice(-4).map(m => ({
             role: 'user',
@@ -504,6 +505,18 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
         }));
 
         conversationHistory.push({ role: 'user', content: currentMessage });
+
+        // Recuperar conocimientos y guías oficiales aprendidas en el canal 1571488286789079080
+        let knowledgeContext = '';
+        try {
+            const allKnowledge = await TicketKnowledge.find({}).sort({ createdAt: -1 }).limit(15);
+            if (allKnowledge && allKnowledge.length > 0) {
+                knowledgeContext = '\nBASE DE DATOS Y CONOCIMIENTOS OFICIALES DE VALLECAS RP (Reglas, precios y soluciones):\n' +
+                    allKnowledge.map(k => `• ${k.response}`).join('\n') + '\n';
+            }
+        } catch (e) { }
+
+        const finalSystemPrompt = systemPrompt + knowledgeContext;
 
         const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
@@ -514,11 +527,11 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
             body: JSON.stringify({
                 model: 'qwen/qwen3.8-27b',
                 messages: [
-                    { role: 'system', content: systemPrompt },
+                    { role: 'system', content: finalSystemPrompt },
                     ...conversationHistory
                 ],
                 max_tokens: 300,
-                temperature: 0.6
+                temperature: 0.5
             })
         });
 
@@ -539,14 +552,13 @@ async function handleUserConversation(channel, user, category, combinedText, ses
 
     // Número de intervenciones del usuario en este ticket
     const userTurnCount = (session.userMessages || []).length;
-    // Evaluar si los mensajes del usuario contienen información real del problema
-    // (si solo ha dicho "buenas", "hola", etc. NO se muestra el botón hasta que explique algo sustancial)
+    // El botón "Hablar con un Staff" se muestra SIEMPRE en todas las respuestas del asistente,
+    // excepto si el usuario solo ha dicho un simple saludo vacío de una palabra ("buenas", "hola")
     const allUserWords = (session.userMessages || []).map(m => m.content).join(' ').toLowerCase();
     const isOnlyGreeting = /^(buenas|hola|buenas tardes|buenas noches|buenos dias|hey|ey|ola|buenas bro|buenas staff|buenas noches staff)[\s.!?,]*$/i.test(allUserWords.trim());
-    const hasProvidedDetails = allUserWords.length > 20 && !isOnlyGreeting;
-
-    // REGLA: El botón "Hablar con un Staff" solo se muestra cuando el usuario ya ha aportado información real
-    const shouldShowStaffButton = userTurnCount >= 2 && hasProvidedDetails;
+    
+    // Si ya ha escrito sobre algún coche, duda, bug o es su segundo mensaje, el botón está SIEMPRE disponible
+    const shouldShowStaffButton = !isOnlyGreeting || userTurnCount >= 2;
 
     const staffButtonRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -690,17 +702,10 @@ async function sendCategoryWelcome(channel, user, category) {
             `¡Buenas <@${user.id}>! Te damos la bienvenida a tu ticket de apelación.\n\n` +
             `Para poder tramitar la revisión de tu sanción con la Administración:\n\n` +
             `⚖️ **| Motivo de la sanción:**\n` +
-            `> Explícanos la norma o situación por la que se te sancionó ❗\n\n` +
+            `> Explícanos con tranquilidad qué te ocurrió y el motivo de la sanción ❗\n\n` +
             `📹 **| Pruebas o alegaciones:**\n` +
             `> Aporta clips, capturas o tus explicaciones sinceras de lo sucedido ❗\n\n` +
-            `*(Puedes escribirlo directamente o pulsar en los botones rápidos de abajo).*`;
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('btn_apel_sinpruebas').setLabel('❌ No tengo clip / Reconozco error').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('btn_apel_conpruebas').setLabel('📹 Aportaré clip / captura').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('btn_apel_segundaop').setLabel('🙏 Solicito Servicios Comunitarios').setStyle(ButtonStyle.Secondary)
-        );
-        components.push(row);
+            `*(Nuestro asistente virtual conversará contigo para preparar tu expediente antes de llamar al Staff).*`;
     } else {
         title = '🛠️ SOPORTE GENERAL | VALLECAS RP';
         desc =
@@ -1161,6 +1166,76 @@ module.exports = function initAsistenteTickets(client) {
                 }
             }
 
+            // ==========================================
+            // APRENDIZAJE ACTIVO EN CANAL 1571488286789079080
+            // ==========================================
+            // Cada vez que un Staff escribe en el canal de aprendizaje, el bot memoriza el texto
+            if (message.channel.id === canalAprendizajeId) {
+                const cleanText = message.content.trim();
+                if (cleanText.length > 5 && !cleanText.startsWith('!')) {
+                    try {
+                        await TicketKnowledge.create({
+                            category: 'general',
+                            questionPattern: cleanText.slice(0, 50),
+                            response: cleanText,
+                            addedBy: message.author.tag || message.author.username
+                        });
+                        await message.react('🧠').catch(() => {});
+                        console.log(`🧠 [ASISTENTE APRENDIZAJE] Nuevo conocimiento registrado: "${cleanText.slice(0, 60)}..."`);
+                    } catch (e) {
+                        console.error('Error guardando aprendizaje:', e.message);
+                    }
+                }
+                return;
+            }
+
+            // ==========================================
+            // DETECCIÓN DE RESUMEN DEL STAFF (RESUMEN: ...)
+            // ==========================================
+            // Si un miembro del Staff escribe "RESUMEN: ..." en un ticket oficial,
+            // el bot borra su mensaje plano y publica un Embed oficial con el resumen formateado.
+            if (isStaff && isValidTicketCategory(message.channel)) {
+                const matchResumen = message.content.match(/^\*{0,2}RESUMEN\*{0,2}\s*:\s*([\s\S]+)$/i);
+                if (matchResumen && matchResumen[1]) {
+                    const resumenStaffText = matchResumen[1].trim();
+                    // 1. Borrar el mensaje en texto plano del Staff
+                    await message.delete().catch(() => {});
+
+                    // 2. Crear el Embed oficial con el diseño del servidor
+                    const logoAttachment = getLogoAttachment();
+                    const iconUrl = logoAttachment ? 'attachment://logo.png' : (message.guild.iconURL() || undefined);
+
+                    const staffTag = `<@${message.author.id}> (\`${message.author.tag || message.author.username}\`)`;
+
+                    const resumenStaffEmbed = new EmbedBuilder()
+                        .setColor(0x2ecc71)
+                        .setAuthor({
+                            name: 'RESOLUCIÓN Y CIERRE DE TICKET | VALLECAS RP',
+                            iconURL: iconUrl
+                        })
+                        .setTitle('📌 RESUMEN DE ATENCIÓN DE STAFF')
+                        .setDescription(
+                            `👮 **| Staff Atendente:**\n` +
+                            `> ${staffTag} ❗\n\n` +
+                            `📋 **| Resumen de la Intervención:**\n` +
+                            `> ${resumenStaffText}\n\n` +
+                            `✅ *Caso atendido y registrado formalmente en la administración de VALLECAS RP.*`
+                        )
+                        .setThumbnail(iconUrl)
+                        .setFooter({
+                            text: 'VALLECAS RP • Registro de Soporte y Moderación',
+                            iconURL: iconUrl
+                        })
+                        .setTimestamp();
+
+                    await message.channel.send({
+                        embeds: [resumenStaffEmbed],
+                        files: logoAttachment ? [logoAttachment] : []
+                    }).catch(() => {});
+                    return;
+                }
+            }
+
             // Si el asistente está apagado, no continuar
             if (!asistenteActivado) return;
 
@@ -1213,7 +1288,12 @@ module.exports = function initAsistenteTickets(client) {
             }
 
             const buffer = userMessageBuffers.get(channelId);
-            buffer.messages.push(message.content);
+            let msgText = message.content.trim();
+            if (message.attachments && message.attachments.size > 0) {
+                const attachInfo = `[Adjunta imagen/captura: ${message.attachments.map(a => a.url).join(' ')}]`;
+                msgText = msgText ? `${msgText} ${attachInfo}` : attachInfo;
+            }
+            buffer.messages.push(msgText);
 
             if (buffer.timeout) clearTimeout(buffer.timeout);
 
@@ -1314,28 +1394,6 @@ module.exports = function initAsistenteTickets(client) {
                 } else {
                     await interaction.reply({
                         content: `¡Estupendo <@${interaction.user.id}>! 🎁 Has seleccionado **${selectedItem}**.\nEscríbenos el modelo o detalles específicos que deseas y si prefieres abonarlo por **Bizum** o **PayPal**.`,
-                        ephemeral: false
-                    });
-                }
-                return;
-            }
-
-            // 2. Botones de interacción en Apelaciones (CUALQUIER USUARIO PUEDE PULSARLOS)
-            if (customId.startsWith('btn_apel_')) {
-                const action = customId.replace('btn_apel_', '');
-                if (action === 'sinpruebas') {
-                    await interaction.reply({
-                        content: `Entendido <@${interaction.user.id}>. Hemos anotado que no dispones de clip y que reconoces el error cometido. Enseguida la Administración revisará tu apelación.`,
-                        ephemeral: false
-                    });
-                } else if (action === 'conpruebas') {
-                    await interaction.reply({
-                        content: `¡Perfecto <@${interaction.user.id}>! Pega a continuación el enlace de tu clip (Medal, YouTube, Streamable) o sube la captura para adjuntarla al expediente.`,
-                        ephemeral: false
-                    });
-                } else if (action === 'segundaop') {
-                    await interaction.reply({
-                        content: `De acuerdo <@${interaction.user.id}>. Queda registrada tu solicitud de conmutar la sanción por Servicios Comunitarios dentro de la ciudad.`,
                         ephemeral: false
                     });
                 }
