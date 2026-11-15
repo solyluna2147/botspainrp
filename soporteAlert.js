@@ -72,9 +72,8 @@ let isPlayingVoice = false;
 let userJoinTimes = new Map(); // userId -> { joinedAt, userTag, memberName }
 let staffAlertCount = 0; // Contador de avisos para la sesión de espera actual (1, 2, 3...)
 let sanctionReportSent = false; // Flag para no duplicar informe del 3er aviso
-let lastStaffAlertAt = 0;
-let lastUserRepeatAlertAt = 0;
-let lastSalaCharlaAlertAt = 0; // Cooldown específico para aviso de sala de charla
+let nextAlertTurn = 'STAFF'; // Turno de alternancia exacto: 'STAFF' o 'USER'
+let lastActionAt = 0; // Timestamp de la última acción sonora realizada
 let userWelcomeDebounceTimer = null;
 let activeConnection = null;
 let activePlayer = null;
@@ -414,14 +413,16 @@ function scheduleUserWelcomeAlert(guild) {
 }
 
 /**
- * Analiza canales de soporte con staffs disponibles
+ * Detecta qué canal de staff debe recibir la alerta de refuerzo:
+ * - Canales de soporte libres (donde hay staffs y CERO ciudadanos atendiendo)
+ * - Sala de staffs (si hay staffs charlando y no hay soportes libres o hay más gente en charla)
+ * - NINGUNO (si todos los staffs con audio están ocupados atendiendo a ciudadanos, o no hay nadie)
  */
-function getOrderedSupportChannelsAndStaffs(guild) {
-    const listPriority1 = []; // Canales libres con staffs sin silenciar
-    const listPriority2 = []; // Canales libres con staffs silenciados
-    const listPriorityOccupied = []; // Canales donde hay staffs con alguien atendiendo
-    const allAvailableStaffMembers = [];
+function getTargetStaffChannel(guild) {
+    if (!guild) return null;
 
+    // 1. Canales de soporte LIBRES (solo staffs, CERO ciudadanos)
+    const freeSupportChannels = [];
     for (const channelId of CANALES_SOPORTE_IDS) {
         const channel = guild.channels.cache.get(channelId);
         if (!channel || !channel.isVoiceBased()) continue;
@@ -430,131 +431,60 @@ function getOrderedSupportChannelsAndStaffs(guild) {
         if (members.size === 0) continue;
 
         const staffsInChannel = members.filter(m => isMemberStaff(m));
-        if (staffsInChannel.size === 0) continue; // No hay staffs aquí
+        if (staffsInChannel.size === 0) continue;
 
         const hasNonStaff = members.some(m => !isMemberStaff(m));
-
-        let hasUnmutedStaff = false;
-        let hasHearingStaff = false;
-
-        for (const [, staffMember] of staffsInChannel) {
-            const vs = staffMember.voice;
-            if (!vs) continue;
-            const isDeaf = vs.deaf || vs.selfDeaf;
-            if (isDeaf) continue; // Ensordecido -> no escucha
-
-            hasHearingStaff = true;
-            allAvailableStaffMembers.push(staffMember);
-
-            const isMuted = vs.mute || vs.selfMute;
-            if (!isMuted) hasUnmutedStaff = true;
+        if (hasNonStaff) {
+            // ¡Canal ocupado atendiendo a un ciudadano! NUNCA interrumpir
+            continue;
         }
 
-        if (hasHearingStaff) {
-            if (!hasNonStaff) {
-                if (hasUnmutedStaff) {
-                    listPriority1.push(channel);
-                } else {
-                    listPriority2.push(channel);
-                }
-            } else {
-                listPriorityOccupied.push(channel);
-            }
+        const hearingStaffs = staffsInChannel.filter(m => m.voice && !m.voice.deaf && !m.voice.selfDeaf);
+        if (hearingStaffs.size > 0) {
+            freeSupportChannels.push({
+                channel,
+                staffs: hearingStaffs,
+                hasUnmuted: hearingStaffs.some(m => !m.voice.mute && !m.voice.selfMute)
+            });
         }
     }
 
-    const freeChannels = [...listPriority1, ...listPriority2];
-    if (freeChannels.length > 0) {
-        return {
-            channels: freeChannels,
-            staffMembers: allAvailableStaffMembers
-        };
-    }
+    freeSupportChannels.sort((a, b) => (b.hasUnmuted ? 1 : 0) - (a.hasUnmuted ? 1 : 0));
 
-    // Si los soportes están OCUPADOS (atendiendo a usuarios), comprobamos si hay staffs en SALA DE STAFFS
+    // 2. Comprobar Sala de Staffs (tertulia)
     const charlaChannel = guild.channels.cache.get(CANAL_SALA_CHARLA_STAFF_ID);
-    const staffsEnCharla = charlaChannel && charlaChannel.isVoiceBased()
+    const staffsEnCharla = (charlaChannel && charlaChannel.isVoiceBased())
         ? charlaChannel.members.filter(m => isMemberStaff(m) && m.voice && !m.voice.deaf && !m.voice.selfDeaf)
         : null;
+    const countEnCharla = staffsEnCharla ? staffsEnCharla.size : 0;
 
-    // Si hay staffs charlando en la sala de staffs, NUNCA interrumpimos el soporte ocupado atendiendo a un ciudadano
-    if (staffsEnCharla && staffsEnCharla.size > 0) {
+    // Regla de oro:
+    // Si hay staffs en la Sala de Staffs y (no hay soportes libres O hay igual o más staffs charlando que en soportes libres):
+    if (countEnCharla > 0 && (freeSupportChannels.length === 0 || countEnCharla >= freeSupportChannels.length)) {
         return {
-            channels: [], // Dejar libre para que el bot vaya directamente a la Sala de Staffs
-            staffMembers: allAvailableStaffMembers
+            channel: charlaChannel,
+            type: 'SALA_STAFFS',
+            staffs: staffsEnCharla
         };
     }
 
-    return {
-        channels: listPriorityOccupied,
-        staffMembers: allAvailableStaffMembers
-    };
-}
-
-/**
- * Comprueba y avisa en la sala de charla si hay más staffs ahí que en los soportes
- */
-async function checkSalaCharlaStaff(guild) {
-    if (!sistemaActivo || isPlayingVoice) return;
-    const now = Date.now();
-    const tiempoEntreAvisosMs = tiempoEsperaMinutos * 60 * 1000;
-    if (lastSalaCharlaAlertAt !== 0 && (now - lastSalaCharlaAlertAt < tiempoEntreAvisosMs)) return;
-
-    if (isWaitRoomEmpty(guild)) return;
-
-    const charlaChannel = guild.channels.cache.get(CANAL_SALA_CHARLA_STAFF_ID);
-    if (!charlaChannel || !charlaChannel.isVoiceBased()) return;
-
-    const staffsEnCharla = charlaChannel.members.filter(m => {
-        if (!isMemberStaff(m)) return false;
-        const vs = m.voice;
-        return vs && !vs.deaf && !vs.selfDeaf;
-    });
-
-    if (staffsEnCharla.size === 0) return;
-
-    let staffsLibresEnSoporte = 0;
-    let soportesOcupadosAtendiendo = 0;
-    let totalStaffsEnSoporte = 0;
-
-    for (const chId of CANALES_SOPORTE_IDS) {
-        const ch = guild.channels.cache.get(chId);
-        if (ch && ch.isVoiceBased()) {
-            const members = ch.members.filter(m => !m.user.bot);
-            const staffs = members.filter(m => isMemberStaff(m));
-            const nonStaffs = members.filter(m => !isMemberStaff(m));
-
-            totalStaffsEnSoporte += staffs.size;
-
-            if (nonStaffs.size > 0 && staffs.size > 0) {
-                soportesOcupadosAtendiendo++;
-            } else if (staffs.size > 0) {
-                staffsLibresEnSoporte += staffs.size;
-            }
-        }
+    // Si hay soportes libres
+    if (freeSupportChannels.length > 0) {
+        return {
+            channel: freeSupportChannels[0].channel,
+            type: 'SOPORTE_LIBRE',
+            staffs: freeSupportChannels[0].staffs
+        };
     }
 
-    const debeAvisarEnCharla = 
-        (soportesOcupadosAtendiendo > 0 && staffsLibresEnSoporte === 0) ||
-        (staffsEnCharla.size > totalStaffsEnSoporte) ||
-        (totalStaffsEnSoporte === 0);
-
-    if (debeAvisarEnCharla) {
-        console.log(`📣 [SOPORTE ALERT] Refuerzo necesario: ${staffsEnCharla.size} staff(s) en charla, ${soportesOcupadosAtendiendo} soporte(s) ocupados, ${staffsLibresEnSoporte} libres. Avisando en sala de charla...`);
-        if (!audioSalaCharlaCache) await loadAudiosFromDB();
-
-        const ok = await playAudioBufferInChannel(charlaChannel, audioSalaCharlaCache, 'Aviso Sala Charla Staff');
-        if (ok) {
-            lastSalaCharlaAlertAt = Date.now();
-            lastStaffAlertAt = Date.now();
-        }
-    }
+    // No hay staffs libres (o están todos ocupados atendiendo)
+    return null;
 }
 
 /**
  * Envía el informe detallado al canal de sanciones de staff con el diseño limpio y thumbnail superior
  */
-async function sendSanctionReport(guild, { motivo, staffsInvolucrados, usuariosAfectados, tiempoEsperadoMs, avisosEmitidos, client }) {
+async function sendSanctionReport(guild, { motivo, staffsInvolucrados, targetChannelId, usuariosAfectados, tiempoEsperadoMs, avisosEmitidos, client }) {
     try {
         let canalSanciones = guild.channels.cache.get(CANAL_SANCIONES_STAFF_ID);
         if (!canalSanciones) {
@@ -611,7 +541,7 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, usuariosA
                 `> ${motivo}\n\n` +
                 `👤 **| Usuario(s) Afectado(s):**\n` +
                 `${userLines}\n\n` +
-                `🛡️ **| Staffs Disponibles Notificados:**\n` +
+                `🛡️ **| Staffs Sancionados:**\n` +
                 `${staffLines}\n\n` +
                 `⏱️ **| Tiempo de Espera:** \`${formatDuration(tiempoEsperadoMs)}\` • 📢 **Avisos Emitidos:** \`${avisosEmitidos} avisos\`\n\n` +
                 `⚖️ **Informe remitido automáticamente a la Administración de VALLECAS RP**`
@@ -623,7 +553,7 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, usuariosA
             .setTimestamp();
 
         const mentionText = staffsInvolucrados.length > 0
-            ? `🔔 **Atención Staffs en servicio:** ${staffsInvolucrados.map(s => `<@${s.id}>`).join(' ')}`
+            ? `🔔 **Atención Staffs sancionados:** ${staffsInvolucrados.map(s => `<@${s.id}>`).join(' ')}`
             : `🔔 **Aviso a Administración:**`;
 
         await canalSanciones.send({
@@ -635,13 +565,17 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, usuariosA
         console.log(`📋 [SOPORTE ALERT] Informe disciplinario publicado con éxito en el canal de sanciones.`);
 
         // Mover a los staffs al canal de STAFF AFK ÚNICAMENTE si ya se han emitido los 3 avisos completos
+        // Y SOLO a los staffs presentes en el canal concreto donde sonó el 3er aviso
         const esTercerAvisoDisciplinario = avisosEmitidos >= 3;
         if (esTercerAvisoDisciplinario && staffsInvolucrados && staffsInvolucrados.length > 0) {
             for (const staffMember of staffsInvolucrados) {
                 try {
                     if (staffMember.voice && staffMember.voice.channelId) {
-                        await staffMember.voice.setChannel(CANAL_STAFF_AFK_ID, 'Movido automáticamente tras cumplirse los 3 avisos de soporte');
-                        console.log(`🔀 [SOPORTE ALERT] Staff ${staffMember.user ? staffMember.user.tag : staffMember.id} movido a STAFF AFK tras los 3 avisos.`);
+                        // Comprobación de canal: NUNCA mover a un staff que esté en otro canal (como soporte atendiendo)
+                        if (!targetChannelId || staffMember.voice.channelId === targetChannelId) {
+                            await staffMember.voice.setChannel(CANAL_STAFF_AFK_ID, 'Movido a STAFF AFK tras cumplirse los 3 avisos de soporte');
+                            console.log(`🔀 [SOPORTE ALERT] Staff ${staffMember.user ? staffMember.user.tag : staffMember.id} movido a STAFF AFK tras los 3 avisos en su canal.`);
+                        }
                     }
                 } catch (moveErr) {
                     console.error(`⚠️ [SOPORTE ALERT] No se pudo mover a ${staffMember.id} a AFK:`, moveErr.message);
@@ -654,11 +588,10 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, usuariosA
 }
 
 /**
- * Chequeo periódico de la sala de espera
+ * Chequeo periódico de la sala de espera y ciclo alternado de locuciones
  */
 async function checkWaitRoom(guild, client) {
-    if (!sistemaActivo) return;
-    if (isPlayingVoice) return;
+    if (!sistemaActivo || isPlayingVoice) return;
 
     const waitChannel = guild.channels.cache.get(CANAL_ESPERA_ID);
     if (!waitChannel || !waitChannel.isVoiceBased()) return;
@@ -668,6 +601,8 @@ async function checkWaitRoom(guild, client) {
         userJoinTimes.clear();
         staffAlertCount = 0;
         sanctionReportSent = false;
+        nextAlertTurn = 'STAFF';
+        lastActionAt = 0;
         return;
     }
 
@@ -679,9 +614,8 @@ async function checkWaitRoom(guild, client) {
     }
 
     const now = Date.now();
-    const tiempoLimiteMs = tiempoEsperaMinutos * 60 * 1000;
+    const intervalMs = Math.max(25000, tiempoEsperaMinutos * 60 * 1000); // 30 segundos
     let maxWaitTime = 0;
-    let usuarioHaSuperadoStaffTime = false;
 
     for (const [userId, member] of waitingUsers) {
         if (!userJoinTimes.has(userId)) {
@@ -694,102 +628,103 @@ async function checkWaitRoom(guild, client) {
             const data = userJoinTimes.get(userId);
             const timeInRoom = now - data.joinedAt;
             if (timeInRoom > maxWaitTime) maxWaitTime = timeInRoom;
-            if (timeInRoom >= tiempoLimiteMs) {
-                usuarioHaSuperadoStaffTime = true;
-            }
         }
     }
 
-    // 1. AVISO A STAFFS EN CANALES DE SOPORTE (PRIORIDAD MÁXIMA)
-    const tiempoEntreAvisosMs = tiempoEsperaMinutos * 60 * 1000;
-    const yaTocaAvisar = (lastStaffAlertAt === 0) || ((now - lastStaffAlertAt) >= tiempoEntreAvisosMs);
+    // Si aún no se cumple el intervalo inicial (30s) desde que entró el usuario
+    if (lastActionAt === 0) {
+        if (maxWaitTime >= intervalMs) {
+            lastActionAt = now - intervalMs; // Cumplido el tiempo inicial, arrancar
+        } else {
+            return;
+        }
+    }
 
-    if (usuarioHaSuperadoStaffTime && yaTocaAvisar) {
-        const { channels, staffMembers } = getOrderedSupportChannelsAndStaffs(guild);
-        if (channels.length > 0 && !isPlayingVoice) {
-            stopCurrentTour = false;
-            staffAlertCount++; // Incrementamos aviso (1, 2, 3...)
-            let staffAlertOk = false;
+    // Comprobar si ya toca el siguiente turno (cada 30s)
+    if (now - lastActionAt < intervalMs) return;
 
-            // Selección exacta de audios
-            let audioToPlay = null;
-            let audioLabel = '';
+    const target = getTargetStaffChannel(guild);
 
-            if (staffAlertCount === 1) {
+    // CASO 1: Si no hay staffs disponibles ni en soporte libre ni en sala de staffs
+    // (Por ejemplo, todos los staffs están ocupados atendiendo a ciudadanos, o no hay nadie)
+    if (!target) {
+        console.log(`🎙️ [SOPORTE ALERT] Todos los soportes ocupados o sin staffs libres. Recordatorio en espera de soporte...`);
+        const ok = await playAudioBufferInChannel(waitChannel, audioUsuarioCache, 'Locución Espera Usuarios');
+        if (ok) {
+            lastActionAt = Date.now();
+        }
+        return;
+    }
+
+    // CASO 2: Hay canal de staffs para alertar -> Alternancia estricta STAFF <-> USUARIOS
+    if (nextAlertTurn === 'STAFF') {
+        stopCurrentTour = false;
+        staffAlertCount++; // Aviso 1, 2, 3...
+        let audioToPlay = null;
+        let audioLabel = '';
+
+        if (staffAlertCount === 1) {
+            if (target.type === 'SALA_STAFFS') {
+                if (!audioSalaCharlaCache) await loadAudiosFromDB();
+                audioToPlay = audioSalaCharlaCache;
+                audioLabel = 'Aviso #1 Sala de Staffs (Especial)';
+            } else {
                 if (!audioStaff1Cache) await loadAudiosFromDB();
                 audioToPlay = audioStaff1Cache;
-                audioLabel = 'Aviso Staff #1';
-            } else if (staffAlertCount === 2) {
-                if (!audioStaff2Cache) await loadAudiosFromDB();
-                audioToPlay = audioStaff2Cache || audioStaff1Cache;
-                audioLabel = 'Aviso Staff #2 (Último aviso)';
-            } else {
-                if (!audioSancionCache) await loadAudiosFromDB();
-                audioToPlay = audioSancionCache || audioStaff2Cache || audioStaff1Cache;
-                audioLabel = `Locución Sanción Staff (Aviso #${staffAlertCount})`;
+                audioLabel = 'Aviso #1 Soporte';
             }
+        } else if (staffAlertCount === 2) {
+            if (!audioStaff2Cache) await loadAudiosFromDB();
+            audioToPlay = audioStaff2Cache || audioStaff1Cache;
+            audioLabel = `Aviso #2 (${target.channel.name})`;
+        } else {
+            if (!audioSancionCache) await loadAudiosFromDB();
+            audioToPlay = audioSancionCache || audioStaff2Cache || audioStaff1Cache;
+            audioLabel = `Aviso #3 Sanción (${target.channel.name})`;
+        }
 
-            console.log(`📢 [SOPORTE ALERT] Lanzando ${audioLabel} en ${channels.length} canal(es)...`);
+        console.log(`📢 [SOPORTE ALERT] Lanzando ${audioLabel} en ${target.channel.name}...`);
+        const ok = await playAudioBufferInChannel(target.channel, audioToPlay, audioLabel);
 
-            for (const targetChannel of channels) {
-                if (stopCurrentTour || isWaitRoomEmpty(guild)) {
-                    console.log('⏹️ [SOPORTE ALERT] Sala de espera vacía o atendida. Cancelando ronda a staffs.');
-                    break;
-                }
+        if (ok) {
+            lastActionAt = Date.now();
+            nextAlertTurn = 'USER'; // El siguiente turno le tocará al usuario en espera
 
-                // DOBLE COMPROBACIÓN EN VIVO: Verificar que en este instante haya staffs dentro del canal
-                const currentStaffs = targetChannel.members.filter(m => !m.user.bot && isMemberStaff(m));
-                if (currentStaffs.size === 0) {
-                    console.log(`⏩ [SOPORTE ALERT] Saltando ${targetChannel.name} porque ya no hay ningún staff dentro.`);
-                    continue;
-                }
+            // Si es el 3er aviso: mover a los staffs de ESE MISMO CANAL a AFK y enviar informe
+            if (staffAlertCount >= 3 && !sanctionReportSent) {
+                sanctionReportSent = true;
 
-                const ok = await playAudioBufferInChannel(targetChannel, audioToPlay, audioLabel);
-                if (ok) {
-                    staffAlertOk = true;
-                    await new Promise(r => setTimeout(r, 400));
-                }
-            }
+                // OBTENER ÚNICAMENTE LOS STAFFS PRESENTES EN EL CANAL DONDE SE EMITIÓ EL 3er AVISO
+                const currentStaffsInTarget = target.channel.members.filter(m => !m.user.bot && isMemberStaff(m));
+                const staffsArray = Array.from(currentStaffsInTarget.values());
 
-            if (staffAlertOk) {
-                lastStaffAlertAt = Date.now();
-
-                // Si es el 3er aviso y aún no se envió el informe de sanción, publicarlo INMEDIATAMENTE
-                if (staffAlertCount >= 3 && !sanctionReportSent) {
-                    sanctionReportSent = true;
-                    const usuariosList = [];
-                    for (const [uid, udata] of userJoinTimes) {
-                        usuariosList.push({
-                            id: uid,
-                            tag: udata.userTag,
-                            timeMs: now - udata.joinedAt
-                        });
-                    }
-
-                    await sendSanctionReport(guild, {
-                        motivo: 'El personal de soporte no acudió tras 2 avisos previos consecutivos. Se emitió la advertencia disciplinaria por voz.',
-                        staffsInvolucrados: staffMembers,
-                        usuariosAfectados: usuariosList,
-                        tiempoEsperadoMs: maxWaitTime,
-                        avisosEmitidos: staffAlertCount,
-                        client: client
+                const usuariosList = [];
+                for (const [uid, udata] of userJoinTimes) {
+                    usuariosList.push({
+                        id: uid,
+                        tag: udata.userTag,
+                        timeMs: now - udata.joinedAt
                     });
                 }
+
+                await sendSanctionReport(guild, {
+                    motivo: `El personal de ${target.channel.name} no acudió tras 2 avisos previos consecutivos. Se emitió la advertencia disciplinaria por voz.`,
+                    staffsInvolucrados: staffsArray,
+                    targetChannelId: target.channel.id, // ID exacto del canal donde sonó el aviso
+                    usuariosAfectados: usuariosList,
+                    tiempoEsperadoMs: maxWaitTime,
+                    avisosEmitidos: staffAlertCount,
+                    client: client
+                });
             }
         }
-    }
-
-    // 2. AVISO A LA SALA DE CHARLA DE STAFFS (Si hay más gente de charla que en soporte)
-    if (usuarioHaSuperadoStaffTime && !isPlayingVoice) {
-        await checkSalaCharlaStaff(guild);
-    }
-
-    // 3. REPETICIÓN A USUARIOS CADA 30 SEGUNDOS (Solo si no acabamos de emitir alerta a staff)
-    if (usuarioHaSuperadoStaffTime && !isPlayingVoice && !staffAlertOk) {
-        const timeSinceLastRepeat = now - lastUserRepeatAlertAt;
-        const repeatDelayMs = Math.min(30 * 1000, tiempoEsperaMinutos * 60 * 1000);
-        if (lastUserRepeatAlertAt !== 0 && timeSinceLastRepeat >= repeatDelayMs) {
-            await triggerUserWaitRoomAlert(guild, 'Recordatorio 30s');
+    } else {
+        // TURNO USUARIO: Recordatorio en la sala de espera
+        console.log(`🎙️ [SOPORTE ALERT] Turno usuario: reproduciendo recordatorio en espera de soporte...`);
+        const ok = await playAudioBufferInChannel(waitChannel, audioUsuarioCache, 'Locución Espera Usuarios');
+        if (ok) {
+            lastActionAt = Date.now();
+            nextAlertTurn = 'STAFF'; // Siguiente turno volverá a avisar a staffs
         }
     }
 }
@@ -834,7 +769,10 @@ function initSoporteAlert(client) {
                 userTag: member ? member.user.tag : userId,
                 memberName: member ? member.displayName : userId
             });
-            lastUserRepeatAlertAt = Date.now(); // Iniciar contador para no solapar recordatorio de 1min
+            lastActionAt = Date.now(); // Iniciar intervalo de 30s
+            nextAlertTurn = 'STAFF';
+            staffAlertCount = 0;
+            sanctionReportSent = false;
             const guild = newState.guild;
             scheduleUserWelcomeAlert(guild);
         }
@@ -856,10 +794,12 @@ function initSoporteAlert(client) {
                 if (staffAlertCount >= 1 || superoTiempo) {
                     console.log(`⚠️ [SOPORTE ALERT] Usuario ${userData ? userData.userTag : userId} abandonó la sala tras ${formatDuration(timeWaitingMs)} sin atención.`);
 
-                    const { staffMembers } = getOrderedSupportChannelsAndStaffs(guild);
+                    const target = getTargetStaffChannel(guild);
+                    const staffsList = target ? Array.from(target.staffs.values()) : [];
                     await sendSanctionReport(guild, {
                         motivo: 'El usuario se marchó de la sala de espera sin haber sido atendido tras esperar largo tiempo.',
-                        staffsInvolucrados: staffMembers,
+                        staffsInvolucrados: staffsList,
+                        targetChannelId: null, // No mover a nadie porque solo es reporte de abandono
                         usuariosAfectados: [{
                             id: userId,
                             tag: userData ? userData.userTag : (member ? member.user.tag : userId),
@@ -876,6 +816,8 @@ function initSoporteAlert(client) {
             if (guild && isWaitRoomEmpty(guild)) {
                 staffAlertCount = 0;
                 sanctionReportSent = false;
+                nextAlertTurn = 'STAFF';
+                lastActionAt = 0;
                 abortPlaybackImmediately(guild, 'Sala de espera vacía. Desconectando bot');
             }
         }
