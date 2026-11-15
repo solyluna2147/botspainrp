@@ -33,6 +33,15 @@ const ticketKnowledgeSchema = new mongoose.Schema({
 
 const TicketKnowledge = mongoose.models.TicketKnowledge || mongoose.model('TicketKnowledge', ticketKnowledgeSchema);
 
+const normativaDocSchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true },
+    content: { type: String, required: true },
+    pages: [{ pageNumber: Number, text: String }],
+    updatedAt: { type: Date, default: Date.now }
+});
+
+const NormativaDoc = mongoose.models.NormativaDoc || mongoose.model('NormativaDoc', normativaDocSchema);
+
 const botSettingSchema = new mongoose.Schema({
     key: { type: String, required: true, unique: true },
     value: mongoose.Schema.Types.Mixed
@@ -48,6 +57,7 @@ const CANAL_APRENDIZAJE_ID = '1571488286789079080';
 const ROLE_STAFF_ID = '1538191116610838691';
 
 let consultasActivas = true;
+let memoriaNormativaPages = []; // Caché en memoria RAM de las 16 páginas completas
 
 // Helper para obtener el logo oficial
 function getLogoPath() {
@@ -68,8 +78,83 @@ async function loadConfig() {
         if (config !== null && config.value !== undefined) {
             consultasActivas = !!config.value;
         }
+
+        // Cargar las 16 páginas de la normativa directamente desde MongoDB en la nube
+        const doc = await NormativaDoc.findOne({ key: 'normativa_general_2026' });
+        if (doc && doc.pages && doc.pages.length > 0) {
+            memoriaNormativaPages = doc.pages.map(p => p.text);
+            console.log(`📚 [CONSULTAS AI] Cargadas ${memoriaNormativaPages.length} páginas de la normativa oficial desde MongoDB.`);
+        } else {
+            const localTxt = path.join(__dirname, 'normativa_vallecas_completa.txt');
+            if (fs.existsSync(localTxt)) {
+                const fullContent = fs.readFileSync(localTxt, 'utf8');
+                memoriaNormativaPages = fullContent.split(/(?=VALLECAS RP\s*\n\|\s*NORMATIVA GENERAL OFICIAL)/i).map(p => p.trim());
+            }
+        }
     } catch (e) {
-        console.error('⚠️ [CONSULTAS IA] Error cargando config:', e.message);
+        console.error('⚠️ [CONSULTAS IA] Error cargando config y normativa:', e.message);
+    }
+}
+
+// Diccionario inteligente de sinónimos y jerga FiveM / española para comprender al Staff aunque escriba mal
+const JERGA_SINONIMOS = {
+    'negocio': ['local', 'tienda', 'negocio', 'empresa', 'comercio', 'badulaque', 'taller', 'keli', 'propiedad'],
+    'cerrado': ['cerrado', 'cerrar', 'serrao', 'cerrao', 'inactivo', 'inactividad', 'abrir', 'abre', 'tiempo', 'dias'],
+    'robar': ['robo', 'robar', 'atraco', 'atracar', 'asaltar', 'asalto', 'botin', 'hurto', 'mangado', 'chafado'],
+    'policia': ['lspd', 'cop', 'cops', 'agente', 'policia', 'patrulla', 'maderos', 'nacional', 'pitufo'],
+    'ck': ['ck', 'cadena perpetua', 'perpetua', 'muerte definitiva', 'multas', 'droga', 'matarle el pj', 'borrar pj'],
+    'sancion': ['ban', 'baneo', 'jail', 'sancion', 'castigo', 'expulsion', 'permaban', 'sancionan', 'castigan'],
+    'coche': ['coche', 'vehiculo', 'auto', 'moto', 'patrulla', 'conducir', 'disparar', 'buga'],
+    'arma': ['pistola', 'fusil', 'ak', 'escopeta', 'pesada', 'armamento', 'blanca', 'pipa', 'plomo'],
+    'secuestro': ['secuestro', 'secuestrar', 'rapto', 'retener', 'rehén', 'rehenes', 'rescate'],
+    'guerra': ['guerra', 'tiroteo', 'bandas', 'mafias', 'pacto', 'alianza', 'barrio'],
+    'entorno': ['entorno', 'rde', 'comisaria', 'zona segura', 'zs', 'evasion', 'campeo', 'caliente']
+};
+
+// Helper para buscar las páginas y secciones más relevantes de la normativa según la pregunta del Staff
+function getRelevantNormativaSnippets(question) {
+    if (!memoriaNormativaPages || memoriaNormativaPages.length === 0) {
+        const localTxt = path.join(__dirname, 'normativa_vallecas_completa.txt');
+        if (fs.existsSync(localTxt)) {
+            const fullContent = fs.readFileSync(localTxt, 'utf8');
+            memoriaNormativaPages = fullContent.split(/(?=VALLECAS RP\s*\n\|\s*NORMATIVA GENERAL OFICIAL)/i).map(p => p.trim());
+        }
+    }
+    if (!memoriaNormativaPages || memoriaNormativaPages.length === 0) return '';
+
+    try {
+        const stopWords = new Set(['para', 'como', 'pero', 'este', 'esta', 'sobre', 'todo', 'toda', 'donde', 'cuando', 'quien', 'porque', 'mucho', 'poco', 'tiempo', 'pasa', 'queda', 'hace', 'deha', 'nota', 'cosa']);
+        const qClean = question.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const words = qClean.split(/[^a-z0-9]+/i).filter(w => w.length >= 3 && !stopWords.has(w));
+
+        // Expandir palabras clave con jerga y sinónimos
+        const expandedWords = new Set(words);
+        for (const [key, list] of Object.entries(JERGA_SINONIMOS)) {
+            if (list.some(s => qClean.includes(s))) {
+                list.forEach(w => expandedWords.add(w));
+            }
+        }
+
+        // Puntuación de relevancia por página
+        const scored = memoriaNormativaPages.map(page => {
+            const pageLower = page.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            let score = 0;
+            for (const word of expandedWords) {
+                if (pageLower.includes(word)) {
+                    score += (word.length >= 5 ? 3 : 1);
+                    const occurrences = (pageLower.match(new RegExp(word, 'g')) || []).length;
+                    score += Math.min(occurrences, 4);
+                }
+            }
+            return { page, score };
+        });
+
+        scored.sort((a, b) => b.score - a.score);
+        // Tomar las 2 páginas más relevantes
+        const bestMatches = scored.slice(0, 2).filter(s => s.score > 0).map(s => s.page.trim()).join('\n\n--- SIGUIENTE SECCIÓN DE LA NORMATIVA ---\n\n');
+        return bestMatches.slice(0, 5000);
+    } catch (e) {
+        return '';
     }
 }
 
@@ -81,26 +166,31 @@ async function queryGroqAI(userQuestion) {
     if (!groqKey) return null;
 
     try {
-        // Recuperar conocimientos del canal de aprendizaje (últimos 35 registros)
+        // 1. Fragmentos directos del texto original del PDF de la normativa
+        const exactNormativaText = getRelevantNormativaSnippets(userQuestion);
+
+        // 2. Conocimientos específicos en MongoDB
         let knowledgeContext = '';
         try {
-            const allKnowledge = await TicketKnowledge.find({}).sort({ createdAt: -1 }).limit(35);
+            const allKnowledge = await TicketKnowledge.find({}).sort({ createdAt: -1 }).limit(25);
             if (allKnowledge && allKnowledge.length > 0) {
-                knowledgeContext = '\n\nBASE DE CONOCIMIENTOS OFICIAL DE VALLECAS RP (Normativas, Precios y Reglas):\n' +
+                knowledgeContext = '\nPUNTOS RESUMIDOS Y APRENDIZAJES:\n' +
                     allKnowledge.map(k => `• ${k.response}`).join('\n') + '\n';
             }
         } catch (e) { }
 
         const systemPrompt =
-            'Eres la IA Asesora Interna y Oficial de VALLECAS RP para el Equipo de Staff y Administración.\n' +
-            'Tu labor es responder consultas de moderadores sobre normativas de FiveM (PG, MG, RDM, VDM, IC/OOC, etc.), precios de donaciones, sanciones y funcionamiento del servidor.\n\n' +
-            'REGLAS DE ORO:\n' +
-            '1. Responde de forma clara, directa, profesional y concisa (máximo 1 o 2 párrafos bien redactados).\n' +
-            '2. Si la duda es sobre una normativa específica (ej: PG, RDM), define la regla y da ejemplos claros.\n' +
-            '3. Básate prioritariamente en la base de datos de Vallecas RP proporcionada a continuación.\n' +
-            '4. Habla siempre en español de España de forma respetuosa y cercana hacia los moderadores.\n' +
-            '5. NUNCA inventes precios ni normativas que contradigan las notas oficiales.' +
-            knowledgeContext;
+            'Eres la IA Asesora Interna y Oficial de VALLECAS RP (FiveM GTA V Roleplay) para el Equipo de Staff y Administración.\n' +
+            'REGLA CRÍTICA DE INTERPRETACIÓN:\n' +
+            'El moderador o staff puede escribir con faltas de ortografía, sin tildes, con jerga callejera (ej: "cerrao", "pasa si un nota", "buga", "maderos") o explicarse con dificultad. DEBES descifrar exactamente qué está queriendo preguntar en el fondo y darle la solución oficial basándote en la normativa.\n\n' +
+            'TEXTO EXACTO DE LA NORMATIVA GENERAL OFICIAL (PDF):\n' +
+            (exactNormativaText ? exactNormativaText : 'Normativa general vigente.') + '\n' +
+            knowledgeContext +
+            '\nREGLAS DE RESPUESTA:\n' +
+            '1. Da la solución exacta, clara y directa (citas de artículos, cifras numéricas, sanciones y recomendaciones para el Staff).\n' +
+            '2. Máximo 1 o 2 párrafos concisos y bien estructurados.\n' +
+            '3. BÁSATE 100% EN LA NORMATIVA DE VALLECAS RP.\n' +
+            '4. Habla en español de España de forma cercana y profesional hacia el Staff.';
 
         const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
