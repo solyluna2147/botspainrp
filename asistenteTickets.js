@@ -612,6 +612,40 @@ module.exports = function initAsistenteTickets(client) {
             // COMANDOS DE CONTROL PARA EL STAFF
             // ==========================================
 
+            // Comando de ayuda: !asistente o !asistente ayuda
+            if (['!asistente', '!asistente ayuda', '!asistente help', '!helpasistente'].includes(contentLower)) {
+                if (!isStaff) return;
+                const { embed, files } = buildBaseEmbed(
+                    message.guild,
+                    '🤖 PANEL DE CONTROL | ASISTENTE VIRTUAL DE TICKETS',
+                    `Aquí tienes los comandos de administración para el asistente de tickets:\n\n` +
+                    `⚙️ **| Interruptor General:**\n` +
+                    `> • \`!asistente on\` ➔ Activa el asistente en todos los tickets.\n` +
+                    `> • \`!asistente off\` ➔ Apaga el asistente (modo reposo total).\n` +
+                    `> • \`!asistente estado\` ➔ Muestra si está encendido o apagado.\n\n` +
+                    `📋 **| Procesar Tickets Ya Abiertos:**\n` +
+                    `> • \`!procesarticket\` *(o \`!resumir\`)* ➔ Lee el historial del ticket actual y genera el resumen oficial con botones de acción para el Staff.\n` +
+                    `> • \`!procesartodos\` ➔ Escanea y resume todos los tickets pendientes del servidor.\n\n` +
+                    `🧠 **| Canal de Aprendizaje:**\n` +
+                    `> • \`!setcanalaprendizaje #canal\` ➔ Define el canal donde el bot enviará dudas no catalogadas para ser entrenado.\n\n` +
+                    `*Solo los miembros con rol de Staff o Administrador pueden usar estos comandos.*`,
+                    0x8e44ad
+                );
+                return message.reply({ embeds: [embed], files });
+            }
+
+            // Comando: !setcanalaprendizaje #canal
+            if (contentLower.startsWith('!setcanalaprendizaje')) {
+                if (!isStaff) return;
+                const channelMention = message.mentions.channels.first();
+                if (!channelMention) {
+                    return message.reply('⚠️ **Uso:** `!setcanalaprendizaje #canal`');
+                }
+                canalAprendizajeId = channelMention.id;
+                await TicketConfig.findOneAndUpdate({ key: 'canal_aprendizaje' }, { key: 'canal_aprendizaje', value: channelMention.id }, { upsert: true });
+                return message.reply(`✅ **Canal de aprendizaje configurado en:** <#${channelMention.id}>. A partir de ahora, las dudas no resueltas se enviarán allí para entrenar al bot.`);
+            }
+
             // Comando: !asistente on / !asistente off
             if (['!asistente on', '!asistente off', '!asistente estado'].includes(contentLower)) {
                 if (!isStaff) return;
