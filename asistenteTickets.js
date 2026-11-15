@@ -123,22 +123,17 @@ async function loadConfig() {
 // VALIDACIONES ESTRICTAS DE CANALES Y STAFF
 // ==========================================
 
-// Comprueba si el canal pertenece a una de las 4 categorías permitidas
+// Comprueba si el canal pertenece EXCLUSIVAMENTE a una de las 4 categorías permitidas
 function isValidTicketCategory(channel) {
     if (!channel || channel.isDMBased()) return false;
+    // Solo canales de texto dentro del servidor (ChannelType.GuildText = 0)
+    if (channel.type !== 0) return false;
+
     const parentId = channel.parentId;
-    if (parentId && ALLOWED_CATEGORY_IDS.includes(parentId)) {
-        return true;
-    }
-    // Fallback: Si el canal tiene en el nombre o topic indicios claros de las 4 categorías
-    const name = (channel.name || '').toLowerCase();
-    const parentName = channel.parent ? channel.parent.name.toLowerCase() : '';
-    if (parentName.includes('apelación') || parentName.includes('apelacion') ||
-        parentName.includes('donación') || parentName.includes('donacion') ||
-        parentName.includes('c.contenido') || parentName.includes('soporte')) {
-        return true;
-    }
-    return false;
+    if (!parentId) return false;
+
+    // Comparación ESTRICTA y ÚNICA por ID de Categoría
+    return ALLOWED_CATEGORY_IDS.includes(parentId);
 }
 
 // Detectar categoría basada en el ID exacto de la categoría de Discord
@@ -148,13 +143,7 @@ function detectTicketCategory(channel) {
     if (parentId === CATEGORIA_APELACION_ID) return 'apelacion';
     if (parentId === CATEGORIA_STREAMER_ID) return 'streamer';
     if (parentId === CATEGORIA_DONACIONES_ID) return 'donaciones';
-
-    const parentName = channel.parent ? channel.parent.name.toLowerCase() : '';
-    const name = (channel.name || '').toLowerCase();
-    if (parentName.includes('apelación') || parentName.includes('apelacion') || name.includes('apelacion')) return 'apelacion';
-    if (parentName.includes('donación') || parentName.includes('donacion') || name.includes('dona')) return 'donaciones';
-    if (parentName.includes('c.contenido') || name.includes('stream')) return 'streamer';
-    return 'soporte';
+    return 'general';
 }
 
 // Comprueba si algún Staff ya ha hablado en el canal
@@ -726,32 +715,18 @@ module.exports = function initAsistenteTickets(client) {
                 const ch = message.channel;
                 const parent = ch.parent;
                 const parentId = ch.parentId;
-                const category = detectTicketCategory(ch);
-
-                const messages = await ch.messages.fetch({ limit: 50 }).catch(() => null);
-                let firstMention = 'Ninguna';
-                let nonBots = [];
-
-                if (messages) {
-                    for (const m of messages.values()) {
-                        if (m.author.bot && m.mentions.users.size > 0) {
-                            firstMention = m.mentions.users.map(u => `${u.tag} (${u.id})`).join(', ');
-                        }
-                        if (!m.author.bot) {
-                            nonBots.push(`${m.author.tag} (${m.author.id}): "${m.content.slice(0, 30)}"`);
-                        }
-                    }
-                }
+                const isStrictCategory = parentId && ALLOWED_CATEGORY_IDS.includes(parentId);
 
                 return message.reply(
-                    `🔍 **DIAGNÓSTICO DEL TICKET ACTUAL:**\n` +
+                    `🔍 **DIAGNÓSTICO DEL CANAL:**\n` +
                     `> • **Canal:** <#${ch.id}> (\`${ch.name}\`)\n` +
-                    `> • **Categoría Padre:** ${parent ? parent.name : 'Ninguna'} (\`${parentId}\`)\n` +
-                    `> • **¿Es categoría válida?:** ${isValidTicketCategory(ch) ? '✅ SÍ' : '❌ NO'}\n` +
-                    `> • **Categoría detectada:** \`${category}\`\n` +
-                    `> • **Menciones de Bots:** ${firstMention}\n` +
-                    `> • **Mensajes no-bot encontrados:** ${nonBots.length}\n` +
-                    `> • **Detalle no-bots:** ${nonBots.slice(0, 3).join(' | ') || 'Ninguno'}`
+                    `> • **ID Categoría Padre:** \`${parentId || 'Ninguna'}\` (${parent ? parent.name : 'Sin padre'})\n` +
+                    `> • **¿Es una de las 4 IDs oficiales?:** ${isStrictCategory ? '✅ SÍ' : '❌ NO'}\n` +
+                    `> • **IDs esperadas:**\n` +
+                    `>   - Soporte: \`${CATEGORIA_SOPORTE_ID}\`\n` +
+                    `>   - Apelación: \`${CATEGORIA_APELACION_ID}\`\n` +
+                    `>   - Streamer: \`${CATEGORIA_STREAMER_ID}\`\n` +
+                    `>   - Donaciones: \`${CATEGORIA_DONACIONES_ID}\``
                 );
             }
             if (['!asistente', '!asistente ayuda', '!asistente help'].includes(contentLower)) {
@@ -836,10 +811,11 @@ module.exports = function initAsistenteTickets(client) {
 
                 try {
                     const allChannels = await message.guild.channels.fetch();
-                    const targetChannels = allChannels.filter(c => c && isValidTicketCategory(c) && c.isTextBased());
+                    // Filtrar ESTRICTAMENTE: Canales de texto cuyo parentId sea una de las 4 IDs exactas
+                    const targetChannels = allChannels.filter(c => c && c.type === 0 && c.parentId && ALLOWED_CATEGORY_IDS.includes(c.parentId));
 
                     if (targetChannels.size === 0) {
-                        return statusMsg.edit('⚠️ No se encontraron canales de texto dentro de las 4 categorías de tickets.');
+                        return statusMsg.edit('⚠️ No se encontraron canales de texto dentro de las 4 categorías oficiales.');
                     }
 
                     let summarizedCount = 0;
