@@ -258,8 +258,54 @@ function extractStreamUrls(text) {
 }
 
 // ==========================================
-// RESUMIDOR INTELIGENTE DE MOTIVOS (NLP / PATRONES)
+// RESUMIDOR INTELIGENTE DE MOTIVOS (IA GROQ + NLP)
 // ==========================================
+async function summarizeReasonWithAI(category, text) {
+    if (!text || !text.trim()) return 'No especificado por el usuario';
+
+    const groqKey = process.env.GROQ_API_KEY;
+    if (groqKey) {
+        try {
+            const systemPrompt =
+                'Eres el sistema inteligente de triaje y análisis de tickets de VALLECAS RP (servidor FiveM español).\n' +
+                'Tu objetivo es leer los mensajes del usuario (aunque tengan faltas de ortografía, jerga, abreviaciones o frases cortas como "tengo un bug" o "tire f8 perdon") y redactar un motivo formal, detallado y claro para el Staff.\n' +
+                'REGLAS:\n' +
+                '1. Devuelve un texto directo de 1 o 2 frases bien redactadas.\n' +
+                '2. Especifica con claridad qué le ocurre o qué solicita el usuario (ej: "El usuario solicita asistencia técnica debido a un bug en el servidor", "El usuario solicita revisión de su baneo tras admitir haber desconectado por F8 en rol y pedir disculpas", "El usuario solicita información para adquirir un vehículo VIP mediante Bizum").\n' +
+                '3. No incluyas saludos ni preámbulos, responde SOLO el motivo.';
+
+            const res = await fetch('https://api.groq.com/openai/v1/chat/com/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${groqKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'openai/gpt-oss-20b',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: `Categoría: ${category}\nMensajes del usuario:\n"${text}"` }
+                    ],
+                    max_tokens: 120,
+                    temperature: 0.3
+                })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                const aiSummary = data.choices?.[0]?.message?.content?.trim();
+                if (aiSummary && aiSummary.length > 5) {
+                    return aiSummary.replace(/^["']|["']$/g, '');
+                }
+            }
+        } catch (e) {
+            console.error('⚠️ [ERROR IA RESUMEN]:', e.message);
+        }
+    }
+
+    return summarizeReason(category, text);
+}
+
 function summarizeReason(category, text) {
     if (!text || !text.trim()) return 'No especificado por el usuario';
     const lower = text.toLowerCase();
@@ -628,34 +674,30 @@ async function sendStaffSummary(channel, session) {
     const guild = channel.guild;
     const category = session.category;
     const user = await channel.client.users.fetch(session.userId).catch(() => null);
-    const userTag = user ? `<@${user.id}> (${user.tag})` : `<@${session.userId}>`;
+    const userTag = user ? `<@${user.id}> (\`${user.tag}\`)` : `<@${session.userId}>`;
 
     const allText = session.userMessages.map(m => m.content).join('\n');
 
     let summaryTitle = '📋 RESUMEN DETALLADO PARA EL STAFF';
     let summaryDesc = '';
-    const buttons = [];
 
     if (category === 'donaciones') {
         summaryTitle = '💎 RESUMEN DE DONACIÓN | VALLECAS RP';
-        const cleanSummary = summarizeReason('donaciones', allText);
-        const item = session.extractedData.donationItem || cleanSummary;
-        const method = session.extractedData.paymentMethod || (allText.toLowerCase().includes('bizum') ? 'Bizum' : (allText.toLowerCase().includes('paypal') ? 'PayPal' : 'Pendiente'));
+        const cleanSummary = await summarizeReasonWithAI('donaciones', allText);
+        const item = session.extractedData.donationItem || 'Pendiente de concretar';
+        const method = session.extractedData.paymentMethod || (allText.toLowerCase().includes('bizum') ? 'Bizum' : (allText.toLowerCase().includes('paypal') ? 'PayPal' : 'A consultar'));
 
         summaryDesc =
-            `👤 **| Usuario Solicitante:** > ${userTag} ❗\n\n` +
-            `📦 **| Artículo / Donación Deseada:** > **${item}** ❗\n\n` +
-            `💳 **| Método de Pago Previsto:** > **${method}** ❗\n\n` +
-            `💬 **| Análisis de la Petición:**\n` +
+            `👤 **| Usuario Solicitante:**\n` +
+            `> ${userTag} ❗\n\n` +
+            `📦 **| Artículo / Donación Deseada:**\n` +
+            `> **${item}** ❗\n\n` +
+            `💳 **| Método de Pago Previsto:**\n` +
+            `> **${method}** ❗\n\n` +
+            `💬 **| Motivo y Diagnóstico Completo:**\n` +
             `> **${cleanSummary}** ❗\n\n` +
-            `⚡ **Acciones rápidas para el Staff:**`;
+            `⚖️ *Atención requerida por el equipo de Donaciones.*`;
 
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`btn_dona_bizum_${session.userId}`).setLabel('💸 Enviar Bizum').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId(`btn_dona_paypal_${session.userId}`).setLabel('🅿️ Enviar PayPal').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId(`btn_dona_done_${session.userId}`).setLabel('✅ Entregado').setStyle(ButtonStyle.Secondary)
-        );
-        buttons.push(row);
     } else if (category === 'streamer') {
         summaryTitle = '🟣 AUDITORÍA DE CREADOR DE CONTENIDO | VALLECAS RP';
         const streamUrls = session.extractedData.streamLinks.length > 0 ? session.extractedData.streamLinks : extractStreamUrls(allText);
@@ -671,7 +713,7 @@ async function sendStaffSummary(channel, session) {
                     `📊 | Media de Viewers en Directo: > ${audit.avgViewers} ❗\n\n` +
                     `📈 | Promedio de Visualizaciones por Emisión: > ${audit.avgViews} ❗\n\n` +
                     `🎮 | Contenido Principal Detectado: > ${audit.content} ❗\n\n` +
-                    `⚖️ | Veredicto de Requisitos Mínimos: > ${audit.cumple ? '🟢 CUMPLE REQUISITOS PARA RANGO STREAMER' : '🔴 NO CUMPLE REQUISITOS'} ❗`;
+                    `⚖ | Veredicto de Requisitos Mínimos: > ${audit.cumple ? '🟢 CUMPLE REQUISITOS PARA RANGO STREAMER' : '🔴 NO CUMPLE REQUISITOS'} ❗`;
 
                 const { embed: auditEmbed, files: auditFiles } = buildBaseEmbed(
                     guild,
@@ -680,55 +722,54 @@ async function sendStaffSummary(channel, session) {
                     audit.platform === 'Twitch' ? 0x9146ff : (audit.platform === 'Kick' ? 0x53fc18 : 0x00f2fe)
                 );
 
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(`🟣 Ver ${audit.platform}`).setURL(audit.url),
-                    new ButtonBuilder().setCustomId(`btn_stream_approve_${session.userId}_${encodeURIComponent(audit.url)}`).setLabel('✅ Aprobar Rango').setStyle(ButtonStyle.Success),
-                    new ButtonBuilder().setCustomId(`btn_stream_deny_${session.userId}`).setLabel('❌ Denegar').setStyle(ButtonStyle.Danger)
-                );
-
-                await channel.send({ embeds: [auditEmbed], files: auditFiles, components: [row] }).catch(() => { });
+                await channel.send({
+                    content: `🔔 <@&${ROLE_STAFF_ID}>`,
+                    embeds: [auditEmbed],
+                    files: auditFiles
+                }).catch(() => { });
             }
             return;
         } else {
             summaryDesc =
-                `👤 **| Usuario Solicitante:** > ${userTag} ❗\n\n` +
+                `👤 **| Usuario Solicitante:**\n` +
+                `> ${userTag} ❗\n\n` +
                 `⚠️ **| Estado:** El usuario aún no ha facilitado un enlace válido de Twitch, Kick o TikTok ❗\n\n` +
-                `💬 **| Mensaje recibido:** > "${allText.slice(0, 200) || 'Sin mensaje'}"`;
+                `💬 **| Mensaje recibido:**\n` +
+                `> "${allText.slice(0, 250) || 'Sin mensaje'}"`;
         }
     } else if (category === 'apelacion') {
         summaryTitle = '🔨 INFORME DE APELACIÓN | VALLECAS RP';
-        const cleanSummary = summarizeReason('apelacion', allText);
+        const cleanSummary = await summarizeReasonWithAI('apelacion', allText);
 
         summaryDesc =
-            `👤 **| Usuario Sancionado:** > ${userTag} ❗\n\n` +
-            `⚖️ **| Motivo y Análisis de la Apelación:**\n` +
+            `👤 **| Usuario Sancionado:**\n` +
+            `> ${userTag} ❗\n\n` +
+            `⚖️ **| Motivo y Diagnóstico de la Apelación:**\n` +
             `> **${cleanSummary}** ❗\n\n` +
-            `⚡ **Resolución administrativa:**`;
+            `📝 **| Declaración Completa Recogida:**\n` +
+            `> "${allText.slice(0, 300)}" ❗\n\n` +
+            `⚡ **Resolución administrativa:** El caso queda a disposición de la Administración.`;
 
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`btn_ban_unban_${session.userId}`).setLabel('🔓 Aceptar y Desbanear').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId(`btn_ban_reject_${session.userId}`).setLabel('❌ Rechazar Apelación').setStyle(ButtonStyle.Danger)
-        );
-        buttons.push(row);
     } else {
         summaryTitle = '🛠️ RESUMEN DE INCIDENCIA DE SOPORTE';
-        const cleanSummary = summarizeReason('soporte', allText);
+        const cleanSummary = await summarizeReasonWithAI('soporte', allText);
 
         summaryDesc =
-            `👤 **| Usuario Afectado:** > ${userTag} ❗\n\n` +
-            `📌 **| Motivo de la Incidencia:**\n` +
+            `👤 **| Usuario Afectado:**\n` +
+            `> ${userTag} ❗\n\n` +
+            `📌 **| Motivo y Diagnóstico de la Incidencia:**\n` +
             `> **${cleanSummary}** ❗\n\n` +
+            `💬 **| Declaración Recogida:**\n` +
+            `> "${allText.slice(0, 250)}" ❗\n\n` +
             `⏳ **| Estado:** Esperando intervención de un miembro del Staff.`;
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`btn_ticket_claim_${session.userId}`).setLabel('🙋 Atender Ticket').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId(`btn_ticket_close_${session.userId}`).setLabel('🔒 Cerrar Ticket').setStyle(ButtonStyle.Secondary)
-        );
-        buttons.push(row);
     }
 
     const { embed, files } = buildBaseEmbed(guild, summaryTitle, summaryDesc, 0x2ecc71);
-    await channel.send({ embeds: [embed], files, components: buttons }).catch(() => { });
+    await channel.send({
+        content: `🔔 <@&${ROLE_STAFF_ID}>`,
+        embeds: [embed],
+        files: files
+    }).catch(() => { });
 }
 
 // Procesar ticket retroactivo comprobando que NINGÚN staff haya intervenido
