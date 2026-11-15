@@ -158,8 +158,11 @@ function detectTicketCategory(channel) {
 }
 
 // Comprueba si algún Staff ya ha hablado en el canal
-// EXCLUYE expresamente al creador del ticket para que sus mensajes NUNCA lo descalifiquen
-async function hasStaffParticipated(channel, ticketOwnerId = null) {
+// EXCLUYE expresamente:
+// 1. Al creador del ticket (aunque sea staff/admin).
+// 2. Al usuario que ejecutó el comando (!procesartodos / !procesarticket).
+// 3. A cualquier bot.
+async function hasStaffParticipated(channel, ticketOwnerId = null, excludedUserId = null) {
     try {
         const messages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
         if (!messages) return false;
@@ -167,15 +170,24 @@ async function hasStaffParticipated(channel, ticketOwnerId = null) {
         for (const msg of messages.values()) {
             if (msg.author.bot) continue;
 
-            // Si es el usuario que abrió el ticket, NO es staff atendiendo
+            // Ignorar los comandos de gestión del asistente como !procesartodos, !procesar, etc.
+            const cleanContent = msg.content.trim().toLowerCase();
+            if (cleanContent.startsWith('!procesar') || cleanContent.startsWith('!asistente') || cleanContent.startsWith('!limpiar')) {
+                continue;
+            }
+
+            // Ignorar al creador del ticket (da igual qué roles tenga)
             if (ticketOwnerId && msg.author.id === ticketOwnerId) continue;
 
-            // Verificar si otro usuario que habló tiene rol de staff o permisos de admin
+            // Ignorar al usuario que lanzó el comando de escaneo
+            if (excludedUserId && msg.author.id === excludedUserId) continue;
+
+            // Comprobar si es OTRO usuario que sea staff
             const member = msg.member || await channel.guild.members.fetch(msg.author.id).catch(() => null);
             if (member && (member.roles.cache.has(ROLE_STAFF_ID) || member.permissions.has(PermissionFlagsBits.Administrator))) {
-                // Verificar que no sea el mismo que abrió el ticket
                 if (ticketOwnerId && member.id === ticketOwnerId) continue;
-                return true; // Un staff distinto ya intervino
+                if (excludedUserId && member.id === excludedUserId) continue;
+                return true; // Un staff distinto está atendiendo activamente
             }
         }
         return false;
@@ -508,7 +520,8 @@ async function processExistingTicket(channel, triggerUser = null) {
         const chronological = Array.from(fetchedMessages.values()).reverse();
         let ticketOwner = null;
 
-        // 1. Detectar al dueño del ticket (mención en el embed de King o primer usuario no-bot)
+        // 1. Detectar al dueño del ticket
+        // Prioridad A: La mención en el primer mensaje de King (ej: @Isalove o @brynツ)
         for (const msg of chronological) {
             if (msg.author.bot && msg.mentions.users.size > 0) {
                 const nonBotMention = msg.mentions.users.find(u => !u.bot);
@@ -519,7 +532,7 @@ async function processExistingTicket(channel, triggerUser = null) {
             }
         }
 
-        // Si no lo encontramos en menciones, buscar en permisos del canal
+        // Prioridad B: Buscar en los permisos de sobreescritura del canal (permissionOverwrites)
         if (!ticketOwner) {
             const userPerm = channel.permissionOverwrites.cache.find(po => po.type === 1 && po.id !== channel.client.user.id);
             if (userPerm) {
@@ -527,7 +540,7 @@ async function processExistingTicket(channel, triggerUser = null) {
             }
         }
 
-        // Si sigue sin aparecer, el primer autor que no sea bot
+        // Prioridad C: Primer usuario no-bot que escribió
         if (!ticketOwner) {
             for (const msg of chronological) {
                 if (!msg.author.bot) {
@@ -539,21 +552,20 @@ async function processExistingTicket(channel, triggerUser = null) {
 
         if (!ticketOwner) return false;
 
-        // 2. Comprobar si un Staff DISTINTO al usuario ya habló en el ticket
-        const staffInvolved = await hasStaffParticipated(channel, ticketOwner.id);
+        // 2. Comprobar si un Staff DISTINTO al usuario ya habló atendiendo el ticket
+        const staffInvolved = await hasStaffParticipated(channel, ticketOwner.id, triggerUser?.id);
         if (staffInvolved) {
             return 'STAFF_EXISTS';
         }
 
-        // 3. Recopilar mensajes del usuario
+        // 3. Recopilar mensajes enviados por el usuario
         const userMsgs = chronological
             .filter(m => m.author.id === ticketOwner.id)
             .map(m => ({ content: m.content, timestamp: m.createdAt }));
 
-        // CASO A: El usuario aún NO ha respondido nada en el ticket
-        // El asistente virtual toma la iniciativa, habla al usuario y le pregunta qué necesita
+        // CASO A: El usuario aún NO ha escrito nada en el ticket
+        // El asistente virtual habla en el canal, saluda con su logo y pregunta qué necesita
         if (userMsgs.length === 0) {
-            // Verificar si el asistente ya envió la bienvenida antes para no duplicar
             const botSentWelcome = chronological.some(m => m.author.id === channel.client.user.id);
             if (!botSentWelcome) {
                 await sendCategoryWelcome(channel, ticketOwner, category);
@@ -562,7 +574,7 @@ async function processExistingTicket(channel, triggerUser = null) {
             return 'WAITING_USER';
         }
 
-        // CASO B: El usuario ya ha escrito (como @brynツ) -> Generar resumen detallado para el Staff
+        // CASO B: El usuario ya ha escrito -> Generar el resumen para el Staff
         const allUserText = userMsgs.map(m => m.content).join('\n');
         const normalized = normalizeSlang(allUserText);
 
@@ -783,7 +795,7 @@ module.exports = function initAsistenteTickets(client) {
                     let skippedCount = 0;
 
                     for (const [, ch] of targetChannels) {
-                        const res = await processExistingTicket(ch);
+                        const res = await processExistingTicket(ch, message.author);
                         if (res === true) summarizedCount++;
                         else if (res === 'WELCOMED') welcomedCount++;
                         else skippedCount++;
