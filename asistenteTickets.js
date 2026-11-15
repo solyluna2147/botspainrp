@@ -274,19 +274,19 @@ async function summarizeReasonWithAI(category, text) {
                 '2. Especifica con claridad qué le ocurre o qué solicita el usuario (ej: "El usuario solicita asistencia técnica debido a un bug en el servidor", "El usuario solicita revisión de su baneo tras admitir haber desconectado por F8 en rol y pedir disculpas", "El usuario solicita información para adquirir un vehículo VIP mediante Bizum").\n' +
                 '3. No incluyas saludos ni preámbulos, responde SOLO el motivo.';
 
-            const res = await fetch('https://api.groq.com/openai/v1/chat/com/completions', {
+            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${groqKey}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: 'openai/gpt-oss-20b',
+                    model: 'qwen/qwen3.8-27b',
                     messages: [
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: `Categoría: ${category}\nMensajes del usuario:\n"${text}"` }
                     ],
-                    max_tokens: 120,
+                    max_tokens: 150,
                     temperature: 0.3
                 })
             });
@@ -497,7 +497,7 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
 
         conversationHistory.push({ role: 'user', content: currentMessage });
 
-        const res = await fetch('https://api.groq.com/openai/v1/chat/com/completions', {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${groqKey}`,
@@ -719,84 +719,51 @@ async function sendStaffSummary(channel, session) {
     if (category === 'donaciones') {
         summaryTitle = '💎 RESUMEN DE DONACIÓN | VALLECAS RP';
         const cleanSummary = await summarizeReasonWithAI('donaciones', allText);
-        const item = session.extractedData.donationItem || 'Pendiente de concretar';
-        const method = session.extractedData.paymentMethod || (allText.toLowerCase().includes('bizum') ? 'Bizum' : (allText.toLowerCase().includes('paypal') ? 'PayPal' : 'A consultar'));
+        const item = session.extractedData.donationItem || 'A consultar con administración';
+        const method = session.extractedData.paymentMethod || (allText.toLowerCase().includes('bizum') ? 'Bizum' : (allText.toLowerCase().includes('paypal') ? 'PayPal' : 'Pendiente'));
 
         summaryDesc =
-            `👤 **| Usuario Solicitante:**\n` +
-            `> ${userTag} ❗\n\n` +
-            `📦 **| Artículo / Donación Deseada:**\n` +
-            `> **${item}** ❗\n\n` +
-            `💳 **| Método de Pago Previsto:**\n` +
-            `> **${method}** ❗\n\n` +
-            `💬 **| Motivo y Diagnóstico Completo:**\n` +
-            `> **${cleanSummary}** ❗\n\n` +
-            `⚖️ *Atención requerida por el equipo de Donaciones.*`;
+            `👤 **Usuario:** ${userTag}\n` +
+            `📦 **Interés:** ${item}\n` +
+            `💳 **Método de pago:** ${method}\n\n` +
+            `📋 **Motivo / Petición del Usuario:**\n` +
+            `> ${cleanSummary}\n\n` +
+            `💬 **Mensajes originales:**\n` +
+            `> *"${allText.replace(/\n+/g, ' ').slice(0, 200)}"*`;
 
-    } else if (category === 'streamer') {
-        summaryTitle = '🟣 AUDITORÍA DE CREADOR DE CONTENIDO | VALLECAS RP';
-        const streamUrls = session.extractedData.streamLinks.length > 0 ? session.extractedData.streamLinks : extractStreamUrls(allText);
-
-        if (streamUrls.length > 0) {
-            for (const url of streamUrls) {
-                const audit = await auditStreamChannel(url);
-                const auditDesc =
-                    `👤 | Creador que Solicita: > ${userTag} ❗\n\n` +
-                    `📺 | Plataforma Analizada: > ${audit.platform} ❗\n\n` +
-                    `🔗 | Enlace Oficial al Perfil: > ${audit.url} ❗\n\n` +
-                    `👥 | Comunidad y Seguidores: > ${audit.followers} ❗\n\n` +
-                    `📊 | Media de Viewers en Directo: > ${audit.avgViewers} ❗\n\n` +
-                    `📈 | Promedio de Visualizaciones por Emisión: > ${audit.avgViews} ❗\n\n` +
-                    `🎮 | Contenido Principal Detectado: > ${audit.content} ❗\n\n` +
-                    `⚖ | Veredicto de Requisitos Mínimos: > ${audit.cumple ? '🟢 CUMPLE REQUISITOS PARA RANGO STREAMER' : '🔴 NO CUMPLE REQUISITOS'} ❗`;
-
-                const { embed: auditEmbed, files: auditFiles } = buildBaseEmbed(
-                    guild,
-                    `🟣 ¡AUDITORÍA DE ${audit.platform.toUpperCase()}!`,
-                    auditDesc,
-                    audit.platform === 'Twitch' ? 0x9146ff : (audit.platform === 'Kick' ? 0x53fc18 : 0x00f2fe)
-                );
-
-                await channel.send({
-                    content: `🔔 <@&${ROLE_STAFF_ID}>`,
-                    embeds: [auditEmbed],
-                    files: auditFiles
-                }).catch(() => { });
-            }
-            return;
-        } else {
-            summaryDesc =
-                `👤 **| Usuario Solicitante:**\n` +
-                `> ${userTag} ❗\n\n` +
-                `⚠️ **| Estado:** El usuario aún no ha facilitado un enlace válido de Twitch, Kick o TikTok ❗\n\n` +
-                `💬 **| Mensaje recibido:**\n` +
-                `> "${allText.slice(0, 250) || 'Sin mensaje'}"`;
-        }
     } else if (category === 'apelacion') {
         summaryTitle = '🔨 INFORME DE APELACIÓN | VALLECAS RP';
         const cleanSummary = await summarizeReasonWithAI('apelacion', allText);
 
         summaryDesc =
-            `👤 **| Usuario Sancionado:**\n` +
-            `> ${userTag} ❗\n\n` +
-            `⚖️ **| Motivo y Diagnóstico de la Apelación:**\n` +
-            `> **${cleanSummary}** ❗\n\n` +
-            `📝 **| Declaración Completa Recogida:**\n` +
-            `> "${allText.slice(0, 300)}" ❗\n\n` +
-            `⚡ **Resolución administrativa:** El caso queda a disposición de la Administración.`;
+            `👤 **Usuario:** ${userTag}\n` +
+            `⚖️ **Motivo de la apelación:**\n` +
+            `> ${cleanSummary}\n\n` +
+            `💬 **Declaración del usuario:**\n` +
+            `> *"${allText.replace(/\n+/g, ' ').slice(0, 250)}"*\n\n` +
+            `⚡ **Resolución:** Pendiente de revisión por Administración.`;
+
+    } else if (category === 'streamer') {
+        summaryTitle = '🟣 SOLICITUD DE STREAMER | VALLECAS RP';
+        const streamUrls = session.extractedData.streamLinks.length > 0 ? session.extractedData.streamLinks : extractStreamUrls(allText);
+
+        summaryDesc =
+            `👤 **Usuario:** ${userTag}\n` +
+            `🔗 **Canales:** ${streamUrls.length > 0 ? streamUrls.join(', ') : 'No aportados aún'}\n\n` +
+            `💬 **Mensaje:**\n` +
+            `> *"${allText.replace(/\n+/g, ' ').slice(0, 200)}"*`;
 
     } else {
-        summaryTitle = '🛠️ RESUMEN DE INCIDENCIA DE SOPORTE';
+        summaryTitle = '🛠️ RESUMEN DE INCIDENCIA | SOPORTE';
         const cleanSummary = await summarizeReasonWithAI('soporte', allText);
 
         summaryDesc =
-            `👤 **| Usuario Afectado:**\n` +
-            `> ${userTag} ❗\n\n` +
-            `📌 **| Motivo y Diagnóstico de la Incidencia:**\n` +
-            `> **${cleanSummary}** ❗\n\n` +
-            `💬 **| Declaración Recogida:**\n` +
-            `> "${allText.slice(0, 250)}" ❗\n\n` +
-            `⏳ **| Estado:** Esperando intervención de un miembro del Staff.`;
+            `👤 **Usuario:** ${userTag}\n` +
+            `📌 **Motivo detectado:**\n` +
+            `> ${cleanSummary}\n\n` +
+            `💬 **Mensajes del usuario:**\n` +
+            `> *"${allText.replace(/\n+/g, ' ').slice(0, 200)}"*\n\n` +
+            `⏳ **Estado:** Esperando atención del Staff.`;
     }
 
     const { embed, files } = buildBaseEmbed(guild, summaryTitle, summaryDesc, 0x2ecc71);
@@ -1293,6 +1260,9 @@ module.exports = function initAsistenteTickets(client) {
             if (customId.startsWith('btn_solicitar_staff_')) {
                 const targetUserId = customId.replace('btn_solicitar_staff_', '');
                 
+                // Confirmar la interacción de inmediato sin mandar mensajes spam intermedios
+                await interaction.deferUpdate().catch(() => {});
+
                 let session = await TicketSession.findOne({ channelId: interaction.channelId });
                 if (!session) {
                     session = {
@@ -1304,13 +1274,7 @@ module.exports = function initAsistenteTickets(client) {
                     };
                 }
 
-                // Confirmar al usuario inmediatamente
-                await interaction.reply({
-                    content: `🔔 **Aviso enviado:** Hemos alertado al equipo de Staff con el diagnóstico y resumen de tu consulta. En breve un moderador entrará al ticket.`,
-                    ephemeral: false
-                });
-
-                // Enviar inmediatamente la ficha resumen y diagnóstico para el Staff con mención al rol
+                // Enviar directamente el diagnóstico estructurado para el Staff con mención al rol
                 session.status = 'summarized';
                 if (session.save) await session.save();
                 await sendStaffSummary(interaction.channel, session);
