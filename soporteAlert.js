@@ -59,7 +59,7 @@ try {
 
 // Estado en memoria
 let sistemaActivo = true; // Interruptor ON/OFF
-let tiempoEsperaMinutos = 5; // Por defecto 5 minutos
+let tiempoEsperaMinutos = 0.5; // Por defecto 30 segundos (0.5 min)
 
 // Memoria RAM para los 5 audios
 let audioStaff1Cache = null; // Aviso 1 a staffs (espera_soporte)
@@ -471,6 +471,20 @@ function getOrderedSupportChannelsAndStaffs(guild) {
         };
     }
 
+    // Si los soportes están OCUPADOS (atendiendo a usuarios), comprobamos si hay staffs en SALA DE STAFFS
+    const charlaChannel = guild.channels.cache.get(CANAL_SALA_CHARLA_STAFF_ID);
+    const staffsEnCharla = charlaChannel && charlaChannel.isVoiceBased()
+        ? charlaChannel.members.filter(m => isMemberStaff(m) && m.voice && !m.voice.deaf && !m.voice.selfDeaf)
+        : null;
+
+    // Si hay staffs charlando en la sala de staffs, NUNCA interrumpimos el soporte ocupado atendiendo a un ciudadano
+    if (staffsEnCharla && staffsEnCharla.size > 0) {
+        return {
+            channels: [], // Dejar libre para que el bot vaya directamente a la Sala de Staffs
+            staffMembers: allAvailableStaffMembers
+        };
+    }
+
     return {
         channels: listPriorityOccupied,
         staffMembers: allAvailableStaffMembers
@@ -532,6 +546,7 @@ async function checkSalaCharlaStaff(guild) {
         const ok = await playAudioBufferInChannel(charlaChannel, audioSalaCharlaCache, 'Aviso Sala Charla Staff');
         if (ok) {
             lastSalaCharlaAlertAt = Date.now();
+            lastStaffAlertAt = Date.now();
         }
     }
 }
@@ -769,11 +784,12 @@ async function checkWaitRoom(guild, client) {
         await checkSalaCharlaStaff(guild);
     }
 
-    // 3. REPETICIÓN A USUARIOS CADA 1 MINUTO (Solo si no acabamos de emitir alerta a staff)
+    // 3. REPETICIÓN A USUARIOS CADA 30 SEGUNDOS (Solo si no acabamos de emitir alerta a staff)
     if (usuarioHaSuperadoStaffTime && !isPlayingVoice && !staffAlertOk) {
         const timeSinceLastRepeat = now - lastUserRepeatAlertAt;
-        if (lastUserRepeatAlertAt !== 0 && timeSinceLastRepeat >= 60 * 1000) {
-            await triggerUserWaitRoomAlert(guild, 'Recordatorio 1min');
+        const repeatDelayMs = Math.min(30 * 1000, tiempoEsperaMinutos * 60 * 1000);
+        if (lastUserRepeatAlertAt !== 0 && timeSinceLastRepeat >= repeatDelayMs) {
+            await triggerUserWaitRoomAlert(guild, 'Recordatorio 30s');
         }
     }
 }
