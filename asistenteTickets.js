@@ -471,19 +471,28 @@ async function handleUserConversation(channel, user, category, combinedText, ses
         return;
     }
 
-    // 1. Apelación de Baneo: Diálogo cordial
+    // 1. Apelación de Baneo: Diálogo con la misma estructura visual que Donaciones
     if (category === 'apelacion') {
         const { embed, files } = buildBaseEmbed(
             guild,
-            '⚖️ ATENCIÓN DE APELACIONES | VALLECAS RP',
-            `¡Buenas tardes <@${user.id}>! Espero que estés bien.\n\n` +
-            `Hemos leído atentamente lo que nos has explicado sobre tu sanción y comprendemos perfectamente lo ocurrido.\n\n` +
-            `Para poder tramitar tu revisión de la forma más justa y rápida posible con la Administración:\n` +
-            `💬 **¿Tienes algún clip o prueba que respalde tu versión, o quieres añadir algún detalle más sobre lo sucedido?**\n\n` +
-            `*(Escríbelo con tranquilidad aquí abajo y en cuanto nos confirmes, te generaremos la ficha formal para el Staff).*`,
+            '🔨 ATENCIÓN DE APELACIONES | VALLECAS RP',
+            `¡Buenas <@${user.id}>! Hemos recibido tu solicitud para revisar tu sanción.\n\n` +
+            `Para que la Administración pueda estudiar tu caso con total claridad:\n\n` +
+            `⚖️ **| Motivo detectado:**\n` +
+            `> Desconexión de rol (F8 / Combat Logging) o sanción administrativa ❗\n\n` +
+            `📹 **| Pruebas o clips disponibles:**\n` +
+            `> Si tienes clip de Medal, YouTube o captura que respalde tu versión, compártela en este chat ❗\n\n` +
+            `📝 **| Declaración final:**\n` +
+            `> ¿Deseas añadir algún detalle más antes de que el Staff tome la decisión? ❗\n\n` +
+            `*(Puedes responder con normalidad o pulsar en los botones rápidos de abajo).*`,
             0xe67e22
         );
-        await channel.send({ embeds: [embed], files }).catch(() => { });
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('btn_apel_sinpruebas').setLabel('❌ No tengo clip / Reconozco error').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('btn_apel_conpruebas').setLabel('📹 Aportaré clip / captura').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('btn_apel_segundaop').setLabel('🙏 Solicito Servicios Comunitarios').setStyle(ButtonStyle.Secondary)
+        );
+        await channel.send({ embeds: [embed], files, components: [row] }).catch(() => { });
         return;
     }
 
@@ -563,7 +572,19 @@ async function sendCategoryWelcome(channel, user, category) {
         title = '🔨 APELACIÓN DE SANCIÓN O BANEO';
         desc =
             `¡Buenas <@${user.id}>! Te damos la bienvenida a tu ticket de apelación.\n\n` +
-            `Coméntanos con sinceridad lo sucedido y el motivo por el que solicitas la revisión de tu sanción para que el equipo pueda escucharte y valorarlo.`;
+            `Para poder tramitar la revisión de tu sanción con la Administración:\n\n` +
+            `⚖️ **| Motivo de la sanción:**\n` +
+            `> Explícanos la norma o situación por la que se te sancionó ❗\n\n` +
+            `📹 **| Pruebas o alegaciones:**\n` +
+            `> Aporta clips, capturas o tus explicaciones sinceras de lo sucedido ❗\n\n` +
+            `*(Puedes escribirlo directamente o pulsar en los botones rápidos de abajo).*`;
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('btn_apel_sinpruebas').setLabel('❌ No tengo clip / Reconozco error').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('btn_apel_conpruebas').setLabel('📹 Aportaré clip / captura').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('btn_apel_segundaop').setLabel('🙏 Solicito Servicios Comunitarios').setStyle(ButtonStyle.Secondary)
+        );
+        components.push(row);
     } else {
         title = '🛠️ SOPORTE GENERAL | VALLECAS RP';
         desc =
@@ -855,30 +876,48 @@ module.exports = function initAsistenteTickets(client) {
     client.on('channelCreate', async (channel) => {
         try {
             if (!asistenteActivado) return;
-            // FILTRO ESTRICTO: Solo las 4 categorías permitidas
-            if (!isValidTicketCategory(channel)) return;
 
+            // Esperar 4 segundos a que King termine de renombrar el canal, asignar permisos y enviar su mensaje inicial
             setTimeout(async () => {
                 const refreshed = await channel.guild.channels.fetch(channel.id).catch(() => null);
                 if (!refreshed || !isValidTicketCategory(refreshed)) return;
 
-                // Comprobar si un staff ya habló
-                const staffActive = await hasStaffParticipated(refreshed);
+                const category = detectTicketCategory(refreshed);
+
+                // Obtener mensajes de bienvenida de King para saber qué usuario abrió el ticket
+                const msgs = await refreshed.messages.fetch({ limit: 10 }).catch(() => null);
+                let ticketOwner = null;
+
+                if (msgs) {
+                    for (const m of msgs.values()) {
+                        if (m.author.bot && m.mentions.users.size > 0) {
+                            ticketOwner = m.mentions.users.find(u => !u.bot);
+                            if (ticketOwner) break;
+                        }
+                    }
+                }
+
+                if (!ticketOwner) {
+                    const userPerm = refreshed.permissionOverwrites.cache.find(po => po.type === 1 && po.id !== client.user.id);
+                    if (userPerm) {
+                        ticketOwner = await client.users.fetch(userPerm.id).catch(() => null);
+                    }
+                }
+
+                const effectiveUser = ticketOwner || { id: refreshed.id, tag: 'Usuario' };
+
+                // Comprobar si ya intervino otro staff
+                const staffActive = await hasStaffParticipated(refreshed, effectiveUser.id);
                 if (staffActive) return;
 
-                const category = detectTicketCategory(refreshed);
-                const userPerm = refreshed.permissionOverwrites.cache.find(po => po.type === 1 && po.id !== client.user.id);
-                const user = userPerm ? await client.users.fetch(userPerm.id).catch(() => null) : null;
+                await TicketSession.findOneAndUpdate(
+                    { channelId: refreshed.id },
+                    { channelId: refreshed.id, userId: effectiveUser.id, category, status: 'open' },
+                    { upsert: true }
+                );
 
-                if (user && !user.bot) {
-                    await TicketSession.findOneAndUpdate(
-                        { channelId: refreshed.id },
-                        { channelId: refreshed.id, userId: user.id, category, status: 'open' },
-                        { upsert: true }
-                    );
-                    await sendCategoryWelcome(refreshed, user, category);
-                }
-            }, 3000);
+                await sendCategoryWelcome(refreshed, effectiveUser, category);
+            }, 4000);
         } catch (err) {
             console.error('⚠️ [ASISTENTE TICKETS channelCreate Error]:', err.message);
         }
@@ -1173,6 +1212,28 @@ module.exports = function initAsistenteTickets(client) {
                 } else {
                     await interaction.reply({
                         content: `¡Estupendo <@${interaction.user.id}>! 🎁 Has seleccionado **${selectedItem}**.\nEscríbenos el modelo o detalles específicos que deseas y si prefieres abonarlo por **Bizum** o **PayPal**.`,
+                        ephemeral: false
+                    });
+                }
+                return;
+            }
+
+            // 2. Botones de interacción en Apelaciones (CUALQUIER USUARIO PUEDE PULSARLOS)
+            if (customId.startsWith('btn_apel_')) {
+                const action = customId.replace('btn_apel_', '');
+                if (action === 'sinpruebas') {
+                    await interaction.reply({
+                        content: `Entendido <@${interaction.user.id}>. Hemos anotado que no dispones de clip y que reconoces el error cometido. Enseguida la Administración revisará tu apelación.`,
+                        ephemeral: false
+                    });
+                } else if (action === 'conpruebas') {
+                    await interaction.reply({
+                        content: `¡Perfecto <@${interaction.user.id}>! Pega a continuación el enlace de tu clip (Medal, YouTube, Streamable) o sube la captura para adjuntarla al expediente.`,
+                        ephemeral: false
+                    });
+                } else if (action === 'segundaop') {
+                    await interaction.reply({
+                        content: `De acuerdo <@${interaction.user.id}>. Queda registrada tu solicitud de conmutar la sanción por Servicios Comunitarios dentro de la ciudad.`,
                         ephemeral: false
                     });
                 }
