@@ -54,7 +54,8 @@ const ticketSessionSchema = new mongoose.Schema({
         donationItem: String,
         paymentMethod: String,
         streamLinks: [String],
-        reason: String
+        reason: String,
+        attachmentUrl: String
     },
     resumenMessageId: String,
     createdAt: { type: Date, default: Date.now }
@@ -774,13 +775,15 @@ async function sendStaffSummary(channel, session) {
     } else if (category === 'apelacion') {
         summaryTitle = '🔨 INFORME DE APELACIÓN | VALLECAS RP';
         const cleanSummary = await summarizeReasonWithAI('apelacion', allText);
+        // Limpiar el texto visible de la declaración para no mostrar enlaces feos ni etiquetas internas
+        const cleanDeclaration = allText.replace(/\[Adjunta imagen\/captura:[^\]]+\]/gi, '').replace(/\n+/g, ' ').trim();
 
         summaryDesc =
             `👤 **Usuario:** ${userTag}\n` +
             `⚖️ **Motivo de la apelación:**\n` +
             `> ${cleanSummary}\n\n` +
             `💬 **Declaración del usuario:**\n` +
-            `> *"${allText.replace(/\n+/g, ' ').slice(0, 250)}"*\n\n` +
+            `> *"${cleanDeclaration.slice(0, 250) || 'Sin declaración adicional'}"*\n\n` +
             `⚡ **Resolución:** Pendiente de revisión por Administración.`;
 
     } else if (category === 'streamer') {
@@ -807,6 +810,20 @@ async function sendStaffSummary(channel, session) {
     }
 
     const { embed, files } = buildBaseEmbed(guild, summaryTitle, summaryDesc, 0x2ecc71);
+
+    // Si el usuario subió alguna captura o imagen, insertarla en grande dentro del Embed
+    let foundImageUrl = session.extractedData?.attachmentUrl;
+    if (!foundImageUrl) {
+        const imgMatch = allText.match(/https?:\/\/[^\s]+?\.(png|jpg|jpeg|webp)/i) || allText.match(/https?:\/\/cdn\.discordapp\.com\/attachments\/[^\s]+/i);
+        if (imgMatch && imgMatch[0]) {
+            foundImageUrl = imgMatch[0].replace(/[\]'")]+$/, '');
+        }
+    }
+
+    if (foundImageUrl) {
+        embed.setImage(foundImageUrl);
+    }
+
     await channel.send({
         content: `🔔 <@&${ROLE_STAFF_ID}>`,
         embeds: [embed],
@@ -1317,6 +1334,10 @@ module.exports = function initAsistenteTickets(client) {
             const buffer = userMessageBuffers.get(channelId);
             let msgText = message.content.trim();
             if (message.attachments && message.attachments.size > 0) {
+                const firstAttach = message.attachments.first();
+                if (firstAttach && firstAttach.url) {
+                    session.extractedData.attachmentUrl = firstAttach.url;
+                }
                 const attachInfo = `[Adjunta imagen/captura: ${message.attachments.map(a => a.url).join(' ')}]`;
                 msgText = msgText ? `${msgText} ${attachInfo}` : attachInfo;
             }
