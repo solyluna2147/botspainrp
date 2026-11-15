@@ -209,16 +209,18 @@ function initConsultasAI(client) {
                     return;
                 }
 
-                const questionText = message.content.trim();
+                // Detectar si el usuario quiere respuesta privada por MD usando el comando "!ai"
+                const isPrivateAiCommand = message.content.toLowerCase().startsWith('!ai ');
+                const questionText = isPrivateAiCommand 
+                    ? message.content.slice(4).trim() 
+                    : message.content.trim();
+
                 if (questionText.length < 3) return;
 
-                // 1. ELIMINAR EL MENSAJE DEL STAFF AUTOMÁTICAMENTE para mantener el canal limpio
-                await message.delete().catch(() => {});
-
-                // 2. Indicador visual de que la IA está procesando la consulta
+                // Indicador visual de que la IA está procesando la consulta
                 await message.channel.sendTyping().catch(() => {});
 
-                // 3. Consultar la IA
+                // Consultar la IA
                 const aiAnswer = await queryGroqAI(questionText);
 
                 const logoAttachment = getLogoAttachment();
@@ -237,7 +239,9 @@ function initConsultasAI(client) {
                         `> *"${questionText.length > 200 ? questionText.slice(0, 197) + '...' : questionText}"*\n\n` +
                         `💡 **| Respuesta de la IA:**\n` +
                         `> ${aiAnswer || 'Lo siento, no he podido obtener respuesta en este momento. Por favor, consulta directamente con la Administración.'}\n\n` +
-                        `*(Pulsa el botón de abajo en cuanto hayas terminado de leer).*`
+                        (isPrivateAiCommand 
+                            ? `🔒 *Respuesta privada enviada por !ai (solo para tus ojos).*`
+                            : `*(Pulsa el botón de abajo en cuanto hayas terminado de leer).*`)
                     )
                     .setThumbnail(iconUrl)
                     .setFooter({
@@ -246,27 +250,51 @@ function initConsultasAI(client) {
                     })
                     .setTimestamp();
 
-                // Botón interactivo para eliminar el mensaje al terminar de leer
+                // ----------------------------------------------------
+                // MODO 1: CON COMANDO !ai (100% PRIVADO Y OCULTO A LOS DEMÁS)
+                // ----------------------------------------------------
+                if (isPrivateAiCommand) {
+                    // Borramos su comando en el canal para que nadie vea qué preguntó
+                    await message.delete().catch(() => {});
+
+                    try {
+                        // Enviamos la respuesta por privado (MD) al Staff
+                        await message.author.send({
+                            embeds: [embed],
+                            files: logoAttachment ? [logoAttachment] : []
+                        });
+                    } catch (dmErr) {
+                        // Si tiene los MD cerrados, avisar temporalmente
+                        const notice = await message.channel.send(`⚠️ <@${message.author.id}>, tienes tus Mensajes Directos bloqueados. Habilítalos para recibir respuestas privadas de \`!ai\`.`);
+                        setTimeout(() => notice.delete().catch(() => {}), 7000);
+                    }
+                    return;
+                }
+
+                // ----------------------------------------------------
+                // MODO 2: ESCRIBIENDO NORMAL EN EL CANAL
+                // ----------------------------------------------------
+                // Botón interactivo para eliminar ambos mensajes (el del bot y el original del usuario)
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`btn_cerrar_consulta_${message.author.id}`)
+                        .setCustomId(`btn_cerrar_consulta_${message.author.id}_${message.id}`)
                         .setLabel('Cerrar / Borrar')
                         .setStyle(ButtonStyle.Secondary)
                         .setEmoji('🗑️')
                 );
 
-                const responseMsg = await message.channel.send({
-                    content: `👋 <@${message.author.id}> aquí tienes tu respuesta:`,
+                const responseMsg = await message.reply({
                     embeds: [embed],
                     files: logoAttachment ? [logoAttachment] : [],
                     components: [row]
                 }).catch(() => null);
 
-                // Auto-borrado preventivo a los 70 segundos para que el canal nunca quede con mensajes olvidados
+                // Auto-borrado preventivo a los 90 segundos para que no queden mensajes olvidados
                 if (responseMsg) {
-                    setTimeout(() => {
-                        responseMsg.delete().catch(() => {});
-                    }, 70 * 1000);
+                    setTimeout(async () => {
+                        await responseMsg.delete().catch(() => {});
+                        await message.delete().catch(() => {});
+                    }, 90 * 1000);
                 }
             }
 
@@ -275,12 +303,14 @@ function initConsultasAI(client) {
         }
     });
 
-    // Evento: Botón para borrar la consulta
+    // Evento: Botón para borrar la consulta y el mensaje original del Staff
     client.on('interactionCreate', async (interaction) => {
         try {
             if (!interaction.isButton()) return;
             if (interaction.customId.startsWith('btn_cerrar_consulta_')) {
-                const targetUserId = interaction.customId.replace('btn_cerrar_consulta_', '');
+                const parts = interaction.customId.replace('btn_cerrar_consulta_', '').split('_');
+                const targetUserId = parts[0];
+                const originalMessageId = parts[1];
                 
                 // Solo el staff que preguntó o un administrador puede pulsar el botón
                 const isAllowed = interaction.user.id === targetUserId || interaction.member?.permissions.has(PermissionFlagsBits.Administrator);
@@ -291,7 +321,16 @@ function initConsultasAI(client) {
                     });
                 }
 
+                // 1. Borrar el mensaje del bot
                 await interaction.message.delete().catch(() => {});
+
+                // 2. Borrar el mensaje original que escribió el Staff
+                if (originalMessageId && interaction.channel) {
+                    const originalMsg = await interaction.channel.messages.fetch(originalMessageId).catch(() => null);
+                    if (originalMsg) {
+                        await originalMsg.delete().catch(() => {});
+                    }
+                }
             }
         } catch (err) {
             console.error('⚠️ [CONSULTAS AI interactionCreate Error]:', err.message);
