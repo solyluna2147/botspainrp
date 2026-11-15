@@ -127,8 +127,18 @@ async function loadConfig() {
 function isValidTicketCategory(channel) {
     if (!channel || channel.isDMBased()) return false;
     const parentId = channel.parentId;
-    if (!parentId) return false;
-    return ALLOWED_CATEGORY_IDS.includes(parentId);
+    if (parentId && ALLOWED_CATEGORY_IDS.includes(parentId)) {
+        return true;
+    }
+    // Fallback: Si el canal tiene en el nombre o topic indicios claros de las 4 categorías
+    const name = (channel.name || '').toLowerCase();
+    const parentName = channel.parent ? channel.parent.name.toLowerCase() : '';
+    if (parentName.includes('apelación') || parentName.includes('apelacion') ||
+        parentName.includes('donación') || parentName.includes('donacion') ||
+        parentName.includes('c.contenido') || parentName.includes('soporte')) {
+        return true;
+    }
+    return false;
 }
 
 // Detectar categoría basada en el ID exacto de la categoría de Discord
@@ -138,7 +148,13 @@ function detectTicketCategory(channel) {
     if (parentId === CATEGORIA_APELACION_ID) return 'apelacion';
     if (parentId === CATEGORIA_STREAMER_ID) return 'streamer';
     if (parentId === CATEGORIA_DONACIONES_ID) return 'donaciones';
-    return 'general';
+
+    const parentName = channel.parent ? channel.parent.name.toLowerCase() : '';
+    const name = (channel.name || '').toLowerCase();
+    if (parentName.includes('apelación') || parentName.includes('apelacion') || name.includes('apelacion')) return 'apelacion';
+    if (parentName.includes('donación') || parentName.includes('donacion') || name.includes('dona')) return 'donaciones';
+    if (parentName.includes('c.contenido') || name.includes('stream')) return 'streamer';
+    return 'soporte';
 }
 
 // Comprueba si algún Staff ya ha hablado en el canal
@@ -721,6 +737,41 @@ module.exports = function initAsistenteTickets(client) {
                     await statusMsg.edit('⚠️ No se encontraron mensajes válidos del usuario que abrió el ticket.');
                 }
                 return;
+            }
+
+            // 5. Procesar TODOS los tickets sin atención de las 4 categorías
+            if (contentLower === '!procesartodos') {
+                if (!isStaff) return;
+                const statusMsg = await message.channel.send('🔍 *Obteniendo canales de las 4 categorías oficiales...*');
+
+                try {
+                    // Forzar fetch de canales para que no dependa de la caché
+                    const allChannels = await message.guild.channels.fetch();
+                    const targetChannels = allChannels.filter(c => c && isValidTicketCategory(c) && c.isTextBased());
+
+                    if (targetChannels.size === 0) {
+                        return statusMsg.edit('⚠️ No se encontraron canales de texto dentro de las 4 categorías de tickets.');
+                    }
+
+                    let processedCount = 0;
+                    let skippedCount = 0;
+
+                    for (const [, ch] of targetChannels) {
+                        const staffActive = await hasStaffParticipated(ch);
+                        if (!staffActive) {
+                            const ok = await processExistingTicket(ch);
+                            if (ok === true) processedCount++;
+                            else skippedCount++;
+                        } else {
+                            skippedCount++;
+                        }
+                    }
+
+                    return statusMsg.edit(`✅ **Proceso completado:** Se han analizado y generado resúmenes para **${processedCount}** ticket(s) desatendidos. (Saltados ${skippedCount} por ya tener Staff o sin mensajes).`);
+                } catch (err) {
+                    console.error('Error en !procesartodos:', err);
+                    return statusMsg.edit(`❌ Error al procesar canales: ${err.message}`);
+                }
             }
 
             // Si el asistente está apagado, no continuar
