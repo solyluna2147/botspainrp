@@ -1,17 +1,18 @@
 // ==========================================
 // MÓDULO INDEPENDIENTE: ASISTENTE VIRTUAL DE TICKETS (VALLECAS RP)
 // ==========================================
-// Características:
-// 1. Detección automática de canales de tickets por nombre o categoría (King / Custom).
-// 2. Comandos de control para Staff:
+// Reglas estrictas:
+// 1. ÚNICAMENTE actúa en tickets que pertenezcan a estas 4 categorías:
+//    - SOPORTE: 1517530850131050641
+//    - APELACIÓN DE BANEOS: 1517530850353352716
+//    - CONTENIDO / STREAMER: 1517530850353352717
+//    - DONACIONES: 1517530850353352718
+// 2. Si algún miembro del STAFF ya ha hablado en el ticket, el asistente NO ACTÚA JAMÁS.
+// 3. Comando !limpiarasistente: Borra de inmediato TODOS los mensajes que el bot haya enviado en los tickets.
+// 4. Comandos de control para Staff:
 //    - !asistente on / !asistente off (Encender o apagar el asistente por completo)
-//    - !procesarticket (Fuerza al asistente a procesar un ticket ya existente analizando su historial)
-//    - !procesartodos (Revisa todos los tickets abiertos desatendidos)
-// 3. Normalizador de jerga y lenguaje de barrio/cateto con tolerancia a faltas ("bisum", "peipal", "coxe", etc.).
-// 4. Buffer anti-mensajes partidos (espera 3.5s tras el último mensaje antes de procesar).
-// 5. Auditoría automática de Twitch, Kick y TikTok para creadores de contenido (multi-canal).
-// 6. Botones de acción rápida en cada resumen detallado para el Staff con logo oficial.
-// 7. Base de datos interactiva en MongoDB con canal de aprendizaje.
+//    - !procesarticket (Procesa el ticket actual si cumple los requisitos)
+//    - !limpiarasistente (Purga solo los mensajes del bot en tickets)
 
 const fs = require('fs');
 const path = require('path');
@@ -43,7 +44,7 @@ const ticketSessionSchema = new mongoose.Schema({
     channelId: { type: String, required: true, unique: true },
     userId: { type: String, required: true },
     category: { type: String, default: 'general' },
-    status: { type: String, default: 'open' }, // 'open', 'summarized', 'closed'
+    status: { type: String, default: 'open' },
     userMessages: [{
         content: String,
         timestamp: { type: Date, default: Date.now }
@@ -69,8 +70,20 @@ const ticketConfigSchema = new mongoose.Schema({
 const TicketConfig = mongoose.models.TicketConfig || mongoose.model('TicketConfig', ticketConfigSchema);
 
 // ==========================================
-// CONSTANTES Y CONFIGURACIÓN
+// CONSTANTES Y CONFIGURACIÓN ESTRICTA DE CATEGORÍAS
 // ==========================================
+const CATEGORIA_SOPORTE_ID = '1517530850131050641';
+const CATEGORIA_APELACION_ID = '1517530850353352716';
+const CATEGORIA_STREAMER_ID = '1517530850353352717';
+const CATEGORIA_DONACIONES_ID = '1517530850353352718';
+
+const ALLOWED_CATEGORY_IDS = [
+    CATEGORIA_SOPORTE_ID,
+    CATEGORIA_APELACION_ID,
+    CATEGORIA_STREAMER_ID,
+    CATEGORIA_DONACIONES_ID
+];
+
 const ROLE_STREAMER_ID = '1517530847996018879';
 const ROLE_STAFF_ID = '1538191116610838691';
 const STREAMERS_FILE = path.join(__dirname, 'streamers.json');
@@ -78,7 +91,7 @@ const STREAMERS_FILE = path.join(__dirname, 'streamers.json');
 // Estado global en memoria
 let asistenteActivado = true;
 let canalAprendizajeId = null;
-const userMessageBuffers = new Map(); // channelId -> { timeout, messages: [] }
+const userMessageBuffers = new Map();
 
 // Helper para obtener el logo oficial
 function getLogoPath() {
@@ -93,7 +106,6 @@ function getLogoAttachment() {
     return null;
 }
 
-// Cargar configuración desde Mongo al iniciar
 async function loadConfig() {
     try {
         const estado = await TicketConfig.findOne({ key: 'asistente_activo' });
@@ -108,7 +120,51 @@ async function loadConfig() {
 }
 
 // ==========================================
-// NORMALIZADOR DE JERGA / LENGUAJE CALLEJERO
+// VALIDACIONES ESTRICTAS DE CANALES Y STAFF
+// ==========================================
+
+// Comprueba si el canal pertenece a una de las 4 categorías permitidas
+function isValidTicketCategory(channel) {
+    if (!channel || channel.isDMBased()) return false;
+    const parentId = channel.parentId;
+    if (!parentId) return false;
+    return ALLOWED_CATEGORY_IDS.includes(parentId);
+}
+
+// Detectar categoría basada en el ID exacto de la categoría de Discord
+function detectTicketCategory(channel) {
+    const parentId = channel.parentId;
+    if (parentId === CATEGORIA_SOPORTE_ID) return 'soporte';
+    if (parentId === CATEGORIA_APELACION_ID) return 'apelacion';
+    if (parentId === CATEGORIA_STREAMER_ID) return 'streamer';
+    if (parentId === CATEGORIA_DONACIONES_ID) return 'donaciones';
+    return 'general';
+}
+
+// Comprueba si algún Staff ya ha hablado en el canal
+async function hasStaffParticipated(channel) {
+    try {
+        const messages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+        if (!messages) return false;
+
+        for (const msg of messages.values()) {
+            // Ignorar bots (King, nuestro bot, etc.)
+            if (msg.author.bot) continue;
+
+            // Verificar si el autor tiene rol de staff o permisos de admin
+            const member = msg.member || await channel.guild.members.fetch(msg.author.id).catch(() => null);
+            if (member && (member.roles.cache.has(ROLE_STAFF_ID) || member.permissions.has(PermissionFlagsBits.Administrator))) {
+                return true; // Ya intervino un miembro del Staff
+            }
+        }
+        return false;
+    } catch (e) {
+        return false;
+    }
+}
+
+// ==========================================
+// NORMALIZADOR DE JERGA Y EXTRACCIÓN
 // ==========================================
 const SLANG_MAP = [
     { regex: /\b(bisum|bisu|visum|bizu|visu)\b/gi, replacement: 'bizum' },
@@ -149,51 +205,6 @@ function extractStreamUrls(text) {
     return urls;
 }
 
-// Detección de categorías adaptada a los nombres de canales de King (ej: "apelacion-de-ban", "donaciones", etc.)
-function detectTicketCategory(channel) {
-    const name = (channel.name || '').toLowerCase();
-    const parentName = channel.parent ? channel.parent.name.toLowerCase() : '';
-    const topic = (channel.topic || '').toLowerCase();
-    const full = `${name} ${parentName} ${topic}`;
-
-    if (full.includes('dona') || full.includes('donacion') || full.includes('tienda') || full.includes('compra')) {
-        return 'donaciones';
-    }
-    if (full.includes('stream') || full.includes('contenido') || full.includes('c.contenido') || full.includes('creador') || full.includes('twitch') || full.includes('kick') || full.includes('tiktok')) {
-        return 'streamer';
-    }
-    if (full.includes('ban') || full.includes('apelacion') || full.includes('sancion') || full.includes('unban')) {
-        return 'apelacion';
-    }
-    if (full.includes('staff') || full.includes('postula') || full.includes('p-staff') || full.includes('pstaff')) {
-        return 'staff';
-    }
-    if (full.includes('soporte') || full.includes('ticket') || full.includes('negocio') || full.includes('armario') || full.includes('cerradura') || full.includes('mecanico') || full.includes('fallo') || full.includes('chivato')) {
-        return 'soporte';
-    }
-    return 'general';
-}
-
-// Identificar si un canal es de tickets (incluye las categorías de King: Soporte, Apelación de baneo, Donación, C.Contenido)
-function isTicketChannel(channel) {
-    if (!channel || channel.isDMBased()) return false;
-    const name = (channel.name || '').toLowerCase();
-    const parentName = channel.parent ? channel.parent.name.toLowerCase() : '';
-
-    const ticketCategories = ['soporte', 'apelación de baneo', 'apelacion de baneo', 'donación', 'donacion', 'c.contenido', 'c. contenido', 'tickets', 'atención'];
-    if (ticketCategories.some(cat => parentName.includes(cat))) {
-        return true;
-    }
-
-    if (name.startsWith('ticket-') || name.startsWith('soporte-') || name.startsWith('dona-') ||
-        name.startsWith('donaciones') || name.startsWith('streamer-') || name.startsWith('apelacion-') ||
-        name.startsWith('staff-') || name.includes('-ticket') || name.includes('ticket')) {
-        return true;
-    }
-
-    return false;
-}
-
 // Guardar streamer en base de datos
 async function registerStreamerInDb(userId, data) {
     try {
@@ -213,7 +224,7 @@ async function registerStreamerInDb(userId, data) {
 }
 
 // ==========================================
-// AUDITOR DE TWITCH / KICK / TIKTOK
+// AUDITOR DE REDES SOCIALES
 // ==========================================
 async function auditStreamChannel(rawUrl) {
     let platform = 'Desconocida';
@@ -279,7 +290,6 @@ async function auditStreamChannel(rawUrl) {
     return { platform, url: rawUrl, handle, followers, avgViewers, avgViews, content, cumple };
 }
 
-// Constructor de Embed con logo en la esquina
 function buildBaseEmbed(guild, title, description, color = 0x9b59b6) {
     const logoAttachment = getLogoAttachment();
     const iconUrl = logoAttachment ? 'attachment://logo.png' : (guild.iconURL() || undefined);
@@ -346,14 +356,6 @@ async function sendCategoryWelcome(channel, user, category) {
             `> Tu ID dentro de la ciudad o ID de Discord ❗\n\n` +
             `📝 **| Motivo de la apelación:**\n` +
             `> Explica con sinceridad lo ocurrido y por qué deberíamos retirar tu sanción ❗`;
-    } else if (category === 'staff') {
-        title = '👮 POSTULACIÓN AL EQUIPO DE STAFF';
-        desc =
-            `¡Gracias por querer formar parte del Staff de **VALLECAS RP**, <@${user.id}>!\n\n` +
-            `📝 **| Datos requeridos:**\n` +
-            `> • **Edad real (+18 requerida)** ❗\n` +
-            `> • **Experiencia previa como Staff en FiveM** ❗\n` +
-            `> • **Disponibilidad horaria semanal** ❗`;
     } else {
         title = '🛠️ SOPORTE GENERAL | VALLECAS RP';
         desc =
@@ -366,7 +368,7 @@ async function sendCategoryWelcome(channel, user, category) {
     await channel.send({ embeds: [embed], files, components }).catch(() => { });
 }
 
-// Generador de resumen para Staff
+// Resumen detallado para Staff
 async function sendStaffSummary(channel, session) {
     const guild = channel.guild;
     const category = session.category;
@@ -473,24 +475,25 @@ async function sendStaffSummary(channel, session) {
     await channel.send({ embeds: [embed], files, components: buttons }).catch(() => { });
 }
 
-// ==========================================
-// FUNCIÓN PARA PROCESAR TICKETS RETROACTIVOS (YA ABIERTOS)
-// ==========================================
+// Procesar ticket retroactivo comprobando que NINGÚN staff haya intervenido
 async function processExistingTicket(channel, triggerUser = null) {
     try {
-        const category = detectTicketCategory(channel);
+        if (!isValidTicketCategory(channel)) return false;
 
-        // Obtener historial de los últimos 50 mensajes
+        // Si ya hay mensajes de un staff, ABORTAR
+        const staffInvolved = await hasStaffParticipated(channel);
+        if (staffInvolved) {
+            return 'STAFF_EXISTS';
+        }
+
+        const category = detectTicketCategory(channel);
         const fetchedMessages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
         if (!fetchedMessages || fetchedMessages.size === 0) return false;
 
         const chronological = Array.from(fetchedMessages.values()).reverse();
-
-        // Encontrar al usuario que abrió el ticket (primer no-bot que escribió, o mención en mensaje de King)
         let ticketOwner = null;
 
         for (const msg of chronological) {
-            // Revisar si King mencionó a alguien en su primer mensaje (ej: @brynツ)
             if (msg.author.bot && msg.mentions.users.size > 0) {
                 const nonBotMention = msg.mentions.users.find(u => !u.bot);
                 if (nonBotMention) {
@@ -512,10 +515,11 @@ async function processExistingTicket(channel, triggerUser = null) {
 
         if (!ticketOwner) return false;
 
-        // Recopilar todos los mensajes que envió el usuario
         const userMsgs = chronological
             .filter(m => m.author.id === ticketOwner.id)
             .map(m => ({ content: m.content, timestamp: m.createdAt }));
+
+        if (userMsgs.length === 0) return false;
 
         const allUserText = userMsgs.map(m => m.content).join('\n');
         const normalized = normalizeSlang(allUserText);
@@ -541,7 +545,6 @@ async function processExistingTicket(channel, triggerUser = null) {
         if (normalized.includes('casa') || normalized.includes('mlo')) session.extractedData.donationItem = 'Casa / MLO';
         if (normalized.includes('dinero')) session.extractedData.donationItem = 'Dinero IC';
 
-        // Guardar o actualizar sesión en MongoDB
         await TicketSession.findOneAndUpdate(
             { channelId: channel.id },
             {
@@ -555,7 +558,6 @@ async function processExistingTicket(channel, triggerUser = null) {
             { upsert: true }
         );
 
-        // Enviar el resumen detallado para el staff
         await sendStaffSummary(channel, session);
         return true;
     } catch (e) {
@@ -565,10 +567,38 @@ async function processExistingTicket(channel, triggerUser = null) {
 }
 
 // ==========================================
+// FUNCIÓN PARA PURGAR MENSAJES DEL ASISTENTE EN TICKETS
+// ==========================================
+async function purgeAssistantMessages(guild) {
+    let deletedCount = 0;
+    try {
+        const clientUser = guild.client.user;
+        const channels = guild.channels.cache.filter(c => isValidTicketCategory(c) && c.isTextBased());
+
+        for (const [, ch] of channels) {
+            try {
+                const fetched = await ch.messages.fetch({ limit: 100 }).catch(() => null);
+                if (!fetched) continue;
+
+                const botMessages = fetched.filter(m => m.author.id === clientUser.id);
+                for (const [, bMsg] of botMessages) {
+                    await bMsg.delete().catch(() => { });
+                    deletedCount++;
+                    await new Promise(r => setTimeout(r, 200)); // Evitar rate limits
+                }
+            } catch (err) { }
+        }
+    } catch (e) {
+        console.error('⚠️ [PURGA ASISTENTE ERROR]:', e.message);
+    }
+    return deletedCount;
+}
+
+// ==========================================
 // EXPORTACIÓN PRINCIPAL DEL MÓDULO
 // ==========================================
 module.exports = function initAsistenteTickets(client) {
-    console.log('🤖 [ASISTENTE TICKETS] Iniciando sistema independiente con soporte de control y retroactividad...');
+    console.log('🤖 [ASISTENTE TICKETS] Iniciando sistema independiente con control estricto de 4 categorías...');
 
     loadConfig();
 
@@ -576,11 +606,16 @@ module.exports = function initAsistenteTickets(client) {
     client.on('channelCreate', async (channel) => {
         try {
             if (!asistenteActivado) return;
-            if (!isTicketChannel(channel)) return;
+            // FILTRO ESTRICTO: Solo las 4 categorías permitidas
+            if (!isValidTicketCategory(channel)) return;
 
             setTimeout(async () => {
                 const refreshed = await channel.guild.channels.fetch(channel.id).catch(() => null);
-                if (!refreshed) return;
+                if (!refreshed || !isValidTicketCategory(refreshed)) return;
+
+                // Comprobar si un staff ya habló
+                const staffActive = await hasStaffParticipated(refreshed);
+                if (staffActive) return;
 
                 const category = detectTicketCategory(refreshed);
                 const userPerm = refreshed.permissionOverwrites.cache.find(po => po.type === 1 && po.id !== client.user.id);
@@ -594,7 +629,7 @@ module.exports = function initAsistenteTickets(client) {
                     );
                     await sendCategoryWelcome(refreshed, user, category);
                 }
-            }, 2500);
+            }, 3000);
         } catch (err) {
             console.error('⚠️ [ASISTENTE TICKETS channelCreate Error]:', err.message);
         }
@@ -612,99 +647,101 @@ module.exports = function initAsistenteTickets(client) {
             // COMANDOS DE CONTROL PARA EL STAFF
             // ==========================================
 
-            // Comando de ayuda: !asistente o !asistente ayuda
-            if (['!asistente', '!asistente ayuda', '!asistente help', '!helpasistente'].includes(contentLower)) {
+            // 1. Ayuda: !asistente
+            if (['!asistente', '!asistente ayuda', '!asistente help'].includes(contentLower)) {
                 if (!isStaff) return;
                 const { embed, files } = buildBaseEmbed(
                     message.guild,
                     '🤖 PANEL DE CONTROL | ASISTENTE VIRTUAL DE TICKETS',
-                    `Aquí tienes los comandos de administración para el asistente de tickets:\n\n` +
+                    `Comandos oficiales de administración:\n\n` +
+                    `🧹 **| Limpieza de Mensajes:**\n` +
+                    `> • \`!limpiarasistente\` ➔ **Borra al instante todos los mensajes enviados por el asistente** en los canales de tickets.\n\n` +
                     `⚙️ **| Interruptor General:**\n` +
-                    `> • \`!asistente on\` ➔ Activa el asistente en todos los tickets.\n` +
-                    `> • \`!asistente off\` ➔ Apaga el asistente (modo reposo total).\n` +
-                    `> • \`!asistente estado\` ➔ Muestra si está encendido o apagado.\n\n` +
-                    `📋 **| Procesar Tickets Ya Abiertos:**\n` +
-                    `> • \`!procesarticket\` *(o \`!resumir\`)* ➔ Lee el historial del ticket actual y genera el resumen oficial con botones de acción para el Staff.\n` +
-                    `> • \`!procesartodos\` ➔ Escanea y resume todos los tickets pendientes del servidor.\n\n` +
-                    `🧠 **| Canal de Aprendizaje:**\n` +
-                    `> • \`!setcanalaprendizaje #canal\` ➔ Define el canal donde el bot enviará dudas no catalogadas para ser entrenado.\n\n` +
-                    `*Solo los miembros con rol de Staff o Administrador pueden usar estos comandos.*`,
+                    `> • \`!asistente on\` ➔ Activa el asistente en tickets.\n` +
+                    `> • \`!asistente off\` ➔ Apaga el asistente por completo.\n` +
+                    `> • \`!asistente estado\` ➔ Consulta el estado actual.\n\n` +
+                    `📋 **| Procesar Tickets:**\n` +
+                    `> • \`!procesarticket\` ➔ Lee el ticket actual **solo si pertenece a las 4 categorías oficiales y ningún staff ha hablado**.\n\n` +
+                    `🔒 **| Categorías Oficiales Permitidas:**\n` +
+                    `> • Soporte: \`${CATEGORIA_SOPORTE_ID}\`\n` +
+                    `> • Apelación: \`${CATEGORIA_APELACION_ID}\`\n` +
+                    `> • C.Contenido: \`${CATEGORIA_STREAMER_ID}\`\n` +
+                    `> • Donaciones: \`${CATEGORIA_DONACIONES_ID}\``,
                     0x8e44ad
                 );
                 return message.reply({ embeds: [embed], files });
             }
 
-            // Comando: !setcanalaprendizaje #canal
-            if (contentLower.startsWith('!setcanalaprendizaje')) {
+            // 2. Comando: !limpiarasistente (Purga solo mensajes del bot en tickets)
+            if (['!limpiarasistente', '!purgarasistente', '!limpiartickets'].includes(contentLower)) {
                 if (!isStaff) return;
-                const channelMention = message.mentions.channels.first();
-                if (!channelMention) {
-                    return message.reply('⚠️ **Uso:** `!setcanalaprendizaje #canal`');
-                }
-                canalAprendizajeId = channelMention.id;
-                await TicketConfig.findOneAndUpdate({ key: 'canal_aprendizaje' }, { key: 'canal_aprendizaje', value: channelMention.id }, { upsert: true });
-                return message.reply(`✅ **Canal de aprendizaje configurado en:** <#${channelMention.id}>. A partir de ahora, las dudas no resueltas se enviarán allí para entrenar al bot.`);
+                const waitMsg = await message.reply('🧹 *Iniciando purga de mensajes enviados por el asistente en los tickets oficiales...*');
+                const deleted = await purgeAssistantMessages(message.guild);
+                return waitMsg.edit(`✅ **Limpieza completada:** Se han eliminado **${deleted}** mensajes enviados por el bot en las categorías oficiales de tickets.`);
             }
 
-            // Comando: !asistente on / !asistente off
-            if (['!asistente on', '!asistente off', '!asistente estado'].includes(contentLower)) {
+            // 3. Encender / Apagar
+            if (contentLower === '!asistente on') {
                 if (!isStaff) return;
-
-                if (contentLower === '!asistente on') {
-                    asistenteActivado = true;
-                    await TicketConfig.findOneAndUpdate({ key: 'asistente_activo' }, { key: 'asistente_activo', value: true }, { upsert: true });
-                    return message.reply('🟢 **Asistente Virtual ACTIVADO.** Comenzará a atender y resumir tickets automáticamente.');
-                }
-                if (contentLower === '!asistente off') {
-                    asistenteActivado = false;
-                    await TicketConfig.findOneAndUpdate({ key: 'asistente_activo' }, { key: 'asistente_activo', value: false }, { upsert: true });
-                    return message.reply('🔴 **Asistente Virtual DESACTIVADO.** Ha entrado en modo reposo y no intervendrá en tickets.');
-                }
-                if (contentLower === '!asistente estado') {
-                    return message.reply(`ℹ️ El Asistente Virtual se encuentra actualmente: **${asistenteActivado ? '🟢 ACTIVADO' : '🔴 DESACTIVADO'}**.`);
-                }
+                asistenteActivado = true;
+                await TicketConfig.findOneAndUpdate({ key: 'asistente_activo' }, { key: 'asistente_activo', value: true }, { upsert: true });
+                return message.reply('🟢 **Asistente Virtual ACTIVADO.** Intervendrá únicamente en tickets no atendidos de las 4 categorías.');
             }
 
-            // Comando: !procesarticket (proceder con el canal actual aunque ya estuviera abierto)
-            if (['!procesarticket', '!procesar', '!resumir', '!asistir'].includes(contentLower)) {
+            if (contentLower === '!asistente off') {
                 if (!isStaff) return;
-                const statusMsg = await message.channel.send('⏳ *Analizando historial del ticket y mensajes del usuario...*');
-                const success = await processExistingTicket(message.channel, message.author);
-                if (success) {
+                asistenteActivado = false;
+                await TicketConfig.findOneAndUpdate({ key: 'asistente_activo' }, { key: 'asistente_activo', value: false }, { upsert: true });
+                return message.reply('🔴 **Asistente Virtual DESACTIVADO.** Modo reposo absoluto.');
+            }
+
+            if (contentLower === '!asistente estado') {
+                if (!isStaff) return;
+                return message.reply(`ℹ️ El Asistente Virtual se encuentra actualmente: **${asistenteActivado ? '🟢 ACTIVADO' : '🔴 DESACTIVADO'}**.`);
+            }
+
+            // 4. Procesar ticket individual
+            if (['!procesarticket', '!procesar', '!resumir'].includes(contentLower)) {
+                if (!isStaff) return;
+                if (!isValidTicketCategory(message.channel)) {
+                    return message.reply('❌ Este canal no pertenece a ninguna de las 4 categorías oficiales de tickets.');
+                }
+                const staffActive = await hasStaffParticipated(message.channel);
+                if (staffActive) {
+                    return message.reply('⚠️ **Operación cancelada:** Un miembro del Staff ya ha intervenido o está atendiendo este ticket.');
+                }
+
+                const statusMsg = await message.channel.send('⏳ *Analizando mensajes del usuario...*');
+                const res = await processExistingTicket(message.channel, message.author);
+                if (res === true) {
                     await statusMsg.delete().catch(() => { });
+                } else if (res === 'STAFF_EXISTS') {
+                    await statusMsg.edit('⚠️ En este ticket ya hay mensajes de un Staff.');
                 } else {
-                    await statusMsg.edit('⚠️ No se encontraron mensajes suficientes de un usuario o el canal no es un ticket reconocible.');
+                    await statusMsg.edit('⚠️ No se encontraron mensajes válidos del usuario que abrió el ticket.');
                 }
                 return;
             }
 
-            // Comando: !procesartodos (recorre los tickets abiertos sin reclamar)
-            if (contentLower === '!procesartodos') {
-                if (!isStaff) return;
-                const channels = message.guild.channels.cache.filter(c => isTicketChannel(c) && c.isTextBased());
-                const initMsg = await message.channel.send(`🔍 *Buscando tickets abiertos... Se han encontrado ${channels.size} canales de tickets.*`);
-
-                let processedCount = 0;
-                for (const [, ch] of channels) {
-                    const alreadySummarized = await TicketSession.findOne({ channelId: ch.id, status: 'summarized' });
-                    if (!alreadySummarized) {
-                        const ok = await processExistingTicket(ch);
-                        if (ok) processedCount++;
-                    }
-                }
-                await initMsg.edit(`✅ **Proceso completado:** Se han analizado y resumido **${processedCount}** tickets abiertos que estaban pendientes.`);
-                return;
-            }
-
-            // Si el asistente está apagado globalmente, no seguir atendiendo
+            // Si el asistente está apagado, no continuar
             if (!asistenteActivado) return;
 
-            // Comprobar si el mensaje es dentro de un ticket
-            if (!isTicketChannel(message.channel)) return;
+            // ==========================================
+            // FILTRADO ESTRICTO DE ATENCIÓN AUTOMÁTICA
+            // ==========================================
+            // 1. Debe pertenecer a una de las 4 categorías oficiales
+            if (!isValidTicketCategory(message.channel)) return;
+
+            // 2. Si ya hay mensajes de un Staff en este ticket, EL ASISTENTE SE RETIRA
+            const staffActive = await hasStaffParticipated(message.channel);
+            if (staffActive) return;
+
+            // 3. Si el que acaba de escribir es un Staff, no intervenir
+            if (isStaff) return;
 
             const channelId = message.channel.id;
             let session = await TicketSession.findOne({ channelId });
-            const category = session ? session.category : detectTicketCategory(message.channel);
+            const category = detectTicketCategory(message.channel);
 
             if (!session) {
                 session = await TicketSession.create({
@@ -715,9 +752,6 @@ module.exports = function initAsistenteTickets(client) {
                     userMessages: []
                 });
             }
-
-            // Si el que escribe es Staff, no bufferizar como usuario del ticket
-            if (isStaff && message.author.id !== session.userId) return;
 
             // Buffer anti-mensajes fragmentados (espera 3.5s tras el último mensaje)
             if (!userMessageBuffers.has(channelId)) {
@@ -730,6 +764,13 @@ module.exports = function initAsistenteTickets(client) {
             if (buffer.timeout) clearTimeout(buffer.timeout);
 
             buffer.timeout = setTimeout(async () => {
+                // Volver a comprobar que ningún staff haya escrito durante el buffer
+                const staffCheck = await hasStaffParticipated(message.channel);
+                if (staffCheck) {
+                    userMessageBuffers.delete(channelId);
+                    return;
+                }
+
                 const combinedText = buffer.messages.join(' ');
                 buffer.messages = [];
                 userMessageBuffers.delete(channelId);
@@ -753,13 +794,13 @@ module.exports = function initAsistenteTickets(client) {
 
                 await session.save();
 
-                // Si mandó links o es streamer, generar ficha
+                // Si mandó links o es streamer
                 if (streamLinks.length > 0 || (category === 'streamer' && session.userMessages.length === 1)) {
                     await sendStaffSummary(message.channel, session);
                     return;
                 }
 
-                // Si es el primer conjunto de mensajes del usuario, generar el resumen detallado para el staff
+                // Generar resumen inicial únicamente si no ha sido atendido
                 if (session.userMessages.length === 1 || session.status === 'open') {
                     session.status = 'summarized';
                     await session.save();
@@ -778,7 +819,6 @@ module.exports = function initAsistenteTickets(client) {
             if (!interaction.isButton()) return;
             const customId = interaction.customId;
 
-            // Botones de Donaciones Rápidas
             if (customId.startsWith('btn_cat_')) {
                 const itemType = customId.replace('btn_cat_', '');
                 const labelMap = { coche: 'Coche VIP', pack: 'Pack VIP', casa: 'Casa / MLO', dinero: 'Dinero IC' };
@@ -796,7 +836,6 @@ module.exports = function initAsistenteTickets(client) {
                 return;
             }
 
-            // Aprobar Streamer
             if (customId.startsWith('btn_stream_approve_')) {
                 const parts = customId.split('_');
                 const targetUserId = parts[3];
@@ -827,7 +866,6 @@ module.exports = function initAsistenteTickets(client) {
                 return;
             }
 
-            // Denegar Streamer
             if (customId.startsWith('btn_stream_deny_')) {
                 const targetUserId = customId.replace('btn_stream_deny_', '');
                 await interaction.reply({
@@ -837,7 +875,6 @@ module.exports = function initAsistenteTickets(client) {
                 return;
             }
 
-            // Datos de Pago
             if (customId.startsWith('btn_dona_bizum_')) {
                 await interaction.reply({
                     content: `📲 **DATOS OFICIALES PARA BIZUM:**\n> Solicita el número de Bizum activo al Encargado de Donaciones en este mismo ticket e incluye tu **ID de FiveM** en el concepto.`,
@@ -862,7 +899,6 @@ module.exports = function initAsistenteTickets(client) {
                 return;
             }
 
-            // Apelaciones
             if (customId.startsWith('btn_ban_unban_')) {
                 const targetUserId = customId.replace('btn_ban_unban_', '');
                 await interaction.reply({
@@ -886,5 +922,5 @@ module.exports = function initAsistenteTickets(client) {
         }
     });
 
-    console.log('✅ [ASISTENTE TICKETS] Módulo completamente operativo.');
+    console.log('✅ [ASISTENTE TICKETS] Blindado con IDs exactas y verificación de Staff.');
 };
