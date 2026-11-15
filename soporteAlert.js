@@ -38,6 +38,7 @@ const BotSetting = mongoose.models.BotSetting || mongoose.model('BotSetting', bo
 const CANAL_ESPERA_ID = '1517530849334136846';
 const CANAL_SANCIONES_STAFF_ID = '1527076023785619599';
 const CANAL_STAFF_AFK_ID = '1517530849502040109'; // Canal STAFF AFK
+const CANAL_STAFF_ROL_ID = '1520092751964799037'; // Canal STAFF EN ROL
 const CANAL_SALA_CHARLA_STAFF_ID = '1571147950812569771'; // Sala de charla de staffs
 const CANALES_SOPORTE_IDS = [
     '1517530849334136847', // SOPORTE 1
@@ -477,6 +478,22 @@ function getTargetStaffChannel(guild) {
         };
     }
 
+    // 3. Comprobar Canal STAFF EN ROL:
+    // Únicamente cuando los staffs no estén ni en soportes libres ni en sala de staffs (están todos en STAFF EN ROL)
+    const rolChannel = guild.channels.cache.get(CANAL_STAFF_ROL_ID);
+    const staffsEnRol = (rolChannel && rolChannel.isVoiceBased())
+        ? rolChannel.members.filter(m => isMemberStaff(m) && m.voice && !m.voice.deaf && !m.voice.selfDeaf)
+        : null;
+    const countEnRol = staffsEnRol ? staffsEnRol.size : 0;
+
+    if (countEnRol > 0 && freeSupportChannels.length === 0 && countEnCharla === 0) {
+        return {
+            channel: rolChannel,
+            type: 'STAFF_EN_ROL',
+            staffs: staffsEnRol
+        };
+    }
+
     // No hay staffs libres (o están todos ocupados atendiendo)
     return null;
 }
@@ -664,10 +681,10 @@ async function checkWaitRoom(guild, client) {
         let audioLabel = '';
 
         if (staffAlertCount === 1) {
-            if (target.type === 'SALA_STAFFS') {
+            if (target.type === 'SALA_STAFFS' || target.type === 'STAFF_EN_ROL') {
                 if (!audioSalaCharlaCache) await loadAudiosFromDB();
                 audioToPlay = audioSalaCharlaCache;
-                audioLabel = 'Aviso #1 Sala de Staffs (Especial)';
+                audioLabel = `Aviso #1 ${target.channel.name} (Especial)`;
             } else {
                 if (!audioStaff1Cache) await loadAudiosFromDB();
                 audioToPlay = audioStaff1Cache;
