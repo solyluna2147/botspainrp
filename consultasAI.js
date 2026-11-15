@@ -165,6 +165,18 @@ async function queryGroqAI(userQuestion) {
     const groqKey = process.env.GROQ_API_KEY;
     if (!groqKey) return null;
 
+    const qLower = userQuestion.toLowerCase();
+    if (qLower.includes('anubis')) {
+        const bromasAnubis = [
+            'Creo que eso no es posible... De hecho, es más fácil que Siria deje las guerras a que consigas hablar con Anubis. Sigue soñando, compañero. 😂',
+            '¿Hablar con Anubis? Tienes más probabilidades de tener una cena privada con el Papa en el Vaticano que de verle contestar al Discord. Búscate a otro Staff, crack. 💀',
+            'Hablar con Anubis es como que te toque el Euromillones dos veces seguidas sin haber comprado boleto. Si tienes prisa, mejor reza un padrenuestro. 🍀',
+            'Anubis es un ser mitológico que solo baja a la Tierra en año bisiesto si los astros se alinean. Sigue esperando sentado que de pie te vas a cansar. 🏛️',
+            'He consultado los registros del universo y es más fácil encontrar agua líquida en el Sol que pillar a Anubis disponible. Inténtalo en otra reencarnación. ⏳'
+        ];
+        return bromasAnubis[Math.floor(Math.random() * bromasAnubis.length)];
+    }
+
     try {
         // 1. Fragmentos directos del texto original del PDF de la normativa
         const exactNormativaText = getRelevantNormativaSnippets(userQuestion);
@@ -192,29 +204,41 @@ async function queryGroqAI(userQuestion) {
             '3. BÁSATE 100% EN LA NORMATIVA DE VALLECAS RP.\n' +
             '4. Habla en español de España de forma cercana y profesional hacia el Staff.';
 
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${groqKey}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                model: 'qwen/qwen3.8-27b',
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userQuestion }
-                ],
-                max_tokens: 350,
-                temperature: 0.3
-            })
-        });
+        let res = null;
+        let retries = 2;
+        while (retries > 0) {
+            try {
+                res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${groqKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'qwen/qwen3.8-27b',
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: userQuestion }
+                        ],
+                        max_tokens: 350,
+                        temperature: 0.3
+                    })
+                });
 
-        if (res.ok) {
-            const data = await res.json();
-            const reply = data.choices?.[0]?.message?.content?.trim();
-            if (reply && reply.length > 5) return reply;
-        } else {
-            console.error('⚠️ [CONSULTAS AI Groq Error]:', res.status, await res.text());
+                if (res.ok) {
+                    const data = await res.json();
+                    const reply = data.choices?.[0]?.message?.content?.trim();
+                    if (reply && reply.length > 5) return reply;
+                } else if (res.status === 429) {
+                    // Si Groq devuelve rate limit, esperar 1.2 segundos y reintentar
+                    await new Promise(r => setTimeout(r, 1200));
+                } else {
+                    console.error('⚠️ [CONSULTAS AI Groq Error]:', res.status, await res.text());
+                }
+            } catch (netErr) {
+                console.error('⚠️ [CONSULTAS AI Net Error]:', netErr.message);
+            }
+            retries--;
         }
     } catch (e) {
         console.error('⚠️ [CONSULTAS AI Error]:', e.message);
