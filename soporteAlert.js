@@ -10,7 +10,8 @@ const {
     AudioPlayerStatus,
     VoiceConnectionStatus,
     entersState,
-    NoSubscriberBehavior
+    NoSubscriberBehavior,
+    getVoiceConnection
 } = require('@discordjs/voice');
 
 // Esquema para audios almacenados en MongoDB
@@ -172,33 +173,57 @@ function isMemberStaff(member) {
 }
 
 /**
+ * Desconexión forzada y limpieza total de conexiones de voz fantasmas
+ */
+async function forceCleanVoice(guild) {
+    try {
+        if (activePlayer) {
+            try { activePlayer.stop(true); } catch (e) { }
+            activePlayer = null;
+        }
+        if (activeConnection) {
+            try { activeConnection.destroy(); } catch (e) { }
+            activeConnection = null;
+        }
+        if (guild) {
+            const existing = getVoiceConnection(guild.id);
+            if (existing) {
+                try { existing.destroy(); } catch (e) { }
+            }
+            if (guild.members.me && guild.members.me.voice && guild.members.me.voice.channelId) {
+                await guild.members.me.voice.disconnect().catch(() => {});
+            }
+        }
+    } catch (e) { }
+    isPlayingVoice = false;
+}
+
+/**
  * Corta inmediatamente cualquier reproducción o conexión activa
  */
-function abortPlaybackImmediately(reason = 'Desconexión forzada') {
+function abortPlaybackImmediately(guild, reason = 'Desconexión forzada') {
     stopCurrentTour = true;
     if (userWelcomeDebounceTimer) {
         clearTimeout(userWelcomeDebounceTimer);
         userWelcomeDebounceTimer = null;
     }
-    if (activePlayer) {
-        try { activePlayer.stop(true); } catch (e) { }
-        activePlayer = null;
-    }
-    if (activeConnection) {
-        try { activeConnection.destroy(); } catch (e) { }
-        activeConnection = null;
-    }
-    isPlayingVoice = false;
+    forceCleanVoice(guild).catch(() => {});
     console.log(`⏹️ [SOPORTE ALERT] ${reason}.`);
 }
 
 /**
- * Comprueba si la sala de espera está vacía de usuarios
+ * Comprueba de forma infalible si la sala de espera está vacía de usuarios
  */
 function isWaitRoomEmpty(guild) {
+    // Si en nuestro mapa de tracking en memoria no queda nadie, está vacía
+    if (!userJoinTimes || userJoinTimes.size === 0) return true;
+
+    // Verificar en el canal de voz de Discord
     const waitChannel = guild.channels.cache.get(CANAL_ESPERA_ID);
     if (!waitChannel || !waitChannel.isVoiceBased()) return true;
-    return waitChannel.members.filter(m => !m.user.bot).size === 0;
+
+    const count = waitChannel.members.filter(m => !m.user.bot).size;
+    return count === 0;
 }
 
 /**
@@ -223,6 +248,12 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
     let connection = null;
 
     try {
+        // Asegurar que no haya conexiones previas colgadas
+        const oldConn = getVoiceConnection(channel.guild.id);
+        if (oldConn) {
+            try { oldConn.destroy(); } catch (e) { }
+        }
+
         connection = joinVoiceChannel({
             channelId: channel.id,
             guildId: channel.guild.id,
@@ -235,16 +266,14 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
         await entersState(connection, VoiceConnectionStatus.Ready, 7000);
 
         if (stopCurrentTour || isWaitRoomEmpty(channel.guild)) {
-            try { connection.destroy(); } catch (e) { }
-            activeConnection = null;
+            await forceCleanVoice(channel.guild);
             return false;
         }
 
         await new Promise(res => setTimeout(res, 300));
 
         if (stopCurrentTour || isWaitRoomEmpty(channel.guild)) {
-            try { connection.destroy(); } catch (e) { }
-            activeConnection = null;
+            await forceCleanVoice(channel.guild);
             return false;
         }
 
@@ -275,19 +304,12 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
             });
         });
 
-        try { connection.destroy(); } catch (e) { }
-        activeConnection = null;
-        activePlayer = null;
-
+        await forceCleanVoice(channel.guild);
         console.log(`✅ [SOPORTE ALERT] ${label} reproducido con éxito en ${channel.name}.`);
         return true;
     } catch (err) {
         console.error(`❌ [SOPORTE ALERT] Error conectando/reproduciendo (${label}):`, err.message);
-        if (connection) {
-            try { connection.destroy(); } catch (e) { }
-        }
-        activeConnection = null;
-        activePlayer = null;
+        await forceCleanVoice(channel.guild);
         return false;
     } finally {
         isPlayingVoice = false;
@@ -329,11 +351,7 @@ function scheduleUserWelcomeAlert(guild) {
 }
 
 /**
- * Analiza canales de soporte con staffs disponibles:
- * - Prioridad 1: Canales con staffs libres (sin personas atendiendo) y sin silenciar
- * - Prioridad 2: Canales con staffs libres silenciados (que escuchan)
- * - Prioridad 3: Canales donde estén los staffs aunque haya personas atendiendo (si están todos juntos y no hay ningún otro canal libre)
- * - En todos los casos descarta staffs ensordecidos
+ * Analiza canales de soporte con staffs disponibles
  */
 function getOrderedSupportChannelsAndStaffs(guild) {
     const listPriority1 = []; // Canales libres con staffs sin silenciar
@@ -371,20 +389,17 @@ function getOrderedSupportChannelsAndStaffs(guild) {
 
         if (hasHearingStaff) {
             if (!hasNonStaff) {
-                // Canal libre (sin usuario no-staff)
                 if (hasUnmutedStaff) {
                     listPriority1.push(channel);
                 } else {
                     listPriority2.push(channel);
                 }
             } else {
-                // Hay staffs reunidos aquí con alguien
                 listPriorityOccupied.push(channel);
             }
         }
     }
 
-    // Si hay canales libres sin atender a nadie, se eligen esos primero
     const freeChannels = [...listPriority1, ...listPriority2];
     if (freeChannels.length > 0) {
         return {
@@ -393,8 +408,6 @@ function getOrderedSupportChannelsAndStaffs(guild) {
         };
     }
 
-    // Si NO hay ningún canal libre porque están todos los staffs reunidos en uno atendiendo o acompañando:
-    // El bot entra a avisar a ese canal igualmente para que sepan que hay alguien en espera
     return {
         channels: listPriorityOccupied,
         staffMembers: allAvailableStaffMembers
@@ -410,13 +423,11 @@ async function checkSalaCharlaStaff(guild) {
     const tiempoEntreAvisosMs = tiempoEsperaMinutos * 60 * 1000;
     if (lastSalaCharlaAlertAt !== 0 && (now - lastSalaCharlaAlertAt < tiempoEntreAvisosMs)) return;
 
-    // Verificar si hay alguien en la sala de espera
     if (isWaitRoomEmpty(guild)) return;
 
     const charlaChannel = guild.channels.cache.get(CANAL_SALA_CHARLA_STAFF_ID);
     if (!charlaChannel || !charlaChannel.isVoiceBased()) return;
 
-    // Contar staffs en sala de charla que no estén ensordecidos
     const staffsEnCharla = charlaChannel.members.filter(m => {
         if (!isMemberStaff(m)) return false;
         const vs = m.voice;
@@ -425,8 +436,6 @@ async function checkSalaCharlaStaff(guild) {
 
     if (staffsEnCharla.size === 0) return;
 
-    // 1. Contar staffs en los soportes que estén LIBRES (no atendiendo)
-    // 2. Contar si hay soportes ocupados atendiendo tickets
     let staffsLibresEnSoporte = 0;
     let soportesOcupadosAtendiendo = 0;
     let totalStaffsEnSoporte = 0;
@@ -441,19 +450,13 @@ async function checkSalaCharlaStaff(guild) {
             totalStaffsEnSoporte += staffs.size;
 
             if (nonStaffs.size > 0 && staffs.size > 0) {
-                // Hay staff atendiendo a un usuario normal
                 soportesOcupadosAtendiendo++;
             } else if (staffs.size > 0) {
-                // Hay staffs en soporte pero libres
                 staffsLibresEnSoporte += staffs.size;
             }
         }
     }
 
-    // CONDICIONES PARA AVISAR EN SALA DE CHARLA:
-    // Caso A: Hay staffs atendiendo soporte, NINGÚN staff libre en soportes, y alguien esperando (ej: 1 atendiendo, 0 libres, 1 en charla).
-    // Caso B: Hay más staffs en charla que el total de staffs en soportes (StaffsCharla > totalStaffsEnSoporte).
-    // Caso C: En soportes no hay nadie (0 staffs) y hay staffs en sala de charla.
     const debeAvisarEnCharla = 
         (soportesOcupadosAtendiendo > 0 && staffsLibresEnSoporte === 0) ||
         (staffsEnCharla.size > totalStaffsEnSoporte) ||
@@ -492,7 +495,6 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, usuariosA
             return;
         }
 
-        // Formato limpio con blockquotes (>) idéntico al de valoraciones
         const staffLines = staffsInvolucrados.length > 0
             ? staffsInvolucrados.map(s => `> <@${s.id}> ❗ \`(${s.user ? s.user.tag : s.id})\``).join('\n')
             : '> ⚠️ *Ningún staff disponible con audio activo*';
@@ -542,7 +544,6 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, usuariosA
             })
             .setTimestamp();
 
-        // Mención fuera del embed para que llegue la alerta sonora
         const mentionText = staffsInvolucrados.length > 0
             ? `🔔 **Atención Staffs en servicio:** ${staffsInvolucrados.map(s => `<@${s.id}>`).join(' ')}`
             : `🔔 **Aviso a Administración:**`;
@@ -670,10 +671,17 @@ async function checkWaitRoom(guild, client) {
                     break;
                 }
 
+                // DOBLE COMPROBACIÓN EN VIVO: Verificar que en este instante haya staffs dentro del canal
+                const currentStaffs = targetChannel.members.filter(m => !m.user.bot && isMemberStaff(m));
+                if (currentStaffs.size === 0) {
+                    console.log(`⏩ [SOPORTE ALERT] Saltando ${targetChannel.name} porque ya no hay ningún staff dentro.`);
+                    continue;
+                }
+
                 const ok = await playAudioBufferInChannel(targetChannel, audioToPlay, audioLabel);
                 if (ok) {
                     staffAlertOk = true;
-                    await new Promise(r => setTimeout(r, 300));
+                    await new Promise(r => setTimeout(r, 400));
                 }
             }
 
@@ -714,7 +722,27 @@ function initSoporteAlert(client) {
     loadAudiosFromDB();
     loadSettingsFromDB();
 
-    // 2. Evento voiceStateUpdate para gestionar entradas y salidas
+    // 2. Limpieza de conexiones de voz huérfanas al arrancar
+    client.once('ready', () => {
+        for (const [, guild] of client.guilds.cache) {
+            forceCleanVoice(guild).catch(() => {});
+        }
+    });
+
+    // 3. Auto-mantenimiento preventivo cada 10 minutos (limpia sockets de voz colgados y refresca memoria)
+    setInterval(() => {
+        try {
+            console.log('🧹 [SOPORTE ALERT] Ejecutando auto-mantenimiento preventivo de voz...');
+            for (const [, guild] of client.guilds.cache) {
+                // Si la sala de espera está vacía y no está sonando nada, asegurar desconexión limpia absoluta
+                if (!isPlayingVoice && isWaitRoomEmpty(guild)) {
+                    forceCleanVoice(guild).catch(() => {});
+                }
+            }
+        } catch (e) { }
+    }, 10 * 60 * 1000); // Cada 10 minutos
+
+    // 4. Evento voiceStateUpdate para gestionar entradas y salidas
     client.on('voiceStateUpdate', async (oldState, newState) => {
         const userId = newState.id;
         const member = newState.member || oldState.member;
@@ -768,14 +796,12 @@ function initSoporteAlert(client) {
             if (guild && isWaitRoomEmpty(guild)) {
                 staffAlertCount = 0;
                 sanctionReportSent = false;
-                if (isPlayingVoice || activeConnection) {
-                    abortPlaybackImmediately('Sala de espera vacía. Desconectando bot');
-                }
+                abortPlaybackImmediately(guild, 'Sala de espera vacía. Desconectando bot');
             }
         }
     });
 
-    // 3. Chequeo periódico cada 5 segundos
+    // 5. Chequeo periódico cada 5 segundos
     setInterval(() => {
         try {
             for (const [, guild] of client.guilds.cache) {
@@ -784,7 +810,7 @@ function initSoporteAlert(client) {
         } catch (e) { }
     }, 5 * 1000);
 
-    // 4. Comandos !locu
+    // 6. Comandos !locu
     client.on('messageCreate', async (message) => {
         if (message.author.bot || !message.guild) return;
 
@@ -813,7 +839,7 @@ function initSoporteAlert(client) {
                     userJoinTimes.clear();
                     staffAlertCount = 0;
                     sanctionReportSent = false;
-                    abortPlaybackImmediately('Locución desactivada manualmente');
+                    abortPlaybackImmediately(message.guild, 'Locución desactivada manualmente');
                     return message.reply({ content: '🔴 **Locución DESACTIVADA:** El bot ya no entrará a avisar a los canales ni a la sala de espera.' });
                 } catch (e) {
                     return message.reply({ content: '❌ Error al guardar en la base de datos.' });
@@ -825,7 +851,7 @@ function initSoporteAlert(client) {
                 try {
                     await setMinutesInDB(nuevoTiempo);
                     return message.reply({
-                        content: `✅ **Tiempo de aviso a staffs actualizado:** Ahora avisará tras **${nuevoTiempo} minutos** de espera (Estado: **${sistemaActivo ? '🟢 ACTIVADO' : '🔴 DESACTIVADO'}**).`
+                        content: `✅ **Tiempo de aviso actualizado:** Ahora avisará tras **${nuevoTiempo} minutos** de espera (Estado: **${sistemaActivo ? '🟢 ACTIVADO' : '🔴 DESACTIVADO'}**).`
                     });
                 } catch (err) {
                     console.error(err);
@@ -847,7 +873,7 @@ function initSoporteAlert(client) {
         }
     });
 
-    console.log('🛡️ [SOPORTE ALERT] Sistema completo activo: Gestión de sala de charla staff vinculada con éxito.');
+    console.log('🛡️ [SOPORTE ALERT] Sistema robusto blindado: desconexión limpia forzada + mantenimiento preventivo de 10 min.');
 }
 
 module.exports = initSoporteAlert;
