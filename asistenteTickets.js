@@ -481,18 +481,19 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
 
     try {
         const categoryPrompts = {
-            donaciones: 'Eres el Asistente Virtual Oficial de Donaciones de VALLECAS RP (servidor de FiveM español). Tu misión es atender de forma súper cordial, amable y cercana al usuario. En el servidor se aceptan donaciones exclusivamente por BIZUM y PAYPAL (nada de Tebex). Se ofrecen coches VIP, casas/MLO, packs VIP, dinero IC, armas y desbaneos de pago. Si el usuario te dice qué busca o pide información, sé muy empático, salúdalo con calidez y dile que los encargados de donaciones le tomarán nota enseguida para la entrega. No inventes precios exactos en euros.',
-            apelacion: 'Eres el Asistente Virtual Oficial de Apelaciones de VALLECAS RP (servidor de FiveM español). Sé muy empático, cordial y comprensivo. Muchos usuarios vienen pidiendo disculpas por tirar de F8, calentar la cabeza o cometer errores de rol. Analiza exactamente lo que te dice, agradécele la sinceridad y pregúntale educadamente si tiene alguna prueba (clip de Medal/YouTube) o si desea añadir algún detalle más para que la Administración revise su caso con la mayor rapidez.',
-            streamer: 'Eres el Asistente Virtual de Creadores y Streamers de VALLECAS RP. Felicítale amablemente por crear contenido o querer retransmitir en el servidor. Pídele cordialmente sus enlaces de Twitch, Kick o TikTok y deséale mucha suerte.',
-            soporte: 'Eres el Asistente de Soporte y Atención al Ciudadano de VALLECAS RP (servidor de FiveM español). Tu misión es conversar de manera humana, cordial y cercana con el usuario para averiguar su problema. Analiza su mensaje con atención (por ejemplo si te dice que tiene un bug, un fallo de inventario, crash, etc.) y pregúntale amablemente qué le ha sucedido exactamente o en qué momento le ocurre para que los moderadores y desarrolladores puedan solucionárselo de inmediato.'
+            donaciones: 'Eres el Asistente Virtual Oficial de Donaciones de VALLECAS RP (servidor de FiveM español). Atiende con máxima cordialidad y cercanía. En el servidor se aceptan donaciones exclusivamente por BIZUM y PAYPAL (nada de Tebex). Se ofrecen coches VIP, casas/MLO, packs VIP, dinero IC, armas y desbaneos de pago. Si el usuario solo dice "buenas", "hola" o un saludo sin información, salúdalo con calidez y pídele amablemente que te cuente qué artículo le gustaría adquirir o consultar. Si ya te lo ha dicho, asesórale con entusiasmo sin inventar precios exactos.',
+            apelacion: 'Eres el Asistente Virtual Oficial de Apelaciones de VALLECAS RP (servidor de FiveM español). Sé empático, cordial y comprensivo. Si el usuario solo saluda ("buenas", "hola", etc.) sin dar detalles de su sanción, salúdalo educadamente y pídele que por favor te explique la situación o el motivo por el cual fue sancionado. Si ya lo explicó, pregúntale con amabilidad si dispone de alguna prueba o si desea añadir algún detalle más.',
+            streamer: 'Eres el Asistente Virtual de Creadores y Streamers de VALLECAS RP. Si solo saluda, dile que es un placer tenerlo aquí y pídele cordialmente sus enlaces de canal (Twitch, Kick o TikTok) para revisar sus estadísticas.',
+            soporte: 'Eres el Asistente de Soporte y Atención al Ciudadano de VALLECAS RP (servidor de FiveM español). Tu misión es conversar de manera humana, cordial y atenta. Si el usuario solo dice un saludo o frase vacía sin explicar nada (por ejemplo: "buenas", "hola", "buenas tardes", "ayuda"), salúdalo con amabilidad pero indícale de forma cercana que aún no ha especificado qué problema o duda tiene, y pídele que por favor detalle lo que le ocurre para poder ayudarle adecuadamente.'
         };
 
         const systemPrompt = (categoryPrompts[category] || categoryPrompts.soporte) +
             '\nREGLAS OBLIGATORIAS:\n' +
-            '1. Responde SIEMPRE en español de España de forma cordial, educada, cercana y 100% natural, como una persona de atención al usuario en Discord.\n' +
-            '2. Máximo 1 o 2 párrafos concisos y bien redactados.\n' +
-            '3. NUNCA pidas la ID de FiveM.\n' +
-            '4. Responde de forma directa y personalizada a lo que el usuario acaba de escribir.';
+            '1. Si el usuario NO ha explicado qué le pasa (solo ha saludado o puesto palabras sueltas sin contexto), salúdalo y PÍDELE DIRECTAMENTE que detalle su problema o consulta.\n' +
+            '2. Responde SIEMPRE en español de España de forma cordial, educada, cercana y 100% natural, como una persona real de soporte en Discord.\n' +
+            '3. Máximo 1 o 2 párrafos concisos y bien estructurados.\n' +
+            '4. NUNCA pidas la ID de FiveM.\n' +
+            '5. Responde adaptándote al mensaje exacto del usuario.';
 
         const conversationHistory = userMessages.slice(-4).map(m => ({
             role: 'user',
@@ -531,21 +532,49 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
 async function handleUserConversation(channel, user, category, combinedText, session) {
     const guild = channel.guild;
 
+    // Número de intervenciones del usuario en este ticket
+    const userTurnCount = (session.userMessages || []).length;
+    // Evaluar si los mensajes del usuario contienen información real del problema
+    // (si solo ha dicho "buenas", "hola", etc. NO se muestra el botón hasta que explique algo sustancial)
+    const allUserWords = (session.userMessages || []).map(m => m.content).join(' ').toLowerCase();
+    const isOnlyGreeting = /^(buenas|hola|buenas tardes|buenas noches|buenos dias|hey|ey|ola|buenas bro|buenas staff|buenas noches staff)[\s.!?,]*$/i.test(allUserWords.trim());
+    const hasProvidedDetails = allUserWords.length > 20 && !isOnlyGreeting;
+
+    // REGLA: El botón "Hablar con un Staff" solo se muestra cuando el usuario ya ha aportado información real
+    const shouldShowStaffButton = userTurnCount >= 2 && hasProvidedDetails;
+
+    const staffButtonRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`btn_solicitar_staff_${user.id}`)
+            .setLabel('🙋‍♂️ Hablar con un Staff')
+            .setStyle(ButtonStyle.Primary)
+    );
+
+    const componentsToSend = shouldShowStaffButton ? [staffButtonRow] : [];
+
     // Intentar responder como un chat inteligente usando el motor de IA
     const aiReply = await generateAIResponse(category, session.userMessages || [], combinedText, user.tag);
     if (aiReply) {
+        const extraNote = shouldShowStaffButton
+            ? `\n\n*(Si ya nos has facilitado todos los detalles y deseas que un moderador entre al ticket, pulsa el botón de abajo).*`
+            : '';
+
         const { embed, files } = buildBaseEmbed(
             guild,
             `💬 ASISTENCIA VIRTUAL | VALLECAS RP`,
-            `¡Buenas <@${user.id}>!\n\n${aiReply}`,
+            `¡Buenas <@${user.id}>!\n\n${aiReply}${extraNote}`,
             category === 'donaciones' ? 0x9b59b6 : (category === 'apelacion' ? 0xe67e22 : 0x3498db)
         );
-        await channel.send({ embeds: [embed], files }).catch(() => { });
+        await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
         return;
     }
 
-    // 1. Apelación de Baneo: Diálogo con la misma estructura visual que Donaciones
+    // 1. Apelación de Baneo
     if (category === 'apelacion') {
+        const extraNote = shouldShowStaffButton
+            ? `\n\n*(Pulsa abajo en cuanto quieras enviar el aviso formal al Staff con tu expediente).*`
+            : '';
+
         const { embed, files } = buildBaseEmbed(
             guild,
             '🔨 ATENCIÓN DE APELACIONES | VALLECAS RP',
@@ -556,16 +585,10 @@ async function handleUserConversation(channel, user, category, combinedText, ses
             `📹 **| Pruebas o clips disponibles:**\n` +
             `> Si tienes clip de Medal, YouTube o captura que respalde tu versión, compártela en este chat ❗\n\n` +
             `📝 **| Declaración final:**\n` +
-            `> ¿Deseas añadir algún detalle más antes de que el Staff tome la decisión? ❗\n\n` +
-            `*(Puedes responder con normalidad o pulsar en los botones rápidos de abajo).*`,
+            `> ¿Deseas añadir algún detalle más antes de que el Staff tome la decisión? ❗${extraNote}`,
             0xe67e22
         );
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('btn_apel_sinpruebas').setLabel('❌ No tengo clip / Reconozco error').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('btn_apel_conpruebas').setLabel('📹 Aportaré clip / captura').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('btn_apel_segundaop').setLabel('🙏 Solicito Servicios Comunitarios').setStyle(ButtonStyle.Secondary)
-        );
-        await channel.send({ embeds: [embed], files, components: [row] }).catch(() => { });
+        await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
         return;
     }
 
@@ -579,7 +602,7 @@ async function handleUserConversation(channel, user, category, combinedText, ses
             `También puedes indicarnos si tienes preferencia por abonarlo mediante **Bizum** o **PayPal**.`,
             0x9b59b6
         );
-        await channel.send({ embeds: [embed], files }).catch(() => { });
+        await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
         return;
     }
 
@@ -592,7 +615,7 @@ async function handleUserConversation(channel, user, category, combinedText, ses
             `Nos alegra mucho que transmitas dentro de nuestra comunidad. Cuando puedas, compártenos tus enlaces de canal (**Twitch, Kick o TikTok**) para que podamos revisar tus directos y estadísticas.`,
             0x9146ff
         );
-        await channel.send({ embeds: [embed], files }).catch(() => { });
+        await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
         return;
     }
 
@@ -605,7 +628,7 @@ async function handleUserConversation(channel, user, category, combinedText, ses
             `Hemos tomado nota detallada de lo que nos comentas. Para que los encargados de soporte puedan ayudarte mejor: ¿te ocurre desde algún reinicio en concreto o dispones de alguna captura del problema?`,
             0x3498db
         );
-        await channel.send({ embeds: [embed], files }).catch(() => { });
+        await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
     }
 }
 
@@ -1238,26 +1261,9 @@ module.exports = function initAsistenteTickets(client) {
 
                 await session.save();
 
-                // 1. EL ASISTENTE HABLA SIEMPRE CON EL USUARIO PRIMERO
-                // Analiza lo que dijo el usuario y le responde de manera inteligente, cordial y humana
+                // 1. EL ASISTENTE HABLA CON EL USUARIO Y ANALIZA SU MENSAJE DE FORMA CONVERSACIONAL
+                // Adjuntando el botón "Hablar con un Staff"
                 await handleUserConversation(message.channel, message.author, category, combinedText, session);
-
-                // 2. Si es la primera interacción o el usuario ya detalló su petición, generamos la ficha resumen para el Staff
-                const hasDetailedEnough = combinedText.length > 25 || session.userMessages.length >= 2 || streamLinks.length > 0 || session.extractedData.donationItem;
-                if (hasDetailedEnough && session.status !== 'summarized') {
-                    // Esperar 2 segundos tras responder al usuario para que no sea un bombardeo simultáneo
-                    setTimeout(async () => {
-                        try {
-                            const staffCheck = await hasStaffParticipated(message.channel);
-                            if (staffCheck) return;
-                            session.status = 'summarized';
-                            await session.save();
-                            await sendStaffSummary(message.channel, session);
-                        } catch (e) {
-                            console.error('Error enviando resumen posterior:', e.message);
-                        }
-                    }, 2500);
-                }
             }, 3500);
 
         } catch (err) {
@@ -1270,6 +1276,34 @@ module.exports = function initAsistenteTickets(client) {
         try {
             if (!interaction.isButton()) return;
             const customId = interaction.customId;
+
+            // 0. Botón: "Hablar con un Staff" (CUALQUIER USUARIO PUEDE PULSARLO)
+            if (customId.startsWith('btn_solicitar_staff_')) {
+                const targetUserId = customId.replace('btn_solicitar_staff_', '');
+                
+                let session = await TicketSession.findOne({ channelId: interaction.channelId });
+                if (!session) {
+                    session = {
+                        channelId: interaction.channelId,
+                        userId: targetUserId,
+                        category: detectTicketCategory(interaction.channel),
+                        userMessages: [],
+                        extractedData: {}
+                    };
+                }
+
+                // Confirmar al usuario inmediatamente
+                await interaction.reply({
+                    content: `🔔 **Aviso enviado:** Hemos alertado al equipo de Staff con el diagnóstico y resumen de tu consulta. En breve un moderador entrará al ticket.`,
+                    ephemeral: false
+                });
+
+                // Enviar inmediatamente la ficha resumen y diagnóstico para el Staff con mención al rol
+                session.status = 'summarized';
+                if (session.save) await session.save();
+                await sendStaffSummary(interaction.channel, session);
+                return;
+            }
 
             // 1. Botones de selección de donación (CUALQUIER USUARIO PUEDE PULSARLOS)
             if (customId.startsWith('btn_cat_')) {
