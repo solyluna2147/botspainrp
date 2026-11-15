@@ -11,7 +11,8 @@ const {
     VoiceConnectionStatus,
     entersState,
     NoSubscriberBehavior,
-    getVoiceConnection
+    getVoiceConnection,
+    StreamType
 } = require('@discordjs/voice');
 
 // Esquema para audios almacenados en MongoDB
@@ -241,8 +242,14 @@ function formatDuration(ms) {
  * Reproduce un buffer de audio en un canal y se desconecta de inmediato
  */
 async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
-    if (!audioBuffer) return false;
-    if (isPlayingVoice) return false;
+    if (!audioBuffer || !Buffer.isBuffer(audioBuffer) || audioBuffer.length === 0) {
+        console.warn(`⚠️ [SOPORTE ALERT] Audio buffer para ${label} no está disponible o está vacío.`);
+        return false;
+    }
+    if (isPlayingVoice) {
+        console.log(`⏳ [SOPORTE ALERT] Omitiendo reproducción de ${label}: ya hay una locución en curso.`);
+        return false;
+    }
 
     isPlayingVoice = true;
     let connection = null;
@@ -263,16 +270,19 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
         });
 
         activeConnection = connection;
-        await entersState(connection, VoiceConnectionStatus.Ready, 7000);
+        
+        // Esperar conexión Ready con timeout prudente
+        await entersState(connection, VoiceConnectionStatus.Ready, 10000);
 
-        if (stopCurrentTour || isWaitRoomEmpty(channel.guild)) {
+        if (stopCurrentTour) {
             await forceCleanVoice(channel.guild);
             return false;
         }
 
-        await new Promise(res => setTimeout(res, 300));
+        // Pequeño retardo para asegurar handshake WebRTC de Discord
+        await new Promise(res => setTimeout(res, 500));
 
-        if (stopCurrentTour || isWaitRoomEmpty(channel.guild)) {
+        if (stopCurrentTour) {
             await forceCleanVoice(channel.guild);
             return false;
         }
@@ -286,15 +296,35 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
         connection.subscribe(player);
 
         const stream = Readable.from(audioBuffer);
-        const resource = createAudioResource(stream);
+        const resource = createAudioResource(stream, {
+            inputType: StreamType.Arbitrary
+        });
+
         player.play(resource);
 
         await new Promise((resolve) => {
-            const timeout = setTimeout(() => resolve(), 15000);
-
-            player.on(AudioPlayerStatus.Idle, () => {
-                clearTimeout(timeout);
+            let hasStartedPlaying = false;
+            const timeout = setTimeout(() => {
+                console.log(`⏱️ [SOPORTE ALERT] Timeout alcanzado para ${label} (18s). Desconectando.`);
                 resolve();
+            }, 18000);
+
+            player.on('stateChange', (oldState, newState) => {
+                if (newState.status === AudioPlayerStatus.Playing) {
+                    hasStartedPlaying = true;
+                }
+                if (newState.status === AudioPlayerStatus.Idle) {
+                    // Si pasó a Idle instantáneamente sin haber llegado a Playing, esperar un momento o registrar
+                    if (!hasStartedPlaying) {
+                        setTimeout(() => {
+                            clearTimeout(timeout);
+                            resolve();
+                        }, 500);
+                    } else {
+                        clearTimeout(timeout);
+                        resolve();
+                    }
+                }
             });
 
             player.on('error', (err) => {
