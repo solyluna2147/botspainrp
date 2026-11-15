@@ -401,60 +401,96 @@ function buildBaseEmbed(guild, title, description, color = 0x9b59b6) {
     return { embed, files: logoAttachment ? [logoAttachment] : [] };
 }
 
-// Diálogo conversacional inteligente según la categoría antes del resumen definitivo
+// Diálogo conversacional inteligente y humano según la categoría
 async function handleUserConversation(channel, user, category, combinedText, session) {
     const guild = channel.guild;
     const lower = combinedText.toLowerCase();
 
-    // 1. En Apelación de Baneo: pedir ID de FiveM si no la ha dicho
+    // 1. En Apelación de Baneo: Responder de forma humana y cercana
     if (category === 'apelacion') {
-        if (!session.extractedData.idFiveM) {
+        const idFound = session.extractedData.idFiveM || extractFiveMId(combinedText);
+
+        if (!idFound) {
             const { embed, files } = buildBaseEmbed(
                 guild,
-                '⚖️ ASISTENCIA DE APELACIÓN | VALLECAS RP',
-                `¡Hola <@${user.id}>! Hemos anotado lo que nos has explicado sobre tu sanción:\n\n` +
-                `> *"Te calentaste tirando de F8 y solicitas que se revise tu baneo."*\n\n` +
-                `🆔 **| Por favor, facilítanos tu ID de FiveM o Steam Hex:**\n` +
-                `> Indícanos tu ID dentro del servidor o nombre exacto con el que jugabas para que la Administración pueda localizar tu ficha de sanción ❗`,
+                '⚖️ ASISTENCIA DE APELACIONES | VALLECAS RP',
+                `¡Buenas <@${user.id}>! Entendemos tu situación y que en momentos de calentón se cometan errores tirando de F8.\n\n` +
+                `Para que el equipo de Administración pueda estudiar tu caso y valorar una segunda oportunidad o servicios comunitarios, necesitamos localizar tu personaje:\n\n` +
+                `🆔 **| ¿Nos puedes facilitar tu ID dentro de la ciudad o tu Steam Hex?**\n` +
+                `> *(Escribe simplemente tu ID o número aquí abajo y gestionamos tu ficha)* ❗`,
                 0xe67e22
             );
             await channel.send({ embeds: [embed], files }).catch(() => { });
             return;
+        } else {
+            const { embed, files } = buildBaseEmbed(
+                guild,
+                '⚖️ ASISTENCIA DE APELACIONES | VALLECAS RP',
+                `Perfecto <@${user.id}>, hemos anotado tu ID \`${idFound}\` y tus alegaciones.\n\n` +
+                `Acabo de recopilar tu informe para que un Administrador tome la decisión sobre tu baneo.`,
+                0x2ecc71
+            );
+            await channel.send({ embeds: [embed], files }).catch(() => { });
         }
     }
 
-    // 2. En Donaciones: preguntar qué busca o qué método prefiere
+    // 2. En Donaciones: Diálogo humano y asesoramiento
     if (category === 'donaciones') {
-        if (!session.extractedData.donationItem) {
+        const item = session.extractedData.donationItem;
+
+        if (!item) {
             const { embed, files } = buildBaseEmbed(
                 guild,
                 '💎 ASISTENCIA DE DONACIONES | VALLECAS RP',
-                `¡Hola <@${user.id}>! Gracias por contactar con Donaciones.\n\n` +
-                `📦 **| ¿Qué te gustaría adquirir exactamente?**\n` +
-                `> Tenemos disponibles **Coches VIP**, **Packs**, **Casas MLO**, **Dinero IC** y **Armas**.\n\n` +
-                `*Selecciona abajo una opción rápida o escribe directamente el modelo o artículo que deseas:*`,
+                `¡Hola <@${user.id}>! Qué bien tenerte por aquí 🙌\n\n` +
+                `Cuéntanos qué tienes en mente para tu personaje (un coche exclusivo, una casa o MLO mapeado, dinero IC, un pack VIP, etc.).\n\n` +
+                `Puedes pulsar abajo para indicarlo rápidamente o escribirnos el modelo exacto que te gustaría adquirir:`,
                 0x9b59b6
             );
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('btn_cat_coche').setLabel('🚗 Coche VIP').setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder().setCustomId('btn_cat_pack').setLabel('📦 Pack VIP').setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder().setCustomId('btn_cat_casa').setLabel('🏠 Casa / MLO').setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder().setCustomId('btn_cat_dinero').setLabel('💰 Dinero IC').setStyle(ButtonStyle.Secondary)
+                new ButtonBuilder().setCustomId('btn_cat_dinero').setLabel('💰 Dinero IC').setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder().setCustomId('btn_cat_otro').setLabel('❓ Otra cosa / Consulta').setStyle(ButtonStyle.Secondary)
             );
             await channel.send({ embeds: [embed], files, components: [row] }).catch(() => { });
+            return;
+        } else {
+            const { embed, files } = buildBaseEmbed(
+                guild,
+                '💎 ASISTENCIA DE DONACIONES | VALLECAS RP',
+                `¡De lujo <@${user.id}>! Hemos tomado nota de que te interesa **${item}**.\n\n` +
+                `Por favor indícanos si prefieres abonarlo por **Bizum** o **PayPal** y tu **ID de FiveM** para preparar la entrega.`,
+                0x9b59b6
+            );
+            await channel.send({ embeds: [embed], files }).catch(() => { });
+        }
+    }
+
+    // 3. En Streamers / Creadores: Pedir links con tono cercano
+    if (category === 'streamer') {
+        const links = session.extractedData.streamLinks;
+        if (links.length === 0) {
+            const { embed, files } = buildBaseEmbed(
+                guild,
+                '🎬 CREADORES DE CONTENIDO | VALLECAS RP',
+                `¡Hey <@${user.id}>! Qué alegría ver que transmites rol en el servidor 💜\n\n` +
+                `Péganos aquí abajo el enlace o enlaces de tus canales (**Twitch, Kick o TikTok**) y nuestro sistema analizará tus estadísticas al momento para el equipo de Staff.`,
+                0x9146ff
+            );
+            await channel.send({ embeds: [embed], files }).catch(() => { });
             return;
         }
     }
 
-    // 3. En Soporte: Confirmar recepción y avisar que el staff lo atenderá
+    // 4. En Soporte: Trato cercano y escucha activa
     if (category === 'soporte') {
         const { embed, files } = buildBaseEmbed(
             guild,
-            '🛠️ ASISTENCIA TÉCNICA | VALLECAS RP',
-            `Entendido <@${user.id}>. Hemos registrado tu incidencia en el sistema:\n\n` +
-            `📌 **| Detalle registrado:**\n` +
-            `> "${combinedText.slice(0, 150)}..."\n\n` +
-            `Un miembro del Equipo de Soporte tomará tu caso de inmediato.`,
+            '🛠️ ATENCIÓN AL CIUDADANO | VALLECAS RP',
+            `¡Buenas <@${user.id}>! Hemos leído lo que te ocurre y ya lo tenemos registrado.\n\n` +
+            `Si tienes algún clip o foto sobre el fallo súbelo aquí para que podamos resolverlo mucho más rápido. Enseguida un Staff se pone contigo.`,
             0x3498db
         );
         await channel.send({ embeds: [embed], files }).catch(() => { });
@@ -482,7 +518,8 @@ async function sendCategoryWelcome(channel, user, category) {
             new ButtonBuilder().setCustomId('btn_cat_coche').setLabel('🚗 Coche VIP').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('btn_cat_pack').setLabel('📦 Pack VIP').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('btn_cat_casa').setLabel('🏠 Casa / MLO').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('btn_cat_dinero').setLabel('💰 Dinero IC').setStyle(ButtonStyle.Secondary)
+            new ButtonBuilder().setCustomId('btn_cat_dinero').setLabel('💰 Dinero IC').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('btn_cat_otro').setLabel('❓ Otra cosa / Consulta').setStyle(ButtonStyle.Secondary)
         );
         components.push(row);
     } else if (category === 'streamer') {
@@ -1095,10 +1132,16 @@ module.exports = function initAsistenteTickets(client) {
             if (!interaction.isButton()) return;
             const customId = interaction.customId;
 
-            // 1. Botones de selección de donación (pueden ser pulsados por el usuario para elegir qué donar)
+            // 1. Botones de selección de donación (CUALQUIER USUARIO PUEDE PULSARLOS)
             if (customId.startsWith('btn_cat_')) {
                 const itemType = customId.replace('btn_cat_', '');
-                const labelMap = { coche: 'Coche VIP', pack: 'Pack VIP', casa: 'Casa / MLO', dinero: 'Dinero IC' };
+                const labelMap = {
+                    coche: 'Coche VIP',
+                    pack: 'Pack VIP',
+                    casa: 'Casa / MLO',
+                    dinero: 'Dinero IC',
+                    otro: 'Otra consulta / Donación personalizada'
+                };
                 const selectedItem = labelMap[itemType] || 'Donación Especial';
 
                 await TicketSession.findOneAndUpdate(
@@ -1106,10 +1149,17 @@ module.exports = function initAsistenteTickets(client) {
                     { 'extractedData.donationItem': selectedItem }
                 );
 
-                await interaction.reply({
-                    content: `✅ Has seleccionado **${selectedItem}**. Por favor, indícanos tu **ID de FiveM** y el modelo o detalles específicos que deseas.`,
-                    ephemeral: false
-                });
+                if (itemType === 'otro') {
+                    await interaction.reply({
+                        content: `✅ Has seleccionado **${selectedItem}**.\n💬 Cuéntanos a continuación con el mayor detalle posible qué necesitas adquirir o consultar, e indícanos tu **ID de FiveM**.`,
+                        ephemeral: false
+                    });
+                } else {
+                    await interaction.reply({
+                        content: `✅ Has seleccionado **${selectedItem}**.\n🆔 Por favor, indícanos tu **ID de FiveM** y el modelo o detalles específicos que deseas.`,
+                        ephemeral: false
+                    });
+                }
                 return;
             }
 
