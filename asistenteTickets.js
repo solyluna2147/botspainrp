@@ -477,27 +477,46 @@ function buildBaseEmbed(guild, title, description, color = 0x9b59b6) {
     return { embed, files: logoAttachment ? [logoAttachment] : [] };
 }
 
+// Helper para saber si el usuario ha aportado pruebas (enlaces de clip, vídeos o imágenes adjuntas)
+function hasUserProvidedEvidence(messages = []) {
+    const combined = messages.map(m => m.content || '').join(' ').toLowerCase();
+    // 1. Archivo o captura adjunta en Discord
+    if (combined.includes('[adjunta imagen') || combined.includes('.png') || combined.includes('.jpg') || combined.includes('.jpeg') || combined.includes('.mp4') || combined.includes('.mov')) {
+        return true;
+    }
+    // 2. Enlaces típicos de clips y vídeo (Medal, YouTube, Streamable, Twitch, Discord CDN, etc.)
+    const linkRegex = /(https?:\/\/[^\s]+)/i;
+    if (linkRegex.test(combined)) {
+        return true;
+    }
+    return false;
+}
+
 // Generador de respuestas dinámicas e inteligentes con Groq AI (Llama/GPT)
 async function generateAIResponse(category, userMessages, currentMessage, userTag) {
     const groqKey = process.env.GROQ_API_KEY;
     if (!groqKey) return null;
 
     try {
+        const userProvidedEvidence = hasUserProvidedEvidence([...userMessages, { content: currentMessage }]);
+
         const categoryPrompts = {
-            donaciones: 'Eres el Asistente Oficial de Donaciones de VALLECAS RP (servidor de FiveM GTA V roleplay español). Habla en español de España de forma cercana, humana y breve (máximo 1 o 2 párrafos). Todo se refiere a la tienda del servidor (coches VIP in-game, casas/MLOs, negocios, dinero IC o desbaneos de pago por Bizum y PayPal). Si preguntan por precios de locales o coches, explícales con amabilidad que la administración y encargados de donaciones le darán el importe exacto y disponibilidad.',
-            apelacion: 'Eres el Asistente Oficial de Apelaciones de VALLECAS RP (servidor de FiveM GTA V roleplay). Sé empático, cercano y comprensivo. Muchos usuarios vienen pidiendo disculpas por tirar de F8, calentar la cabeza en rol o sanciones administrativas. Si el usuario ha adjuntado una captura, imagen o enlace de clip, reconóceselo y dile que la Administración la tendrá en cuenta. NUNCA digas que no tiene pruebas o que no dispone de clip si el usuario ya ha adjuntado una imagen o vídeo. Habla en 1 o 2 párrafos cortos.',
-            streamer: 'Eres el Asistente de Creadores y Streamers de VALLECAS RP (servidor de FiveM roleplay). Felicítale de forma cercana y pídele sus enlaces de Twitch, Kick o TikTok para que el Staff revise sus estadísticas.',
-            soporte: 'Eres el Asistente de Soporte y Atención al Ciudadano de VALLECAS RP (servidor de FiveM GTA V roleplay español). CONTEXTO OBLIGATORIO: Todo ocurre dentro del juego FiveM (scripts, llaves de coche, garajes, mecánicos in-game, inventario, bugs de sincronización, reconectar). NUNCA hables como un mecánico de coches de la vida real ni preguntes por baterías de coches reales ni talleres del mundo real. Responde de forma muy humana, comprensiva y breve (máximo 1 o 2 párrafos cortos).'
+            donaciones: 'Eres un miembro del equipo de Donaciones de VALLECAS RP (servidor español de FiveM GTA V Roleplay). Habla como una persona real por chat de Discord: muy breve, cercano, sin formalismos exagerados ni parrafadas (máximo 2 o 3 frases). Si preguntan por un coche VIP, dinero o casa, diles que genial, confirma si lo quieren por Bizum o PayPal y aclara cualquier duda al grano.',
+            apelacion: 'Eres un moderador de atención de VALLECAS RP (servidor español de FiveM GTA V Roleplay). Habla como un colega del Staff atendiendo un chat: muy humano, directo, comprensivo y breve (máximo 2 frases cortas, PROHIBIDO textos largos o sonar a robot).\n' +
+                (userProvidedEvidence
+                    ? '- ESTADO: EL USUARIO YA HA ADJUNTADO PRUEBAS (clip, link o captura). Reconóceselo en 1 o 2 frases cortas diciendo que queda adjuntada su prueba al expediente para que el Staff lo revise.'
+                    : '- ESTADO: EL USUARIO NO HA ADJUNTADO NINGUNA PRUEBA NI ENLACE TODAVÍA. Pregúntale de forma directa y casual: "¿Tienes algún clip (Medal, YouTube, Streamable...) o captura de lo que ocurrió para adjuntarla a la apelación?"'),
+            streamer: 'Eres del equipo de VALLECAS RP. Habla como una persona real, cercano y breve (máximo 2 frases). Pídele que te pase el link de su canal de Twitch, Kick o TikTok para revisarle las estadísticas.',
+            soporte: 'Eres un compañero de Soporte de VALLECAS RP (servidor español de FiveM). Habla como una persona real por chat: súper breve, directo y cercano (máximo 2 o 3 frases cortas). Todo es dentro del juego (scripts, garajes, reconectar F8, llaves). Si no ha dicho qué le pasa, pregúntaselo con naturalidad.'
         };
 
         const systemPrompt = (categoryPrompts[category] || categoryPrompts.soporte) +
-            '\nREGLAS OBLIGATORIAS:\n' +
-            '1. Estás en un servidor de FiveM (GTA V Roleplay). No confundas el juego con la vida real.\n' +
-            '2. Si el usuario ha subido una captura, clip o imagen, reconócesela amablemente ("He visto que has adjuntado una captura/prueba...") y no digas jamás que no tiene pruebas.\n' +
-            '3. Si el usuario no ha especificado qué le ocurre (solo saluda o pone frases vacías), salúdalo y pídele que detalle qué duda o problema tiene en el servidor.\n' +
-            '4. Responde siempre en español de España, de forma cercana y conversacional.\n' +
-            '5. Máximo 1 o 2 párrafos cortos y directos (prohibido hacer listas largas ni textos aburridos).\n' +
-            '6. NUNCA pidas la ID de FiveM.';
+            '\nREGLAS DE ORO OBLIGATORIAS:\n' +
+            '1. HABLA COMO UN HUMANO REAL EN DISCORD: Prohibido sonar como un contestador automático o redactar cartas formales.\n' +
+            '2. LONGITUD ULTRA CORTA: Máximo 2 frases directas (1 párrafo pequeño). Cero sermones.\n' +
+            '3. NO INVENTES: ' + (userProvidedEvidence ? 'El usuario SÍ ha adjuntado pruebas.' : 'El usuario NO ha pasado ningún enlace ni foto de momento.') + '\n' +
+            '4. NUNCA pidas la ID de FiveM.\n' +
+            '5. Español coloquial y natural de España.';
 
         const conversationHistory = userMessages.slice(-4).map(m => ({
             role: 'user',
@@ -530,8 +549,8 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
                     { role: 'system', content: finalSystemPrompt },
                     ...conversationHistory
                 ],
-                max_tokens: 300,
-                temperature: 0.5
+                max_tokens: 140,
+                temperature: 0.6
             })
         });
 
@@ -552,13 +571,21 @@ async function handleUserConversation(channel, user, category, combinedText, ses
 
     // Número de intervenciones del usuario en este ticket
     const userTurnCount = (session.userMessages || []).length;
-    // El botón "Hablar con un Staff" se muestra SIEMPRE en todas las respuestas del asistente,
-    // excepto si el usuario solo ha dicho un simple saludo vacío de una palabra ("buenas", "hola")
     const allUserWords = (session.userMessages || []).map(m => m.content).join(' ').toLowerCase();
     const isOnlyGreeting = /^(buenas|hola|buenas tardes|buenas noches|buenos dias|hey|ey|ola|buenas bro|buenas staff|buenas noches staff)[\s.!?,]*$/i.test(allUserWords.trim());
     
-    // Si ya ha escrito sobre algún coche, duda, bug o es su segundo mensaje, el botón está SIEMPRE disponible
-    const shouldShowStaffButton = !isOnlyGreeting || userTurnCount >= 2;
+    // El botón "Hablar con un Staff":
+    // - En APELACIONES: NO se muestra en el primer mensaje si NO hay pruebas.
+    //   Solo aparece si el usuario ya adjuntó pruebas (links/fotos/vídeos) o si ya es el turno 2+ (por ejemplo si dice que no tiene).
+    let shouldShowStaffButton = false;
+    const hasEvidence = hasUserProvidedEvidence([...(session.userMessages || []), { content: combinedText }]);
+
+    if (category === 'apelacion') {
+        const saidNoEvidence = allUserWords.includes('no tengo') || allUserWords.includes('no grabe') || allUserWords.includes('no grabé') || allUserWords.includes('sin clip') || allUserWords.includes('sin prueba');
+        shouldShowStaffButton = hasEvidence || saidNoEvidence || userTurnCount >= 2;
+    } else {
+        shouldShowStaffButton = !isOnlyGreeting && userTurnCount >= 1;
+    }
 
     const staffButtonRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -573,7 +600,7 @@ async function handleUserConversation(channel, user, category, combinedText, ses
     const aiReply = await generateAIResponse(category, session.userMessages || [], combinedText, user.tag);
     if (aiReply) {
         const extraNote = shouldShowStaffButton
-            ? `\n\n*(Si ya nos has facilitado todos los detalles y deseas que un moderador entre al ticket, pulsa el botón de abajo).*`
+            ? `\n\n*(Si ya has terminado de aportar tus datos, pulsa el botón de abajo para llamar al Staff).*`
             : '';
 
         const { embed, files } = buildBaseEmbed(
