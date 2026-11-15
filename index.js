@@ -10296,6 +10296,14 @@ async function startBot() {
     } catch (alertErr) {
         console.error('⚠️ [SOPORTE ALERT ERROR]:', alertErr.message);
     }
+
+    // Sistema independiente de Asistente Virtual Inteligente de Tickets
+    try {
+        const initAsistenteTickets = require('./asistenteTickets');
+        initAsistenteTickets(client);
+    } catch (ticketsErr) {
+        console.error('⚠️ [ASISTENTE TICKETS ERROR]:', ticketsErr.message);
+    }
 }
 
 startBot();

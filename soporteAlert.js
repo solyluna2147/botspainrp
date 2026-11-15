@@ -556,13 +556,14 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, usuariosA
 
         console.log(`📋 [SOPORTE ALERT] Informe disciplinario publicado con éxito en el canal de sanciones.`);
 
-        // Mover a los staffs sancionados al canal de STAFF AFK al instante
-        if (staffsInvolucrados && staffsInvolucrados.length > 0) {
+        // Mover a los staffs al canal de STAFF AFK ÚNICAMENTE si ya se han emitido los 3 avisos completos
+        const esTercerAvisoDisciplinario = avisosEmitidos >= 3;
+        if (esTercerAvisoDisciplinario && staffsInvolucrados && staffsInvolucrados.length > 0) {
             for (const staffMember of staffsInvolucrados) {
                 try {
                     if (staffMember.voice && staffMember.voice.channelId) {
-                        await staffMember.voice.setChannel(CANAL_STAFF_AFK_ID, 'Movido automáticamente por inactividad/sanción de soporte');
-                        console.log(`🔀 [SOPORTE ALERT] Staff ${staffMember.user ? staffMember.user.tag : staffMember.id} movido a STAFF AFK.`);
+                        await staffMember.voice.setChannel(CANAL_STAFF_AFK_ID, 'Movido automáticamente tras cumplirse los 3 avisos de soporte');
+                        console.log(`🔀 [SOPORTE ALERT] Staff ${staffMember.user ? staffMember.user.tag : staffMember.id} movido a STAFF AFK tras los 3 avisos.`);
                     }
                 } catch (moveErr) {
                     console.error(`⚠️ [SOPORTE ALERT] No se pudo mover a ${staffMember.id} a AFK:`, moveErr.message);
@@ -621,20 +622,7 @@ async function checkWaitRoom(guild, client) {
         }
     }
 
-    // 1. REPETICIÓN A USUARIOS CADA 1 MINUTO
-    if (usuarioHaSuperadoStaffTime) {
-        const timeSinceLastRepeat = now - lastUserRepeatAlertAt;
-        if (timeSinceLastRepeat >= 60 * 1000 && !isPlayingVoice) {
-            await triggerUserWaitRoomAlert(guild, 'Recordatorio 1min');
-        }
-    }
-
-    // 2. AVISO A LA SALA DE CHARLA DE STAFFS (Si hay más gente de charla que en soporte)
-    if (usuarioHaSuperadoStaffTime && !isPlayingVoice) {
-        await checkSalaCharlaStaff(guild);
-    }
-
-    // 3. AVISO A STAFFS EN CANALES DE SOPORTE
+    // 1. AVISO A STAFFS EN CANALES DE SOPORTE (PRIORIDAD MÁXIMA)
     const tiempoEntreAvisosMs = tiempoEsperaMinutos * 60 * 1000;
     const yaTocaAvisar = (lastStaffAlertAt === 0) || ((now - lastStaffAlertAt) >= tiempoEntreAvisosMs);
 
@@ -710,6 +698,19 @@ async function checkWaitRoom(guild, client) {
                     });
                 }
             }
+        }
+    }
+
+    // 2. AVISO A LA SALA DE CHARLA DE STAFFS (Si hay más gente de charla que en soporte)
+    if (usuarioHaSuperadoStaffTime && !isPlayingVoice) {
+        await checkSalaCharlaStaff(guild);
+    }
+
+    // 3. REPETICIÓN A USUARIOS CADA 1 MINUTO
+    if (usuarioHaSuperadoStaffTime && !isPlayingVoice) {
+        const timeSinceLastRepeat = now - lastUserRepeatAlertAt;
+        if (timeSinceLastRepeat >= 60 * 1000) {
+            await triggerUserWaitRoomAlert(guild, 'Recordatorio 1min');
         }
     }
 }
