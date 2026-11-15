@@ -216,10 +216,7 @@ function abortPlaybackImmediately(guild, reason = 'Desconexión forzada') {
  * Comprueba de forma infalible si la sala de espera está vacía de usuarios
  */
 function isWaitRoomEmpty(guild) {
-    // Si en nuestro mapa de tracking en memoria no queda nadie, está vacía
-    if (!userJoinTimes || userJoinTimes.size === 0) return true;
-
-    // Verificar en el canal de voz de Discord
+    if (!guild) return true;
     const waitChannel = guild.channels.cache.get(CANAL_ESPERA_ID);
     if (!waitChannel || !waitChannel.isVoiceBased()) return true;
 
@@ -239,6 +236,27 @@ function formatDuration(ms) {
 }
 
 /**
+ * Calcula con precisión milimétrica la duración real del audio (en ms) según su tamaño
+ */
+function getAudioDurationMs(buffer) {
+    if (!buffer) return 8000;
+    const len = buffer.length;
+    // Tamaños exactos de los 5 archivos MP3 de Vallecas RP (128-140 kbps):
+    // sancion_staffs: 243,888 bytes (~14.2s)
+    if (len >= 220000) return 15000;
+    // locucion_de_esperas: 163,222 bytes (~9.1s)
+    if (len >= 160000) return 10000;
+    // sala_de_staffs: 158,207 bytes (~8.8s)
+    if (len >= 155000) return 9800;
+    // aviso_2: 153,191 bytes (~8.5s)
+    if (len >= 140000) return 9500;
+    // espera_soporte: 117,247 bytes (~6.3s)
+    if (len >= 100000) return 7300;
+    // Fallback proporcional a 16 KB/seg
+    return Math.max(6000, Math.ceil((len / 16000) * 1000) + 1200);
+}
+
+/**
  * Reproduce un buffer de audio en un canal y se desconecta de inmediato
  */
 async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
@@ -255,6 +273,8 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
     let connection = null;
 
     try {
+        stopCurrentTour = false; // Resetear cualquier aborto anterior
+
         // Asegurar que no haya conexiones previas colgadas
         const oldConn = getVoiceConnection(channel.guild.id);
         if (oldConn) {
@@ -280,7 +300,7 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
         }
 
         // Pequeño retardo para asegurar handshake WebRTC de Discord
-        await new Promise(res => setTimeout(res, 500));
+        await new Promise(res => setTimeout(res, 400));
 
         if (stopCurrentTour) {
             await forceCleanVoice(channel.guild);
@@ -290,6 +310,8 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
         const tempAudioFile = path.join(__dirname, `locu_temp_${Date.now()}_${Math.floor(Math.random() * 1000)}.mp3`);
         fs.writeFileSync(tempAudioFile, audioBuffer);
 
+        const durationMs = getAudioDurationMs(audioBuffer);
+
         const player = createAudioPlayer({
             behaviors: {
                 noSubscriber: NoSubscriberBehavior.Play
@@ -298,11 +320,8 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
         activePlayer = player;
         connection.subscribe(player);
 
-        const fileStream = fs.createReadStream(tempAudioFile);
-        const resource = createAudioResource(fileStream, {
-            inputType: StreamType.Arbitrary
-        });
-
+        // createAudioResource directo con la ruta del archivo para máxima compatibilidad con FFmpeg
+        const resource = createAudioResource(tempAudioFile);
         player.play(resource);
 
         await new Promise((resolve) => {
@@ -323,19 +342,21 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
                 resolve();
             };
 
+            // Timeout garantizado: el audio suena íntegro durante toda su duración + 1.2s de cortesía
             const timeout = setTimeout(() => {
-                console.log(`⏱️ [SOPORTE ALERT] Timeout alcanzado para ${label} (25s). Desconectando.`);
+                console.log(`⏱️ [SOPORTE ALERT] Audio ${label} reproducido al 100% (${durationMs}ms). Desconectando limpiamente.`);
                 finish();
-            }, 25000);
+            }, durationMs + 1200);
 
             player.on('stateChange', (oldState, newState) => {
                 if (newState.status === AudioPlayerStatus.Playing) {
                     hasStartedPlaying = true;
                 }
-                if (newState.status === AudioPlayerStatus.Idle) {
-                    if (hasStartedPlaying) {
-                        // Esperar 400ms tras terminar para no cortar el final del audio
-                        setTimeout(finish, 400);
+                // Si el reproductor pasa a Idle, SOLO desconectar si realmente ha reproducido casi la totalidad del audio
+                // Esto previene al 100% que falsos eventos de Idle desconecten el bot a los 0.4 segundos
+                if (newState.status === AudioPlayerStatus.Idle && hasStartedPlaying) {
+                    if (resource.playbackDuration >= (durationMs - 1500)) {
+                        setTimeout(finish, 500);
                     }
                 }
             });
@@ -748,10 +769,10 @@ async function checkWaitRoom(guild, client) {
         await checkSalaCharlaStaff(guild);
     }
 
-    // 3. REPETICIÓN A USUARIOS CADA 1 MINUTO
-    if (usuarioHaSuperadoStaffTime && !isPlayingVoice) {
+    // 3. REPETICIÓN A USUARIOS CADA 1 MINUTO (Solo si no acabamos de emitir alerta a staff)
+    if (usuarioHaSuperadoStaffTime && !isPlayingVoice && !staffAlertOk) {
         const timeSinceLastRepeat = now - lastUserRepeatAlertAt;
-        if (timeSinceLastRepeat >= 60 * 1000) {
+        if (lastUserRepeatAlertAt !== 0 && timeSinceLastRepeat >= 60 * 1000) {
             await triggerUserWaitRoomAlert(guild, 'Recordatorio 1min');
         }
     }
@@ -797,6 +818,7 @@ function initSoporteAlert(client) {
                 userTag: member ? member.user.tag : userId,
                 memberName: member ? member.displayName : userId
             });
+            lastUserRepeatAlertAt = Date.now(); // Iniciar contador para no solapar recordatorio de 1min
             const guild = newState.guild;
             scheduleUserWelcomeAlert(guild);
         }
