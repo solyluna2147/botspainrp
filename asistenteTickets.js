@@ -458,8 +458,16 @@ function buildBaseEmbed(guild, title, description, color = 0x9b59b6) {
 
     const embed = new EmbedBuilder()
         .setColor(color)
+        .setAuthor({
+            name: 'ASISTENTE VIRTUAL | VALLECAS RP',
+            iconURL: iconUrl
+        })
         .setDescription(description)
         .setThumbnail(iconUrl)
+        .setFooter({
+            text: 'VALLECAS RP • Sistema Inteligente de Tickets',
+            iconURL: iconUrl
+        })
         .setTimestamp();
 
     if (title) {
@@ -476,19 +484,19 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
 
     try {
         const categoryPrompts = {
-            donaciones: 'Eres el Asistente Virtual Oficial de Donaciones de VALLECAS RP (servidor de FiveM español). Atiende con máxima cordialidad y cercanía. En el servidor se aceptan donaciones exclusivamente por BIZUM y PAYPAL (nada de Tebex). Se ofrecen coches VIP, casas/MLO, packs VIP, dinero IC, armas y desbaneos de pago. Si el usuario solo dice "buenas", "hola" o un saludo sin información, salúdalo con calidez y pídele amablemente que te cuente qué artículo le gustaría adquirir o consultar. Si ya te lo ha dicho, asesórale con entusiasmo sin inventar precios exactos.',
-            apelacion: 'Eres el Asistente Virtual Oficial de Apelaciones de VALLECAS RP (servidor de FiveM español). Sé empático, cordial y comprensivo. Si el usuario solo saluda ("buenas", "hola", etc.) sin dar detalles de su sanción, salúdalo educadamente y pídele que por favor te explique la situación o el motivo por el cual fue sancionado. Si ya lo explicó, pregúntale con amabilidad si dispone de alguna prueba o si desea añadir algún detalle más.',
-            streamer: 'Eres el Asistente Virtual de Creadores y Streamers de VALLECAS RP. Si solo saluda, dile que es un placer tenerlo aquí y pídele cordialmente sus enlaces de canal (Twitch, Kick o TikTok) para revisar sus estadísticas.',
-            soporte: 'Eres el Asistente de Soporte y Atención al Ciudadano de VALLECAS RP (servidor de FiveM español). Tu misión es conversar de manera humana, cordial y atenta. Si el usuario solo dice un saludo o frase vacía sin explicar nada (por ejemplo: "buenas", "hola", "buenas tardes", "ayuda"), salúdalo con amabilidad pero indícale de forma cercana que aún no ha especificado qué problema o duda tiene, y pídele que por favor detalle lo que le ocurre para poder ayudarle adecuadamente.'
+            donaciones: 'Eres el Asistente Oficial de Donaciones de VALLECAS RP (servidor de FiveM GTA V roleplay español). Habla en español de España de forma cercana, humana y breve (máximo 1 o 2 párrafos). Todo se refiere a la tienda del servidor (coches VIP in-game, casas/MLOs, negocios, dinero IC o desbaneos de pago por Bizum y PayPal). Si preguntan por precios de locales o coches, explícales con amabilidad que la administración y encargados de donaciones le darán el importe exacto y disponibilidad.',
+            apelacion: 'Eres el Asistente Oficial de Apelaciones de VALLECAS RP (servidor de FiveM GTA V roleplay). Sé empático, cercano y comprensivo. Muchos usuarios vienen pidiendo disculpas por tirar de F8, calentar la cabeza en rol o sanciones administrativas. Habla en 1 o 2 párrafos cortos preguntando amablemente si tiene clip/pruebas de lo ocurrido para que la Administración pueda valorar su caso.',
+            streamer: 'Eres el Asistente de Creadores y Streamers de VALLECAS RP (servidor de FiveM roleplay). Felicítale de forma cercana y pídele sus enlaces de Twitch, Kick o TikTok para que el Staff revise sus estadísticas.',
+            soporte: 'Eres el Asistente de Soporte y Atención al Ciudadano de VALLECAS RP (servidor de FiveM GTA V roleplay español). CONTEXTO OBLIGATORIO: Todo ocurre dentro del juego FiveM (scripts, llaves de coche, garajes, mecánicos in-game, inventario, bugs de sincronización, reconectar). NUNCA hables como un mecánico de coches de la vida real ni preguntes por baterías de coches reales ni talleres del mundo real. Responde de forma muy humana, comprensiva y breve (máximo 1 o 2 párrafos cortos).'
         };
 
         const systemPrompt = (categoryPrompts[category] || categoryPrompts.soporte) +
             '\nREGLAS OBLIGATORIAS:\n' +
-            '1. Si el usuario NO ha explicado qué le pasa (solo ha saludado o puesto palabras sueltas sin contexto), salúdalo y PÍDELE DIRECTAMENTE que detalle su problema o consulta.\n' +
-            '2. Responde SIEMPRE en español de España de forma cordial, educada, cercana y 100% natural, como una persona real de soporte en Discord.\n' +
-            '3. Máximo 1 o 2 párrafos concisos y bien estructurados.\n' +
-            '4. NUNCA pidas la ID de FiveM.\n' +
-            '5. Responde adaptándote al mensaje exacto del usuario.';
+            '1. Estás en un servidor de FiveM (GTA V Roleplay). No confundas el juego con la vida real.\n' +
+            '2. Si el usuario no ha especificado qué le ocurre (solo saluda o pone frases vacías), salúdalo y pídele que detalle qué duda o problema tiene en el servidor.\n' +
+            '3. Responde siempre en español de España, de forma cercana y conversacional.\n' +
+            '4. Máximo 1 o 2 párrafos cortos y directos (prohibido hacer listas largas ni textos aburridos).\n' +
+            '5. NUNCA pidas la ID de FiveM.';
 
         const conversationHistory = userMessages.slice(-4).map(m => ({
             role: 'user',
