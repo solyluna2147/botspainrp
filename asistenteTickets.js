@@ -401,118 +401,149 @@ function buildBaseEmbed(guild, title, description, color = 0x9b59b6) {
     return { embed, files: logoAttachment ? [logoAttachment] : [] };
 }
 
-// Diálogo conversacional inteligente y humano según la categoría
+// Generador de respuestas dinámicas e inteligentes con Groq AI (Llama/GPT)
+async function generateAIResponse(category, userMessages, currentMessage, userTag) {
+    const groqKey = process.env.GROQ_API_KEY;
+    if (!groqKey) return null;
+
+    try {
+        const categoryPrompts = {
+            donaciones: 'Eres el Asistente Virtual Oficial de Donaciones de VALLECAS RP (servidor de FiveM español). Tu misión es atender de forma súper cordial, amable y cercana al usuario. En el servidor se aceptan donaciones exclusivamente por BIZUM y PAYPAL (nada de Tebex). Vendemos coches VIP, casas/MLO, packs VIP, dinero IC, armas y desbaneos de pago. Si el usuario te dice qué busca o pide precios, anímale, sé empático y dile que un encargado de donaciones le tomará los datos para la entrega. No inventes precios exactos en euros si no los sabes, di que administración le dará el importe exacto.',
+            apelacion: 'Eres el Asistente Virtual Oficial de Apelaciones de VALLECAS RP (servidor de FiveM español). Sé empático, cordial y comprensivo. Muchos usuarios vienen arrepentidos por tirar de F8, calentar la cabeza o cometer errores de rol. Pregúntale con educación si tiene alguna prueba o si quiere aportar más detalles de lo sucedido, y explícale que su caso será revisado con justicia por la Administración.',
+            streamer: 'Eres el Asistente Virtual de Creadores y Streamers de VALLECAS RP. Felicítale amablemente por crear contenido en el servidor. Pídele sus canales de Twitch, Kick o TikTok y anímale.',
+            soporte: 'Eres el Asistente Técnico y de Soporte de VALLECAS RP. Sé servicial y empático, pregunta detalles del bug o problema y transmítele tranquilidad de que el equipo lo solucionará.'
+        };
+
+        const systemPrompt = (categoryPrompts[category] || categoryPrompts.soporte) +
+            '\nREGLAS OBLIGATORIAS:\n' +
+            '1. Responde SIEMPRE en español de España de forma cordial, educada y natural, como un moderador real de Discord.\n' +
+            '2. Máximo 2 o 3 párrafos cortos y claros.\n' +
+            '3. NUNCA pidas la ID de FiveM.\n' +
+            '4. No uses saludos excesivamente robóticos ni plantillas vacías.';
+
+        const conversationHistory = userMessages.slice(-4).map(m => ({
+            role: 'user',
+            content: m.content
+        }));
+
+        conversationHistory.push({ role: 'user', content: currentMessage });
+
+        const res = await fetch('https://api.groq.com/openai/v1/chat/com/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${groqKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'openai/gpt-oss-20b',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    ...conversationHistory
+                ],
+                max_tokens: 220,
+                temperature: 0.7
+            })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            const reply = data.choices?.[0]?.message?.content?.trim();
+            if (reply && reply.length > 10) return reply;
+        }
+    } catch (e) {
+        console.error('⚠️ [AI CHAT ERROR]:', e.message);
+    }
+    return null;
+}
 async function handleUserConversation(channel, user, category, combinedText, session) {
     const guild = channel.guild;
-    const lower = combinedText.toLowerCase();
 
-    // 1. En Apelación de Baneo: Responder de forma humana y cercana
+    // Intentar responder como un chat inteligente usando el motor de IA
+    const aiReply = await generateAIResponse(category, session.userMessages || [], combinedText, user.tag);
+    if (aiReply) {
+        const { embed, files } = buildBaseEmbed(
+            guild,
+            `💬 ASISTENCIA VIRTUAL | VALLECAS RP`,
+            `¡Buenas <@${user.id}>!\n\n${aiReply}`,
+            category === 'donaciones' ? 0x9b59b6 : (category === 'apelacion' ? 0xe67e22 : 0x3498db)
+        );
+        await channel.send({ embeds: [embed], files }).catch(() => { });
+        return;
+    }
+
+    // 1. Apelación de Baneo: Diálogo cordial
     if (category === 'apelacion') {
-        const idFound = session.extractedData.idFiveM || extractFiveMId(combinedText);
-
-        if (!idFound) {
-            const { embed, files } = buildBaseEmbed(
-                guild,
-                '⚖️ ASISTENCIA DE APELACIONES | VALLECAS RP',
-                `¡Buenas <@${user.id}>! Entendemos tu situación y que en momentos de calentón se cometan errores tirando de F8.\n\n` +
-                `Para que el equipo de Administración pueda estudiar tu caso y valorar una segunda oportunidad o servicios comunitarios, necesitamos localizar tu personaje:\n\n` +
-                `🆔 **| ¿Nos puedes facilitar tu ID dentro de la ciudad o tu Steam Hex?**\n` +
-                `> *(Escribe simplemente tu ID o número aquí abajo y gestionamos tu ficha)* ❗`,
-                0xe67e22
-            );
-            await channel.send({ embeds: [embed], files }).catch(() => { });
-            return;
-        } else {
-            const { embed, files } = buildBaseEmbed(
-                guild,
-                '⚖️ ASISTENCIA DE APELACIONES | VALLECAS RP',
-                `Perfecto <@${user.id}>, hemos anotado tu ID \`${idFound}\` y tus alegaciones.\n\n` +
-                `Acabo de recopilar tu informe para que un Administrador tome la decisión sobre tu baneo.`,
-                0x2ecc71
-            );
-            await channel.send({ embeds: [embed], files }).catch(() => { });
-        }
+        const { embed, files } = buildBaseEmbed(
+            guild,
+            '⚖️ ATENCIÓN DE APELACIONES | VALLECAS RP',
+            `¡Buenas tardes <@${user.id}>! Espero que estés bien.\n\n` +
+            `Hemos leído atentamente lo que nos has explicado sobre tu sanción y comprendemos perfectamente lo ocurrido.\n\n` +
+            `Para poder tramitar tu revisión de la forma más justa y rápida posible con la Administración:\n` +
+            `💬 **¿Tienes algún clip o prueba que respalde tu versión, o quieres añadir algún detalle más sobre lo sucedido?**\n\n` +
+            `*(Escríbelo con tranquilidad aquí abajo y en cuanto nos confirmes, te generaremos la ficha formal para el Staff).*`,
+            0xe67e22
+        );
+        await channel.send({ embeds: [embed], files }).catch(() => { });
+        return;
     }
 
-    // 2. En Donaciones: Diálogo humano y asesoramiento
+    // 2. Donaciones: Saludo cordial y asesoramiento
     if (category === 'donaciones') {
-        const item = session.extractedData.donationItem;
-
-        if (!item) {
-            const { embed, files } = buildBaseEmbed(
-                guild,
-                '💎 ASISTENCIA DE DONACIONES | VALLECAS RP',
-                `¡Hola <@${user.id}>! Qué bien tenerte por aquí 🙌\n\n` +
-                `Cuéntanos qué tienes en mente para tu personaje (un coche exclusivo, una casa o MLO mapeado, dinero IC, un pack VIP, etc.).\n\n` +
-                `Puedes pulsar abajo para indicarlo rápidamente o escribirnos el modelo exacto que te gustaría adquirir:`,
-                0x9b59b6
-            );
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('btn_cat_coche').setLabel('🚗 Coche VIP').setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder().setCustomId('btn_cat_pack').setLabel('📦 Pack VIP').setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder().setCustomId('btn_cat_casa').setLabel('🏠 Casa / MLO').setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder().setCustomId('btn_cat_dinero').setLabel('💰 Dinero IC').setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder().setCustomId('btn_cat_otro').setLabel('❓ Otra cosa / Consulta').setStyle(ButtonStyle.Secondary)
-            );
-            await channel.send({ embeds: [embed], files, components: [row] }).catch(() => { });
-            return;
-        } else {
-            const { embed, files } = buildBaseEmbed(
-                guild,
-                '💎 ASISTENCIA DE DONACIONES | VALLECAS RP',
-                `¡De lujo <@${user.id}>! Hemos tomado nota de que te interesa **${item}**.\n\n` +
-                `Por favor indícanos si prefieres abonarlo por **Bizum** o **PayPal** y tu **ID de FiveM** para preparar la entrega.`,
-                0x9b59b6
-            );
-            await channel.send({ embeds: [embed], files }).catch(() => { });
-        }
+        const { embed, files } = buildBaseEmbed(
+            guild,
+            '💎 ATENCIÓN DE DONACIONES | VALLECAS RP',
+            `¡Hola <@${user.id}>! Muchas gracias por ponerte en contacto con nosotros.\n\n` +
+            `¿Cómo podemos ayudarte hoy? Si tienes en mente algún vehículo exclusivo, vivienda / MLO, dinero dentro de la ciudad o un pack VIP, indícanoslo y te informamos al momento de precios y disponibilidad.\n\n` +
+            `También puedes indicarnos si tienes preferencia por abonarlo mediante **Bizum** o **PayPal**.`,
+            0x9b59b6
+        );
+        await channel.send({ embeds: [embed], files }).catch(() => { });
+        return;
     }
 
-    // 3. En Streamers / Creadores: Pedir links con tono cercano
+    // 3. Streamers / Creadores de contenido
     if (category === 'streamer') {
-        const links = session.extractedData.streamLinks;
-        if (links.length === 0) {
-            const { embed, files } = buildBaseEmbed(
-                guild,
-                '🎬 CREADORES DE CONTENIDO | VALLECAS RP',
-                `¡Hey <@${user.id}>! Qué alegría ver que transmites rol en el servidor 💜\n\n` +
-                `Péganos aquí abajo el enlace o enlaces de tus canales (**Twitch, Kick o TikTok**) y nuestro sistema analizará tus estadísticas al momento para el equipo de Staff.`,
-                0x9146ff
-            );
-            await channel.send({ embeds: [embed], files }).catch(() => { });
-            return;
-        }
+        const { embed, files } = buildBaseEmbed(
+            guild,
+            '🎬 CREADORES DE CONTENIDO | VALLECAS RP',
+            `¡Hola <@${user.id}>! Qué tal, un placer saludarte.\n\n` +
+            `Nos alegra mucho que transmitas dentro de nuestra comunidad. Cuando puedas, compártenos tus enlaces de canal (**Twitch, Kick o TikTok**) para que podamos revisar tus directos y estadísticas.`,
+            0x9146ff
+        );
+        await channel.send({ embeds: [embed], files }).catch(() => { });
+        return;
     }
 
-    // 4. En Soporte: Trato cercano y escucha activa
+    // 4. Soporte Técnico
     if (category === 'soporte') {
         const { embed, files } = buildBaseEmbed(
             guild,
             '🛠️ ATENCIÓN AL CIUDADANO | VALLECAS RP',
-            `¡Buenas <@${user.id}>! Hemos leído lo que te ocurre y ya lo tenemos registrado.\n\n` +
-            `Si tienes algún clip o foto sobre el fallo súbelo aquí para que podamos resolverlo mucho más rápido. Enseguida un Staff se pone contigo.`,
+            `¡Buenas tardes <@${user.id}>! Gracias por avisarnos.\n\n` +
+            `Hemos tomado nota detallada de lo que nos comentas. Para que los encargados de soporte puedan ayudarte mejor: ¿te ocurre desde algún reinicio en concreto o dispones de alguna captura del problema?`,
             0x3498db
         );
         await channel.send({ embeds: [embed], files }).catch(() => { });
     }
 }
+
+// Bienvenida cordial en tickets nuevos
 async function sendCategoryWelcome(channel, user, category) {
     const guild = channel.guild;
-    let title = '👋 ¡HOLA! TE DAMOS LA BIENVENIDA A TU TICKET';
+    let title = '👋 ¡HOLA! TE DAMOS LA BIENVENIDA A VALLECAS RP';
     let desc = '';
     const components = [];
 
     if (category === 'donaciones') {
         title = '💎 ASISTENCIA PARA DONACIONES | VALLECAS RP';
         desc =
-            `¡Buenas <@${user.id}>! Para tramitar tu donación de forma rápida con la Administración:\n\n` +
+            `¡Buenas <@${user.id}>! Gracias por tu interés en apoyar a la comunidad de **VALLECAS RP**.\n\n` +
+            `Para poder orientarte y atenderte de la forma más rápida y personalizada posible:\n\n` +
             `📦 **| ¿Qué te gustaría adquirir?**\n` +
-            `> Packs VIP, Coches VIP, Casas / MLOs, Dinero IC, Armas o Desbaneo de pago ❗\n\n` +
-            `🆔 **| Tu ID de FiveM:**\n` +
-            `> Escribe tu ID o número dentro del servidor ❗\n\n` +
-            `💳 **| Métodos disponibles:**\n` +
+            `> Coches VIP, Packs, Casas / MLOs, Dinero IC o Armas ❗\n\n` +
+            `💳 **| Métodos de pago oficiales:**\n` +
             `> **Bizum** y **PayPal** exclusivamente ❗\n\n` +
-            `*(Puedes escribirlo directamente o pulsar en los botones rápidos de abajo).*`;
+            `*(Puedes seleccionar abajo una categoría para empezar o explicarnos directamente lo que necesitas).*`;
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('btn_cat_coche').setLabel('🚗 Coche VIP').setStyle(ButtonStyle.Secondary),
@@ -523,29 +554,21 @@ async function sendCategoryWelcome(channel, user, category) {
         );
         components.push(row);
     } else if (category === 'streamer') {
-        title = '🎬 SOLICITUD DE STREAMER / CREADOR DE CONTENIDO';
+        title = '🎬 SOLICITUD DE CREADOR DE CONTENIDO';
         desc =
-            `¡Hola <@${user.id}>! Si solicitas el rango o colaboración de Creador Oficial:\n\n` +
-            `🔗 **| Enlaces de tus Canales:**\n` +
-            `> Pega aquí el enlace de tu **Twitch**, **Kick** o **TikTok** (puedes enviar varios si tienes más de uno) ❗\n\n` +
-            `🤖 **| Auditoría Automática:**\n` +
-            `> Nuestro sistema analizará tus seguidores, media de espectadores y contenido al instante para que la Administración revise tu solicitud ❗`;
+            `¡Buenas <@${user.id}>! Un placer tenerte por aquí.\n\n` +
+            `Si deseas solicitar rango o colaboración de Streamer Oficial en **VALLECAS RP**, facilítanos tus enlaces oficiales de **Twitch, Kick o TikTok**.\n\n` +
+            `Nuestro sistema auditará tus estadísticas para que la Administración revise tu solicitud.`;
     } else if (category === 'apelacion') {
         title = '🔨 APELACIÓN DE SANCIÓN O BANEO';
         desc =
-            `¡Buenas <@${user.id}>! Para revisar tu sanción por favor indícanos:\n\n` +
-            `📋 **| Motivo de tu Baneo:**\n` +
-            `> Razón o norma por la que se te sancionó ❗\n\n` +
-            `🆔 **| Tu ID de FiveM / Nombre:**\n` +
-            `> Tu ID dentro de la ciudad o ID de Discord ❗\n\n` +
-            `📝 **| Motivo de la apelación:**\n` +
-            `> Explica con sinceridad lo ocurrido y por qué deberíamos retirar tu sanción ❗`;
+            `¡Buenas <@${user.id}>! Te damos la bienvenida a tu ticket de apelación.\n\n` +
+            `Coméntanos con sinceridad lo sucedido y el motivo por el que solicitas la revisión de tu sanción para que el equipo pueda escucharte y valorarlo.`;
     } else {
         title = '🛠️ SOPORTE GENERAL | VALLECAS RP';
         desc =
-            `¡Hola <@${user.id}>! Cuéntanos en qué podemos ayudarte:\n\n` +
-            `📌 **| Detalla tu problema o duda:**\n` +
-            `> Si se trata de un bug o problema con tu personaje, añade tu **ID de FiveM** y capturas o clips si dispones de ellos ❗`;
+            `¡Buenas <@${user.id}>! Estamos a tu disposición para ayudarte.\n\n` +
+            `Explícanos tu duda o incidencia con tranquilidad y te atenderemos enseguida.`;
     }
 
     const { embed, files } = buildBaseEmbed(guild, title, desc, 0x8e44ad);
@@ -560,7 +583,6 @@ async function sendStaffSummary(channel, session) {
     const userTag = user ? `<@${user.id}> (${user.tag})` : `<@${session.userId}>`;
 
     const allText = session.userMessages.map(m => m.content).join('\n');
-    const idFiveM = session.extractedData.idFiveM || extractFiveMId(allText) || 'No especificada';
 
     let summaryTitle = '📋 RESUMEN DETALLADO PARA EL STAFF';
     let summaryDesc = '';
@@ -568,13 +590,12 @@ async function sendStaffSummary(channel, session) {
 
     if (category === 'donaciones') {
         summaryTitle = '💎 RESUMEN DE DONACIÓN | VALLECAS RP';
-        const cleanSummary = summarizeReason('donaciones', allUserText);
+        const cleanSummary = summarizeReason('donaciones', allText);
         const item = session.extractedData.donationItem || cleanSummary;
         const method = session.extractedData.paymentMethod || (allText.toLowerCase().includes('bizum') ? 'Bizum' : (allText.toLowerCase().includes('paypal') ? 'PayPal' : 'Pendiente'));
 
         summaryDesc =
             `👤 **| Usuario Solicitante:** > ${userTag} ❗\n\n` +
-            `🆔 **| ID de FiveM:** > \`${idFiveM}\` ❗\n\n` +
             `📦 **| Artículo / Donación Deseada:** > **${item}** ❗\n\n` +
             `💳 **| Método de Pago Previsto:** > **${method}** ❗\n\n` +
             `💬 **| Análisis de la Petición:**\n` +
@@ -628,11 +649,10 @@ async function sendStaffSummary(channel, session) {
         }
     } else if (category === 'apelacion') {
         summaryTitle = '🔨 INFORME DE APELACIÓN | VALLECAS RP';
-        const cleanSummary = summarizeReason('apelacion', allUserText);
+        const cleanSummary = summarizeReason('apelacion', allText);
 
         summaryDesc =
             `👤 **| Usuario Sancionado:** > ${userTag} ❗\n\n` +
-            `🆔 **| ID de FiveM:** > \`${idFiveM}\` ❗\n\n` +
             `⚖️ **| Motivo y Análisis de la Apelación:**\n` +
             `> **${cleanSummary}** ❗\n\n` +
             `⚡ **Resolución administrativa:**`;
@@ -644,11 +664,10 @@ async function sendStaffSummary(channel, session) {
         buttons.push(row);
     } else {
         summaryTitle = '🛠️ RESUMEN DE INCIDENCIA DE SOPORTE';
-        const cleanSummary = summarizeReason('soporte', allUserText);
+        const cleanSummary = summarizeReason('soporte', allText);
 
         summaryDesc =
             `👤 **| Usuario Afectado:** > ${userTag} ❗\n\n` +
-            `🆔 **| ID de FiveM:** > \`${idFiveM}\` ❗\n\n` +
             `📌 **| Motivo de la Incidencia:**\n` +
             `> **${cleanSummary}** ❗\n\n` +
             `⏳ **| Estado:** Esperando intervención de un miembro del Staff.`;
@@ -747,8 +766,6 @@ async function processExistingTicket(channel, triggerUser = null) {
         // CASO B: El usuario ya ha escrito -> Interacción Conversacional
         const allUserText = userMsgs.map(m => m.content).join('\n');
         const normalized = normalizeSlang(allUserText);
-
-        const idFound = extractFiveMId(allUserText);
         const streamLinks = extractStreamUrls(allUserText);
 
         const session = {
@@ -757,7 +774,7 @@ async function processExistingTicket(channel, triggerUser = null) {
             category,
             userMessages: userMsgs,
             extractedData: {
-                idFiveM: idFound,
+                idFiveM: null,
                 donationItem: null,
                 paymentMethod: normalized.includes('bizum') ? 'Bizum' : (normalized.includes('paypal') ? 'PayPal' : null),
                 streamLinks
@@ -769,11 +786,10 @@ async function processExistingTicket(channel, triggerUser = null) {
         if (normalized.includes('casa') || normalized.includes('mlo')) session.extractedData.donationItem = 'Casa / MLO';
         if (normalized.includes('dinero')) session.extractedData.donationItem = 'Dinero IC';
 
-        // Si faltan datos clave (ej: en apelación falta ID FiveM, o en donación no ha dicho qué quiere)
-        // El asistente primero conversa con la persona antes de tirar la ficha final
-        const needsMoreInfo = (category === 'apelacion' && !idFound) || (category === 'donaciones' && !session.extractedData.donationItem);
+        // Si es la primera interacción del usuario o solo ha mandado 1 mensaje, conversar cordial primero
+        const hasInteracted = chronological.some(m => m.author.id === channel.client.user.id && !m.embeds?.[0]?.title?.includes('RESUMEN') && !m.embeds?.[0]?.title?.includes('INFORME'));
 
-        if (needsMoreInfo) {
+        if (!hasInteracted) {
             await handleUserConversation(channel, effectiveUser, category, allUserText, session);
             return 'CONVERSING';
         }
@@ -1151,12 +1167,12 @@ module.exports = function initAsistenteTickets(client) {
 
                 if (itemType === 'otro') {
                     await interaction.reply({
-                        content: `✅ Has seleccionado **${selectedItem}**.\n💬 Cuéntanos a continuación con el mayor detalle posible qué necesitas adquirir o consultar, e indícanos tu **ID de FiveM**.`,
+                        content: `¡Perfecto <@${interaction.user.id}>! 👍 Has seleccionado **${selectedItem}**.\nCuéntanos con total tranquilidad qué te gustaría adquirir o consultar y te asesoramos enseguida.`,
                         ephemeral: false
                     });
                 } else {
                     await interaction.reply({
-                        content: `✅ Has seleccionado **${selectedItem}**.\n🆔 Por favor, indícanos tu **ID de FiveM** y el modelo o detalles específicos que deseas.`,
+                        content: `¡Estupendo <@${interaction.user.id}>! 🎁 Has seleccionado **${selectedItem}**.\nEscríbenos el modelo o detalles específicos que deseas y si prefieres abonarlo por **Bizum** o **PayPal**.`,
                         ephemeral: false
                     });
                 }
