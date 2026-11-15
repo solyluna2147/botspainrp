@@ -458,18 +458,13 @@ function buildBaseEmbed(guild, title, description, color = 0x9b59b6) {
 
     const embed = new EmbedBuilder()
         .setColor(color)
-        .setAuthor({
-            name: 'ASISTENTE VIRTUAL | VALLECAS RP',
-            iconURL: iconUrl
-        })
-        .setTitle(title)
         .setDescription(description)
         .setThumbnail(iconUrl)
-        .setFooter({
-            text: 'VALLECAS RP • Sistema Inteligente de Tickets',
-            iconURL: iconUrl
-        })
         .setTimestamp();
+
+    if (title) {
+        embed.setTitle(title);
+    }
 
     return { embed, files: logoAttachment ? [logoAttachment] : [] };
 }
@@ -509,20 +504,22 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'openai/gpt-oss-20b',
+                model: 'qwen/qwen3.8-27b',
                 messages: [
                     { role: 'system', content: systemPrompt },
                     ...conversationHistory
                 ],
-                max_tokens: 220,
-                temperature: 0.7
+                max_tokens: 300,
+                temperature: 0.6
             })
         });
 
         if (res.ok) {
             const data = await res.json();
             const reply = data.choices?.[0]?.message?.content?.trim();
-            if (reply && reply.length > 10) return reply;
+            if (reply && reply.length > 5) return reply;
+        } else {
+            console.error('⚠️ [AI CHAT STATUS ERROR]:', res.status, await res.text());
         }
     } catch (e) {
         console.error('⚠️ [AI CHAT ERROR]:', e.message);
@@ -561,8 +558,8 @@ async function handleUserConversation(channel, user, category, combinedText, ses
 
         const { embed, files } = buildBaseEmbed(
             guild,
-            `💬 ASISTENCIA VIRTUAL | VALLECAS RP`,
-            `¡Buenas <@${user.id}>!\n\n${aiReply}${extraNote}`,
+            null,
+            `${aiReply}${extraNote}`,
             category === 'donaciones' ? 0x9b59b6 : (category === 'apelacion' ? 0xe67e22 : 0x3498db)
         );
         await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
@@ -575,17 +572,22 @@ async function handleUserConversation(channel, user, category, combinedText, ses
             ? `\n\n*(Pulsa abajo en cuanto quieras enviar el aviso formal al Staff con tu expediente).*`
             : '';
 
+        const desc = isOnlyGreeting
+            ? `¡Buenas <@${user.id}>! Te damos la bienvenida a tu ticket de apelación.\n\n` +
+              `Aún no nos has indicado el motivo por el cual fuiste sancionado o qué te ocurrió dentro de la ciudad. Por favor, **cuéntanos detalladamente tu situación** para que podamos ayudarte a gestionarlo con la Administración.`
+            : `¡Buenas <@${user.id}>! Hemos recibido tu solicitud para revisar tu sanción.\n\n` +
+              `Para que la Administración pueda estudiar tu caso con total claridad:\n\n` +
+              `⚖️ **| Motivo detectado:**\n` +
+              `> Desconexión de rol (F8 / Combat Logging) o sanción administrativa ❗\n\n` +
+              `📹 **| Pruebas o clips disponibles:**\n` +
+              `> Si tienes clip de Medal, YouTube o captura que respalde tu versión, compártela en este chat ❗\n\n` +
+              `📝 **| Declaración final:**\n` +
+              `> ¿Deseas añadir algún detalle más antes de que el Staff tome la decisión? ❗${extraNote}`;
+
         const { embed, files } = buildBaseEmbed(
             guild,
-            '🔨 ATENCIÓN DE APELACIONES | VALLECAS RP',
-            `¡Buenas <@${user.id}>! Hemos recibido tu solicitud para revisar tu sanción.\n\n` +
-            `Para que la Administración pueda estudiar tu caso con total claridad:\n\n` +
-            `⚖️ **| Motivo detectado:**\n` +
-            `> Desconexión de rol (F8 / Combat Logging) o sanción administrativa ❗\n\n` +
-            `📹 **| Pruebas o clips disponibles:**\n` +
-            `> Si tienes clip de Medal, YouTube o captura que respalde tu versión, compártela en este chat ❗\n\n` +
-            `📝 **| Declaración final:**\n` +
-            `> ¿Deseas añadir algún detalle más antes de que el Staff tome la decisión? ❗${extraNote}`,
+            null,
+            desc,
             0xe67e22
         );
         await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
@@ -594,12 +596,17 @@ async function handleUserConversation(channel, user, category, combinedText, ses
 
     // 2. Donaciones: Saludo cordial y asesoramiento
     if (category === 'donaciones') {
+        const desc = isOnlyGreeting
+            ? `¡Hola <@${user.id}>! Muchas gracias por ponerte en contacto con nosotros.\n\n` +
+              `Indícanos por favor **qué te gustaría consultar o adquirir** (Coches VIP, Casas/MLO, Packs o Dinero IC) y si prefieres abonarlo por **Bizum** o **PayPal** para orientarte enseguida.`
+            : `¡Hola <@${user.id}>! Muchas gracias por ponerte en contacto con nosotros.\n\n` +
+              `¿Cómo podemos ayudarte hoy? Si tienes en mente algún vehículo exclusivo, vivienda / MLO, dinero dentro de la ciudad o un pack VIP, indícanoslo y te informamos al momento de precios y disponibilidad.\n\n` +
+              `También puedes indicarnos si tienes preferencia por abonarlo mediante **Bizum** o **PayPal**.`;
+
         const { embed, files } = buildBaseEmbed(
             guild,
-            '💎 ATENCIÓN DE DONACIONES | VALLECAS RP',
-            `¡Hola <@${user.id}>! Muchas gracias por ponerte en contacto con nosotros.\n\n` +
-            `¿Cómo podemos ayudarte hoy? Si tienes en mente algún vehículo exclusivo, vivienda / MLO, dinero dentro de la ciudad o un pack VIP, indícanoslo y te informamos al momento de precios y disponibilidad.\n\n` +
-            `También puedes indicarnos si tienes preferencia por abonarlo mediante **Bizum** o **PayPal**.`,
+            null,
+            desc,
             0x9b59b6
         );
         await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
@@ -610,7 +617,7 @@ async function handleUserConversation(channel, user, category, combinedText, ses
     if (category === 'streamer') {
         const { embed, files } = buildBaseEmbed(
             guild,
-            '🎬 CREADORES DE CONTENIDO | VALLECAS RP',
+            null,
             `¡Hola <@${user.id}>! Qué tal, un placer saludarte.\n\n` +
             `Nos alegra mucho que transmitas dentro de nuestra comunidad. Cuando puedas, compártenos tus enlaces de canal (**Twitch, Kick o TikTok**) para que podamos revisar tus directos y estadísticas.`,
             0x9146ff
@@ -621,11 +628,16 @@ async function handleUserConversation(channel, user, category, combinedText, ses
 
     // 4. Soporte Técnico
     if (category === 'soporte') {
+        const desc = isOnlyGreeting
+            ? `¡Buenas tardes <@${user.id}>! Un placer saludarte.\n\n` +
+              `Para que el equipo de soporte pueda ayudarte lo antes posible, **cuéntanos con el mayor detalle qué problema o duda estás experimentando** dentro del servidor.`
+            : `¡Buenas tardes <@${user.id}>! Gracias por avisarnos.\n\n` +
+              `Hemos tomado nota de lo que nos comentas. Para que los encargados de soporte puedan ayudarte mejor: ¿te ocurre desde algún reinicio en concreto o dispones de alguna captura del problema?`;
+
         const { embed, files } = buildBaseEmbed(
             guild,
-            '🛠️ ATENCIÓN AL CIUDADANO | VALLECAS RP',
-            `¡Buenas tardes <@${user.id}>! Gracias por avisarnos.\n\n` +
-            `Hemos tomado nota detallada de lo que nos comentas. Para que los encargados de soporte puedan ayudarte mejor: ¿te ocurre desde algún reinicio en concreto o dispones de alguna captura del problema?`,
+            null,
+            desc,
             0x3498db
         );
         await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
