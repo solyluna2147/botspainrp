@@ -230,7 +230,71 @@ function extractStreamUrls(text) {
     return urls;
 }
 
-// Guardar streamer en base de datos
+// ==========================================
+// RESUMIDOR INTELIGENTE DE MOTIVOS (NLP / PATRONES)
+// ==========================================
+function summarizeReason(category, text) {
+    if (!text || !text.trim()) return 'No especificado por el usuario';
+    const lower = text.toLowerCase();
+
+    // 1. Apelación de Baneo
+    if (category === 'apelacion') {
+        const reasons = [];
+        if (lower.includes('f8') || lower.includes('tirando de f8') || lower.includes('desconexion') || lower.includes('evadir')) {
+            reasons.push('Desconexión forzada de rol (tirar de F8 / Combat Logging)');
+        }
+        if (lower.includes('rdm') || lower.includes('matar') || lower.includes('tiroteo') || lower.includes('agresion')) {
+            reasons.push('Muerte sin rol previo (RDM)');
+        }
+        if (lower.includes('vdm') || lower.includes('atropellar') || lower.includes('coche')) {
+            reasons.push('Atropello intencionado (VDM)');
+        }
+        if (lower.includes('insult') || lower.includes('falta de respeto') || lower.includes('toxic') || lower.includes('falto')) {
+            reasons.push('Comportamiento tóxico / Faltas de respeto OOC');
+        }
+        if (lower.includes('failrp') || lower.includes('fail rp') || lower.includes('nula valoracion')) {
+            reasons.push('Incumplimiento de rol (FailRP / Nula Valoración)');
+        }
+        if (lower.includes('perdon') || lower.includes('disculpa') || lower.includes('arrepiento') || lower.includes('caliente')) {
+            reasons.push('El usuario reconoce su error, pide disculpas y solicita una segunda oportunidad o servicios comunitarios');
+        }
+
+        if (reasons.length > 0) {
+            return reasons.join(' • ');
+        }
+        return 'Solicitud de revisión de baneo alegando error y pidiendo segunda oportunidad';
+    }
+
+    // 2. Donaciones
+    if (category === 'donaciones') {
+        const items = [];
+        if (lower.includes('coche') || lower.includes('auto') || lower.includes('vehiculo') || lower.includes('buga')) items.push('Compra de Coche VIP');
+        if (lower.includes('pack') || lower.includes('vip')) items.push('Adquisición de Pack VIP');
+        if (lower.includes('casa') || lower.includes('mlo') || lower.includes('mansion') || lower.includes('keli')) items.push('Mapeo de Casa / MLO');
+        if (lower.includes('dinero') || lower.includes('pasta') || lower.includes('ic')) items.push('Inyección de Dinero IC');
+        if (lower.includes('unban') || lower.includes('desban')) items.push('Desbaneo de pago');
+
+        const method = lower.includes('bizum') ? ' (pago por Bizum)' : (lower.includes('paypal') ? ' (pago por PayPal)' : '');
+
+        if (items.length > 0) {
+            return `Interesado en: ${items.join(', ')}${method}`;
+        }
+        return 'Consulta sobre catálogo de donaciones y métodos de pago';
+    }
+
+    // 3. Soporte
+    if (category === 'soporte') {
+        if (lower.includes('negocio') || lower.includes('redes') || lower.includes('badu')) return 'Solicitud de activación o entrega de Negocio Gratis (Redes Sociales)';
+        if (lower.includes('armario') || lower.includes('casa') || lower.includes('mlo')) return 'Incidencia o bug con el armario de vivienda';
+        if (lower.includes('cerradura') || lower.includes('llave')) return 'Fallo en cerradura de vehículo o propiedad';
+        if (lower.includes('mecanico') || lower.includes('taller')) return 'Problema o consulta relacionada con el rol de Mecánico';
+        if (lower.includes('policia') || lower.includes('chivato')) return 'Aviso de alerta o chivato policial';
+        if (lower.includes('crash') || lower.includes('pantalla') || lower.includes('cierra')) return 'Problemas de rendimiento o crashes al entrar al servidor';
+        return `Incidencia técnica: "${text.slice(0, 100)}..."`;
+    }
+
+    return `Consulta general: "${text.slice(0, 100)}..."`;
+}
 async function registerStreamerInDb(userId, data) {
     try {
         let current = {};
@@ -337,7 +401,65 @@ function buildBaseEmbed(guild, title, description, color = 0x9b59b6) {
     return { embed, files: logoAttachment ? [logoAttachment] : [] };
 }
 
-// Bienvenida en tickets nuevos
+// Diálogo conversacional inteligente según la categoría antes del resumen definitivo
+async function handleUserConversation(channel, user, category, combinedText, session) {
+    const guild = channel.guild;
+    const lower = combinedText.toLowerCase();
+
+    // 1. En Apelación de Baneo: pedir ID de FiveM si no la ha dicho
+    if (category === 'apelacion') {
+        if (!session.extractedData.idFiveM) {
+            const { embed, files } = buildBaseEmbed(
+                guild,
+                '⚖️ ASISTENCIA DE APELACIÓN | VALLECAS RP',
+                `¡Hola <@${user.id}>! Hemos anotado lo que nos has explicado sobre tu sanción:\n\n` +
+                `> *"Te calentaste tirando de F8 y solicitas que se revise tu baneo."*\n\n` +
+                `🆔 **| Por favor, facilítanos tu ID de FiveM o Steam Hex:**\n` +
+                `> Indícanos tu ID dentro del servidor o nombre exacto con el que jugabas para que la Administración pueda localizar tu ficha de sanción ❗`,
+                0xe67e22
+            );
+            await channel.send({ embeds: [embed], files }).catch(() => { });
+            return;
+        }
+    }
+
+    // 2. En Donaciones: preguntar qué busca o qué método prefiere
+    if (category === 'donaciones') {
+        if (!session.extractedData.donationItem) {
+            const { embed, files } = buildBaseEmbed(
+                guild,
+                '💎 ASISTENCIA DE DONACIONES | VALLECAS RP',
+                `¡Hola <@${user.id}>! Gracias por contactar con Donaciones.\n\n` +
+                `📦 **| ¿Qué te gustaría adquirir exactamente?**\n` +
+                `> Tenemos disponibles **Coches VIP**, **Packs**, **Casas MLO**, **Dinero IC** y **Armas**.\n\n` +
+                `*Selecciona abajo una opción rápida o escribe directamente el modelo o artículo que deseas:*`,
+                0x9b59b6
+            );
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('btn_cat_coche').setLabel('🚗 Coche VIP').setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder().setCustomId('btn_cat_pack').setLabel('📦 Pack VIP').setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder().setCustomId('btn_cat_casa').setLabel('🏠 Casa / MLO').setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder().setCustomId('btn_cat_dinero').setLabel('💰 Dinero IC').setStyle(ButtonStyle.Secondary)
+            );
+            await channel.send({ embeds: [embed], files, components: [row] }).catch(() => { });
+            return;
+        }
+    }
+
+    // 3. En Soporte: Confirmar recepción y avisar que el staff lo atenderá
+    if (category === 'soporte') {
+        const { embed, files } = buildBaseEmbed(
+            guild,
+            '🛠️ ASISTENCIA TÉCNICA | VALLECAS RP',
+            `Entendido <@${user.id}>. Hemos registrado tu incidencia en el sistema:\n\n` +
+            `📌 **| Detalle registrado:**\n` +
+            `> "${combinedText.slice(0, 150)}..."\n\n` +
+            `Un miembro del Equipo de Soporte tomará tu caso de inmediato.`,
+            0x3498db
+        );
+        await channel.send({ embeds: [embed], files }).catch(() => { });
+    }
+}
 async function sendCategoryWelcome(channel, user, category) {
     const guild = channel.guild;
     let title = '👋 ¡HOLA! TE DAMOS LA BIENVENIDA A TU TICKET';
@@ -409,7 +531,8 @@ async function sendStaffSummary(channel, session) {
 
     if (category === 'donaciones') {
         summaryTitle = '💎 RESUMEN DE DONACIÓN | VALLECAS RP';
-        const item = session.extractedData.donationItem || 'Consulta general de compras/packs';
+        const cleanSummary = summarizeReason('donaciones', allUserText);
+        const item = session.extractedData.donationItem || cleanSummary;
         const method = session.extractedData.paymentMethod || (allText.toLowerCase().includes('bizum') ? 'Bizum' : (allText.toLowerCase().includes('paypal') ? 'PayPal' : 'Pendiente'));
 
         summaryDesc =
@@ -417,8 +540,8 @@ async function sendStaffSummary(channel, session) {
             `🆔 **| ID de FiveM:** > \`${idFiveM}\` ❗\n\n` +
             `📦 **| Artículo / Donación Deseada:** > **${item}** ❗\n\n` +
             `💳 **| Método de Pago Previsto:** > **${method}** ❗\n\n` +
-            `💬 **| Mensaje del Usuario:**\n` +
-            `> "${allText.slice(0, 300) || 'Sin detalles adicionales'}" ❗\n\n` +
+            `💬 **| Análisis de la Petición:**\n` +
+            `> **${cleanSummary}** ❗\n\n` +
             `⚡ **Acciones rápidas para el Staff:**`;
 
         const row = new ActionRowBuilder().addComponents(
@@ -468,11 +591,13 @@ async function sendStaffSummary(channel, session) {
         }
     } else if (category === 'apelacion') {
         summaryTitle = '🔨 INFORME DE APELACIÓN | VALLECAS RP';
+        const cleanSummary = summarizeReason('apelacion', allUserText);
+
         summaryDesc =
             `👤 **| Usuario Sancionado:** > ${userTag} ❗\n\n` +
             `🆔 **| ID de FiveM:** > \`${idFiveM}\` ❗\n\n` +
-            `⚖️ **| Declaración / Motivo del Usuario:**\n` +
-            `> "${allText.slice(0, 450) || 'Sin declaración'}" ❗\n\n` +
+            `⚖️ **| Motivo y Análisis de la Apelación:**\n` +
+            `> **${cleanSummary}** ❗\n\n` +
             `⚡ **Resolución administrativa:**`;
 
         const row = new ActionRowBuilder().addComponents(
@@ -482,11 +607,13 @@ async function sendStaffSummary(channel, session) {
         buttons.push(row);
     } else {
         summaryTitle = '🛠️ RESUMEN DE INCIDENCIA DE SOPORTE';
+        const cleanSummary = summarizeReason('soporte', allUserText);
+
         summaryDesc =
             `👤 **| Usuario Afectado:** > ${userTag} ❗\n\n` +
             `🆔 **| ID de FiveM:** > \`${idFiveM}\` ❗\n\n` +
-            `📌 **| Detalle del Problema:**\n` +
-            `> "${allText.slice(0, 450) || 'Pendiente de más detalles'}" ❗\n\n` +
+            `📌 **| Motivo de la Incidencia:**\n` +
+            `> **${cleanSummary}** ❗\n\n` +
             `⏳ **| Estado:** Esperando intervención de un miembro del Staff.`;
 
         const row = new ActionRowBuilder().addComponents(
@@ -503,20 +630,19 @@ async function sendStaffSummary(channel, session) {
 // Procesar ticket retroactivo comprobando que NINGÚN staff haya intervenido
 async function processExistingTicket(channel, triggerUser = null) {
     try {
-        if (!isValidTicketCategory(channel)) return false;
+        if (!isValidTicketCategory(channel)) return 'NO_VALID_CAT';
 
         const category = detectTicketCategory(channel);
         const fetchedMessages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
-        if (!fetchedMessages || fetchedMessages.size === 0) return false;
+        if (!fetchedMessages || fetchedMessages.size === 0) return 'NO_MESSAGES';
 
         const chronological = Array.from(fetchedMessages.values()).reverse();
         let ticketOwner = null;
 
         // 1. Detectar al dueño del ticket
-        // Prioridad A: Buscar en el primer mensaje de King (mención en texto o dentro del embed de bienvenida)
         for (const msg of chronological) {
             if (msg.author.bot) {
-                // Mención directa en texto del mensaje (ej: @Isalove @Encargado Donaciones)
+                // Mención en texto del bot (ej: @Isalove)
                 if (msg.mentions.users.size > 0) {
                     const nonBotMention = msg.mentions.users.find(u => !u.bot);
                     if (nonBotMention) {
@@ -524,7 +650,7 @@ async function processExistingTicket(channel, triggerUser = null) {
                         break;
                     }
                 }
-                // Mención dentro de la descripción del Embed de King (ej: <@ID> ¡Bienvenido al apartado...)
+                // Mención en Embeds de King
                 if (msg.embeds && msg.embeds.length > 0) {
                     for (const embed of msg.embeds) {
                         const embedText = `${embed.title || ''} ${embed.description || ''}`;
@@ -539,7 +665,7 @@ async function processExistingTicket(channel, triggerUser = null) {
             }
         }
 
-        // Prioridad B: Buscar en los permisos de sobreescritura del canal (permissionOverwrites)
+        // Si no se encuentra por mención, buscar en permissionOverwrites
         if (!ticketOwner) {
             const userPerm = channel.permissionOverwrites.cache.find(po => po.type === 1 && po.id !== channel.client.user.id);
             if (userPerm) {
@@ -547,7 +673,7 @@ async function processExistingTicket(channel, triggerUser = null) {
             }
         }
 
-        // Prioridad C: Primer usuario no-bot que escribió
+        // Si sigue sin aparecer, el primer autor no-bot
         if (!ticketOwner) {
             for (const msg of chronological) {
                 if (!msg.author.bot) {
@@ -557,22 +683,21 @@ async function processExistingTicket(channel, triggerUser = null) {
             }
         }
 
-        // Si no se pudo detectar el usuario específico, usar un usuario genérico para no frenar el ticket
-        const effectiveUser = ticketOwner || { id: 'usuario_ticket', tag: 'Usuario' };
+        // Usuario efectivo (siempre presente para no fallar)
+        const effectiveUser = ticketOwner || { id: channel.id, tag: 'Usuario' };
 
-        // 2. Comprobar si un Staff DISTINTO al usuario ya habló atendiendo el ticket
-        const staffInvolved = await hasStaffParticipated(channel, effectiveUser.id, triggerUser?.id);
+        // 2. Comprobar si un Staff DISTINTO al usuario ya habló
+        const staffInvolved = await hasStaffParticipated(channel, ticketOwner ? ticketOwner.id : null, triggerUser?.id);
         if (staffInvolved) {
             return 'STAFF_EXISTS';
         }
 
-        // 3. Recopilar mensajes enviados por el usuario
+        // 3. Recopilar mensajes del usuario
         const userMsgs = ticketOwner
             ? chronological.filter(m => m.author.id === ticketOwner.id).map(m => ({ content: m.content, timestamp: m.createdAt }))
             : chronological.filter(m => !m.author.bot).map(m => ({ content: m.content, timestamp: m.createdAt }));
 
-        // CASO A: El usuario aún NO ha escrito nada en el ticket
-        // El asistente virtual habla en el canal, saluda con su logo y pregunta qué necesita
+        // CASO A: El usuario aún no ha escrito nada
         if (userMsgs.length === 0) {
             const botSentWelcome = chronological.some(m => m.author.id === channel.client.user.id);
             if (!botSentWelcome) {
@@ -582,7 +707,7 @@ async function processExistingTicket(channel, triggerUser = null) {
             return 'WAITING_USER';
         }
 
-        // CASO B: El usuario ya ha escrito -> Generar el resumen para el Staff
+        // CASO B: El usuario ya ha escrito -> Interacción Conversacional
         const allUserText = userMsgs.map(m => m.content).join('\n');
         const normalized = normalizeSlang(allUserText);
 
@@ -607,6 +732,15 @@ async function processExistingTicket(channel, triggerUser = null) {
         if (normalized.includes('casa') || normalized.includes('mlo')) session.extractedData.donationItem = 'Casa / MLO';
         if (normalized.includes('dinero')) session.extractedData.donationItem = 'Dinero IC';
 
+        // Si faltan datos clave (ej: en apelación falta ID FiveM, o en donación no ha dicho qué quiere)
+        // El asistente primero conversa con la persona antes de tirar la ficha final
+        const needsMoreInfo = (category === 'apelacion' && !idFound) || (category === 'donaciones' && !session.extractedData.donationItem);
+
+        if (needsMoreInfo) {
+            await handleUserConversation(channel, effectiveUser, category, allUserText, session);
+            return 'CONVERSING';
+        }
+
         await TicketSession.findOneAndUpdate(
             { channelId: channel.id },
             {
@@ -623,8 +757,8 @@ async function processExistingTicket(channel, triggerUser = null) {
         await sendStaffSummary(channel, session);
         return true;
     } catch (e) {
-        console.error('⚠️ [ASISTENTE TICKETS processExistingTicket Error]:', e.message);
-        return false;
+        console.error('⚠️ [ASISTENTE TICKETS processExistingTicket Error]:', e);
+        return `ERROR_${e.message}`;
     }
 }
 
@@ -717,16 +851,21 @@ module.exports = function initAsistenteTickets(client) {
                 const parentId = ch.parentId;
                 const isStrictCategory = parentId && ALLOWED_CATEGORY_IDS.includes(parentId);
 
+                const botMember = await message.guild.members.fetchMe().catch(() => null);
+                const permissionsInChannel = botMember ? ch.permissionsFor(botMember) : null;
+                const canView = permissionsInChannel ? permissionsInChannel.has(PermissionFlagsBits.ViewChannel) : false;
+                const canSend = permissionsInChannel ? permissionsInChannel.has(PermissionFlagsBits.SendMessages) : false;
+                const canEmbed = permissionsInChannel ? permissionsInChannel.has(PermissionFlagsBits.EmbedLinks) : false;
+
                 return message.reply(
-                    `🔍 **DIAGNÓSTICO DEL CANAL:**\n` +
+                    `🔍 **DIAGNÓSTICO DEL CANAL Y PERMISOS:**\n` +
                     `> • **Canal:** <#${ch.id}> (\`${ch.name}\`)\n` +
                     `> • **ID Categoría Padre:** \`${parentId || 'Ninguna'}\` (${parent ? parent.name : 'Sin padre'})\n` +
                     `> • **¿Es una de las 4 IDs oficiales?:** ${isStrictCategory ? '✅ SÍ' : '❌ NO'}\n` +
-                    `> • **IDs esperadas:**\n` +
-                    `>   - Soporte: \`${CATEGORIA_SOPORTE_ID}\`\n` +
-                    `>   - Apelación: \`${CATEGORIA_APELACION_ID}\`\n` +
-                    `>   - Streamer: \`${CATEGORIA_STREAMER_ID}\`\n` +
-                    `>   - Donaciones: \`${CATEGORIA_DONACIONES_ID}\``
+                    `> • **Permisos del Bot en este Ticket:**\n` +
+                    `>   - Ver Canal: ${canView ? '🟢 SÍ' : '🔴 NO'}\n` +
+                    `>   - Enviar Mensajes: ${canSend ? '🟢 SÍ' : '🔴 NO'}\n` +
+                    `>   - Adjuntar Enlaces/Embeds: ${canEmbed ? '🟢 SÍ' : '🔴 NO'}`
                 );
             }
             if (['!asistente', '!asistente ayuda', '!asistente help'].includes(contentLower)) {
@@ -833,7 +972,7 @@ module.exports = function initAsistenteTickets(client) {
                             logDetails.push(`👋 <#${ch.id}>: Bienvenida enviada`);
                         } else {
                             skippedCount++;
-                            logDetails.push(`⏭️ <#${ch.id}>: Motivo ${res || 'Invalido'}`);
+                            logDetails.push(`⏭️ <#${ch.id}>: ${res || 'Invalido'}`);
                         }
                     }
 
@@ -929,6 +1068,14 @@ module.exports = function initAsistenteTickets(client) {
                     return;
                 }
 
+                // Si faltan datos clave, hablar con el usuario en lugar de soltar el resumen directamente
+                const needsMoreInfo = (category === 'apelacion' && !idFound) || (category === 'donaciones' && !session.extractedData.donationItem);
+
+                if (needsMoreInfo) {
+                    await handleUserConversation(message.channel, message.author, category, combinedText, session);
+                    return;
+                }
+
                 // Generar resumen inicial únicamente si no ha sido atendido
                 if (session.userMessages.length === 1 || session.status === 'open') {
                     session.status = 'summarized';
@@ -948,6 +1095,7 @@ module.exports = function initAsistenteTickets(client) {
             if (!interaction.isButton()) return;
             const customId = interaction.customId;
 
+            // 1. Botones de selección de donación (pueden ser pulsados por el usuario para elegir qué donar)
             if (customId.startsWith('btn_cat_')) {
                 const itemType = customId.replace('btn_cat_', '');
                 const labelMap = { coche: 'Coche VIP', pack: 'Pack VIP', casa: 'Casa / MLO', dinero: 'Dinero IC' };
@@ -965,6 +1113,19 @@ module.exports = function initAsistenteTickets(client) {
                 return;
             }
 
+            // ==========================================
+            // SEGURIDAD: BOTONES DE ACCIÓN EXCLUSIVOS PARA STAFF
+            // ==========================================
+            const isStaff = interaction.member?.roles.cache.has(ROLE_STAFF_ID) || interaction.member?.permissions.has(PermissionFlagsBits.Administrator);
+
+            if (!isStaff) {
+                return interaction.reply({
+                    content: '⛔ **Acceso denegado:** Solo los miembros del Equipo de Staff y Administración pueden pulsar este botón.',
+                    ephemeral: true
+                });
+            }
+
+            // Aprobar Streamer
             if (customId.startsWith('btn_stream_approve_')) {
                 const parts = customId.split('_');
                 const targetUserId = parts[3];
@@ -989,21 +1150,23 @@ module.exports = function initAsistenteTickets(client) {
                 });
 
                 await interaction.reply({
-                    content: `🎉 **¡RANGO APROBADO!** Se ha asignado el rol de <@&${ROLE_STREAMER_ID}> a <@${targetUserId}> y su canal ha quedado registrado en el sistema de notificaciones de directos.`,
+                    content: `🎉 **¡RANGO APROBADO!** Se ha asignado el rol de <@&${ROLE_STREAMER_ID}> a <@${targetUserId}> por <@${interaction.user.id}>.`,
                     ephemeral: false
                 });
                 return;
             }
 
+            // Denegar Streamer
             if (customId.startsWith('btn_stream_deny_')) {
                 const targetUserId = customId.replace('btn_stream_deny_', '');
                 await interaction.reply({
-                    content: `❌ La solicitud de Creador de Contenido para <@${targetUserId}> ha sido **denegada** por la Administración.`,
+                    content: `❌ La solicitud de Creador de Contenido para <@${targetUserId}> ha sido **denegada** por <@${interaction.user.id}>.`,
                     ephemeral: false
                 });
                 return;
             }
 
+            // Datos de Pago
             if (customId.startsWith('btn_dona_bizum_')) {
                 await interaction.reply({
                     content: `📲 **DATOS OFICIALES PARA BIZUM:**\n> Solicita el número de Bizum activo al Encargado de Donaciones en este mismo ticket e incluye tu **ID de FiveM** en el concepto.`,
@@ -1022,16 +1185,17 @@ module.exports = function initAsistenteTickets(client) {
 
             if (customId.startsWith('btn_dona_done_')) {
                 await interaction.reply({
-                    content: `✅ **¡Donación completada y entregada con éxito!** Gracias por apoyar a **VALLECAS RP**.`,
+                    content: `✅ **¡Donación completada y entregada con éxito!** Gracias por apoyar a **VALLECAS RP**. (Gestionado por <@${interaction.user.id}>).`,
                     ephemeral: false
                 });
                 return;
             }
 
+            // Apelaciones
             if (customId.startsWith('btn_ban_unban_')) {
                 const targetUserId = customId.replace('btn_ban_unban_', '');
                 await interaction.reply({
-                    content: `🔓 **Apelación Aceptada:** Se ha acordado la retirada de la sanción a <@${targetUserId}> por decisión del Staff.`,
+                    content: `🔓 **Apelación Aceptada:** Se ha acordado la retirada de la sanción a <@${targetUserId}> por decisión de <@${interaction.user.id}>.`,
                     ephemeral: false
                 });
                 return;
@@ -1040,7 +1204,7 @@ module.exports = function initAsistenteTickets(client) {
             if (customId.startsWith('btn_ban_reject_')) {
                 const targetUserId = customId.replace('btn_ban_reject_', '');
                 await interaction.reply({
-                    content: `❌ **Apelación Rechazada:** La sanción a <@${targetUserId}> se mantiene firme.`,
+                    content: `❌ **Apelación Rechazada:** La sanción a <@${targetUserId}> se mantiene firme por decisión de <@${interaction.user.id}>.`,
                     ephemeral: false
                 });
                 return;
