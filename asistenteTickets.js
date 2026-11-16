@@ -611,11 +611,12 @@ function hasUserProvidedEvidence(messages = []) {
 }
 
 // Generador de respuestas dinámicas e inteligentes con Groq AI (Llama/GPT)
-async function generateAIResponse(category, userMessages, currentMessage, userTag) {
+async function generateAIResponse(category, session, currentMessage, userTag) {
     const groqKey = process.env.GROQ_API_KEY;
     if (!groqKey) return null;
 
     try {
+        const userMessages = session.userMessages || [];
         const userProvidedEvidence = hasUserProvidedEvidence([...userMessages, { content: currentMessage }]);
 
         const categoryPrompts = {
@@ -631,18 +632,15 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
         const systemPrompt = (categoryPrompts[category] || categoryPrompts.soporte) +
             '\n\nREGLAS DE ORO OBLIGATORIAS:\n' +
             '1. TONO 100% HUMANO Y CORDIAL: Habla como un Staff real español en Discord. PROHIBIDO terminantemente sonar a robot de atención al cliente (PROHIBIDO decir frases como "Lamento tu frustración", "Siento mucho los inconvenientes", "Comprendo tu dolor", "Entiendo que esto pueda molestarte", etc.). Sé natural, educado y al grano.\n' +
-            '2. INTUICIÓN DE PREGUNTAS (LOS USUARIOS RARA VEZ USAN "?"): En Discord los usuarios casi nunca ponen signos de interrogación y a veces escriben en tono afirmativo o informal (ej: "si otra duda, hacer pg en un arbusto es pg", "matar en garaje es rdm", "se puede robar coches de poli", "tirar de f8 es sancionable"). DEBES INTUIR Y ENTENDER SIEMPRE QUE ESTÁ HACIENDO UNA PREGUNTA sobre la normativa de FiveM. Los usuarios NO deciden las normativas ni pueden afirmar cómo son las reglas; tú eres el Staff conocedor de las normas de Vallecas RP. Explícale con claridad y firmeza si eso es infracción o no según la normativa oficial.\n' +
-            '3. RESOLUCIÓN DIRECTA: Si el usuario plantea una duda o situación sobre normativa, comandos, negocios, garajes o bugs (ej: caché, F8 quit, F8 reconnect, badulaques gratis), respóndele directamente con la explicación exacta y termínale preguntando: "¿Te queda alguna otra duda o está todo claro?".\n' +
-            '4. PRECISIÓN TOTAL: No inventes nada. Usa la normativa oficial del servidor y la base de conocimientos.\n' +
+            '2. INTUICIÓN DE PREGUNTAS (LOS USUARIOS RARA VEZ USAN "?"): En Discord los usuarios casi nunca ponen signos de interrogación y a veces escriben en tono afirmativo o informal (ej: "si otra duda, hacer pg en un arbusto es pg", "matar en garaje es rdm", "se puede robar coches de poli", "tirar de f8 es sancionable", "entonces me como la sancion"). DEBES INTUIR Y ENTENDER SIEMPRE QUE ESTÁ HACIENDO UNA PREGUNTA sobre la normativa de FiveM. Los usuarios NO deciden las normativas ni pueden afirmar cómo son las reglas; tú eres el Staff conocedor de las normas de Vallecas RP. Explícale con claridad y firmeza si eso es infracción o no según la normativa oficial.\n' +
+            '3. PRECISIÓN TOTAL Y SENTIDO COMÚN: NUNCA inventes que las sanciones se anulan solas ni prometas cosas irreales. Si alguien comete una infracción (ej: tirar de F8 en rol), la sanción se mantiene y debe cumplirla a menos que un Staff lo revise con pruebas o clips que justifiquen una caída real. Usa la normativa oficial del servidor y la base de conocimientos.\n' +
+            '4. RESOLUCIÓN DIRECTA: Si el usuario plantea una duda o situación sobre normativa, comandos, negocios, garajes o bugs (ej: caché, F8 quit, F8 reconnect, badulaques gratis), respóndele directamente con la explicación exacta y termínale preguntando: "¿Te queda alguna otra duda o está todo claro?".\n' +
             '5. NUNCA pidas la ID de FiveM.\n' +
             '6. LONGITUD: Máximo 2 o 3 frases directas y útiles. Cero textos gigantes.\n' +
             '7. Si el usuario te indica que ya no tiene más dudas o que todo está claro, deséale buen rol de forma agradable.';
 
-        const conversationHistory = userMessages.slice(-5).map(m => ({
-            role: 'user',
-            content: m.content
-        }));
-
+        if (!session.dialogueHistory) session.dialogueHistory = [];
+        const conversationHistory = session.dialogueHistory.slice(-8);
         conversationHistory.push({ role: 'user', content: currentMessage });
 
         // Recuperar conocimientos oficiales y fragmentos relevantes de la normativa
@@ -690,7 +688,14 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
         if (res.ok) {
             const data = await res.json();
             const reply = data.choices?.[0]?.message?.content?.trim();
-            if (reply && reply.length > 5) return reply;
+            if (reply && reply.length > 5) {
+                // Registrar tanto lo que dijo el usuario como la respuesta del bot para mantener el hilo de la conversación
+                if (!session.dialogueHistory) session.dialogueHistory = [];
+                session.dialogueHistory.push({ role: 'user', content: currentMessage });
+                session.dialogueHistory.push({ role: 'assistant', content: reply });
+                if (session.dialogueHistory.length > 10) session.dialogueHistory = session.dialogueHistory.slice(-10);
+                return reply;
+            }
         } else {
             console.error('⚠️ [AI CHAT STATUS ERROR]:', res.status, await res.text());
         }
@@ -789,7 +794,7 @@ async function handleUserConversation(channel, user, category, combinedText, ses
 
     // 3. Conversación fluida con IA (Responder dudas, explicar normativa, mecánicas...)
     // Durante la conversación NORMAL, NO se muestran botones para que el diálogo sea natural y fluido
-    const aiReply = await generateAIResponse(category, session.userMessages || [], combinedText, user.tag);
+    const aiReply = await generateAIResponse(category, session, combinedText, user.tag);
     if (aiReply) {
         const { embed, files } = buildBaseEmbed(
             guild,
