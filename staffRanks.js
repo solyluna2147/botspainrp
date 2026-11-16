@@ -66,14 +66,10 @@ async function flushAscensosBatch(client) {
             return;
         }
 
-        // Menciones ping arriba para que a los staffs les llegue la notificación
-        const pingMentions = batch.map(item => `<@${item.member.id}>`).join(' ');
-
-        // Formato exacto dentro del Embed:
+        // Formato exacto dentro del Embed a ancho completo:
         // @STAFF Asciendes de @ROL_ANTERIOR a @ROL_NUEVO
         const embedDescLines = batch.map(item => {
             const oldRankId = item.oldRank ? item.oldRank.id : null;
-            // Si tenía un rol anterior de staff, usamos ese rol. Si no, nivel 1 base.
             const displayOldRoleId = (oldRankId && oldRankId !== 'USER') ? oldRankId : '1538216635326931107';
             return `<@${item.member.id}> *Asciendes de* <@&${displayOldRoleId}> *a* <@&${item.newRank.id}>`;
         }).join('\n');
@@ -87,17 +83,16 @@ async function flushAscensosBatch(client) {
             iconUrl = 'attachment://logo.png';
         }
 
+        // Embed a ancho completo (sin setThumbnail para que no estreche el contenedor)
         const embed = new EmbedBuilder()
             .setColor(0xE67E22) // Tono dorado / naranja premium oficial de Vallecas RP
             .setAuthor({
                 name: 'SISTEMA DE ADMINISTRACIÓN | VALLECAS RP',
                 iconURL: iconUrl
             })
-            .setThumbnail(iconUrl)
             .setDescription(embedDescLines);
 
         await canalAscensos.send({
-            content: pingMentions,
             embeds: [embed],
             files: files
         });
@@ -124,9 +119,7 @@ async function flushDescensosBatch(client) {
             return;
         }
 
-        const pingMentions = batch.map(item => `<@${item.member.id}>`).join(' ');
-
-        // Formato estilo Deivizz dentro del embed
+        // Formato exacto a ancho completo
         const embedDescLines = batch.map(item =>
             `<@${item.member.id}> *Desciendes de* <@&${item.oldRank.id}> *a* <@&${item.newRank.id}>`
         ).join('\n');
@@ -146,11 +139,9 @@ async function flushDescensosBatch(client) {
                 name: 'SISTEMA DE ADMINISTRACIÓN | VALLECAS RP',
                 iconURL: iconUrl
             })
-            .setThumbnail(iconUrl)
             .setDescription(embedDescLines);
 
         await canalDescensos.send({
-            content: pingMentions,
             embeds: [embed],
             files: files
         });
@@ -206,7 +197,7 @@ function initStaffRanks(client) {
                         });
 
                         if (batchTimeoutAscensos) clearTimeout(batchTimeoutAscensos);
-                        batchTimeoutAscensos = setTimeout(() => flushAscensosBatch(client), 3500);
+                        batchTimeoutAscensos = setTimeout(() => flushAscensosBatch(client), 800);
 
                     } else if (highestAdded.level < prevRank.level) {
                         // === DESCENSO AUTOMÁTICO (al darle un rol inferior) ===
@@ -220,7 +211,7 @@ function initStaffRanks(client) {
                         });
 
                         if (batchTimeoutDescensos) clearTimeout(batchTimeoutDescensos);
-                        batchTimeoutDescensos = setTimeout(() => flushDescensosBatch(client), 3500);
+                        batchTimeoutDescensos = setTimeout(() => flushDescensosBatch(client), 800);
                     }
                 } else if (!prevRank) {
                     // === NUEVA ENTRADA AL EQUIPO DE STAFF (Ascenso inicial / Incorporación) ===
@@ -240,7 +231,7 @@ function initStaffRanks(client) {
                     });
 
                     if (batchTimeoutAscensos) clearTimeout(batchTimeoutAscensos);
-                    batchTimeoutAscensos = setTimeout(() => flushAscensosBatch(client), 3500);
+                    batchTimeoutAscensos = setTimeout(() => flushAscensosBatch(client), 800);
                 }
             }
             // Caso B: Se le retiró un rol de staff sin agregarle uno nuevo directamente
@@ -259,7 +250,7 @@ function initStaffRanks(client) {
                     });
 
                     if (batchTimeoutDescensos) clearTimeout(batchTimeoutDescensos);
-                    batchTimeoutDescensos = setTimeout(() => flushDescensosBatch(client), 3500);
+                    batchTimeoutDescensos = setTimeout(() => flushDescensosBatch(client), 800);
                 }
             }
         } catch (err) {
