@@ -169,6 +169,16 @@ async function setActiveInDB(active) {
 function isMemberStaff(member) {
     if (!member || member.user.bot) return false;
     if (ROLE_STAFF_ID && member.roles.cache.has(ROLE_STAFF_ID)) return true;
+    if (member.roles.cache.has('1538191116610838691')) return true; // Rol ▬▬▬[STAFF]▬▬▬
+    if (member.roles.cache.some(r => 
+        r.name.includes('[STAFF]') || 
+        r.name.includes('[MODERACION]') || 
+        r.name.includes('[ADMINISTRACION]') || 
+        r.name.includes('[CUPULA]') ||
+        r.name.includes('Soporte') || 
+        r.name.includes('Moderador') || 
+        r.name.includes('Administrador')
+    )) return true;
     if (member.permissions.has('Administrator') || member.permissions.has('ManageGuild') || member.permissions.has('ManageChannels')) return true;
     return false;
 }
@@ -414,15 +424,20 @@ function scheduleUserWelcomeAlert(guild) {
 }
 
 /**
- * Detecta qué canal de staff debe recibir la alerta de refuerzo:
- * - Canales de soporte libres (donde hay staffs y CERO ciudadanos atendiendo)
- * - Sala de staffs (si hay staffs charlando y no hay soportes libres o hay más gente en charla)
- * - NINGUNO (si todos los staffs con audio están ocupados atendiendo a ciudadanos, o no hay nadie)
+ * Detecta qué canal de staff debe recibir la alerta de refuerzo con estricta jerarquía de prioridad:
+ *
+ * PRIORIDAD 1 (Absoluta): Canales de soporte 1 al 5 donde haya staffs libres (sin ciudadanos).
+ * PRIORIDAD 2: Sala de staffs (únicamente si NO hay staffs libres en soportes 1 al 5).
+ * PRIORIDAD 3: Staff en rol (únicamente si NO hay staffs ni en soportes 1 al 5 ni en sala de staffs).
+ *
+ * Retorna null si no hay ningún staff disponible o si todos los soportes están ocupados atendiendo a ciudadanos.
  */
 function getTargetStaffChannel(guild) {
     if (!guild) return null;
 
-    // 1. Canales de soporte LIBRES (solo staffs, CERO ciudadanos)
+    // -------------------------------------------------------------
+    // PRIORIDAD 1: Canales de SOPORTE 1 a 5 (Soporte Libre)
+    // -------------------------------------------------------------
     const freeSupportChannels = [];
     for (const channelId of CANALES_SOPORTE_IDS) {
         const channel = guild.channels.cache.get(channelId);
@@ -436,7 +451,7 @@ function getTargetStaffChannel(guild) {
 
         const hasNonStaff = members.some(m => !isMemberStaff(m));
         if (hasNonStaff) {
-            // ¡Canal ocupado atendiendo a un ciudadano! NUNCA interrumpir
+            // Canal ocupado atendiendo a un ciudadano. Respetar y no interrumpir.
             continue;
         }
 
@@ -450,27 +465,9 @@ function getTargetStaffChannel(guild) {
         }
     }
 
-    freeSupportChannels.sort((a, b) => (b.hasUnmuted ? 1 : 0) - (a.hasUnmuted ? 1 : 0));
-
-    // 2. Comprobar Sala de Staffs (tertulia)
-    const charlaChannel = guild.channels.cache.get(CANAL_SALA_CHARLA_STAFF_ID);
-    const staffsEnCharla = (charlaChannel && charlaChannel.isVoiceBased())
-        ? charlaChannel.members.filter(m => isMemberStaff(m) && m.voice && !m.voice.deaf && !m.voice.selfDeaf)
-        : null;
-    const countEnCharla = staffsEnCharla ? staffsEnCharla.size : 0;
-
-    // Regla de oro:
-    // Si hay staffs en la Sala de Staffs y (no hay soportes libres O hay igual o más staffs charlando que en soportes libres):
-    if (countEnCharla > 0 && (freeSupportChannels.length === 0 || countEnCharla >= freeSupportChannels.length)) {
-        return {
-            channel: charlaChannel,
-            type: 'SALA_STAFFS',
-            staffs: staffsEnCharla
-        };
-    }
-
-    // Si hay soportes libres
+    // Si hay canales de soporte libres con staff, SE PRIORIZA SIEMPRE SOPORTE (ordenando por los que no están muteados)
     if (freeSupportChannels.length > 0) {
+        freeSupportChannels.sort((a, b) => (b.hasUnmuted ? 1 : 0) - (a.hasUnmuted ? 1 : 0));
         return {
             channel: freeSupportChannels[0].channel,
             type: 'SOPORTE_LIBRE',
@@ -478,15 +475,31 @@ function getTargetStaffChannel(guild) {
         };
     }
 
-    // 3. Comprobar Canal STAFF EN ROL:
-    // Únicamente cuando los staffs no estén ni en soportes libres ni en sala de staffs (están todos en STAFF EN ROL)
+    // -------------------------------------------------------------
+    // PRIORIDAD 2: SALA DE STAFFS (Solo si NO hay soportes libres)
+    // -------------------------------------------------------------
+    const charlaChannel = guild.channels.cache.get(CANAL_SALA_CHARLA_STAFF_ID);
+    const staffsEnCharla = (charlaChannel && charlaChannel.isVoiceBased())
+        ? charlaChannel.members.filter(m => isMemberStaff(m) && m.voice && !m.voice.deaf && !m.voice.selfDeaf)
+        : null;
+
+    if (staffsEnCharla && staffsEnCharla.size > 0) {
+        return {
+            channel: charlaChannel,
+            type: 'SALA_STAFFS',
+            staffs: staffsEnCharla
+        };
+    }
+
+    // -------------------------------------------------------------
+    // PRIORIDAD 3: STAFF EN ROL (Solo si NO hay en soporte ni en sala de staffs)
+    // -------------------------------------------------------------
     const rolChannel = guild.channels.cache.get(CANAL_STAFF_ROL_ID);
     const staffsEnRol = (rolChannel && rolChannel.isVoiceBased())
         ? rolChannel.members.filter(m => isMemberStaff(m) && m.voice && !m.voice.deaf && !m.voice.selfDeaf)
         : null;
-    const countEnRol = staffsEnRol ? staffsEnRol.size : 0;
 
-    if (countEnRol > 0 && freeSupportChannels.length === 0 && countEnCharla === 0) {
+    if (staffsEnRol && staffsEnRol.size > 0) {
         return {
             channel: rolChannel,
             type: 'STAFF_EN_ROL',
@@ -494,7 +507,7 @@ function getTargetStaffChannel(guild) {
         };
     }
 
-    // No hay staffs libres (o están todos ocupados atendiendo)
+    // No hay staffs libres disponibles (o están todos ocupados atendiendo a ciudadanos)
     return null;
 }
 
