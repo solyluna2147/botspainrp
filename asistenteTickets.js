@@ -298,6 +298,12 @@ function isUserConfirmingResolved(text) {
     if (!text) return false;
     const lower = text.toLowerCase().trim();
     
+    // Si el usuario incluye palabras que indican una nueva duda o pregunta ("otra duda", "pero", "y si", "tengo una duda"),
+    // NUNCA debe tratarse como resuelto, sino responderle
+    if (/duda|pregunta|pero|y si|otra cosa/i.test(lower)) {
+        return false;
+    }
+    
     // Frases o palabras que expresan que ya no hay más dudas o que está todo claro / solucionado
     const resolvedPatterns = [
         /^(vale|ok|oka|okay|perfecto|entendido|entiendo|bien|ya veo|a vale|ah vale|gracias|muchas gracias)[\s.!?,]*$/i,
@@ -584,11 +590,12 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
         const systemPrompt = (categoryPrompts[category] || categoryPrompts.soporte) +
             '\n\nREGLAS DE ORO OBLIGATORIAS:\n' +
             '1. TONO 100% HUMANO Y CORDIAL: Habla como un Staff real español en Discord. PROHIBIDO terminantemente sonar a robot de atención al cliente (PROHIBIDO decir frases como "Lamento tu frustración", "Siento mucho los inconvenientes", "Comprendo tu dolor", "Entiendo que esto pueda molestarte", etc.). Sé natural, educado y al grano.\n' +
-            '2. RESOLUCIÓN DIRECTA: Si el usuario pregunta una duda sobre cómo funciona algo, qué dice la normativa, cómo abrir un negocio, qué comandos usar o cómo solucionar un bug habitual (ej: caché, F8 quit, F8 reconnect), respóndele directamente con la explicación exacta y termínale preguntando: "¿Te queda alguna otra duda o está todo claro?".\n' +
-            '3. PRECISIÓN TOTAL: No inventes nada. Usa la normativa oficial del servidor y la base de conocimientos.\n' +
-            '4. NUNCA pidas la ID de FiveM.\n' +
-            '5. LONGITUD: Máximo 2 o 3 frases directas y útiles. Cero textos gigantes.\n' +
-            '6. Si el usuario te indica que ya no tiene más dudas o que todo está claro, deséale buen rol de forma agradable.';
+            '2. INTUICIÓN DE PREGUNTAS (LOS USUARIOS RARA VEZ USAN "?"): En Discord los usuarios casi nunca ponen signos de interrogación y a veces escriben en tono afirmativo o informal (ej: "si otra duda, hacer pg en un arbusto es pg", "matar en garaje es rdm", "se puede robar coches de poli", "tirar de f8 es sancionable"). DEBES INTUIR Y ENTENDER SIEMPRE QUE ESTÁ HACIENDO UNA PREGUNTA sobre la normativa de FiveM. Los usuarios NO deciden las normativas ni pueden afirmar cómo son las reglas; tú eres el Staff conocedor de las normas de Vallecas RP. Explícale con claridad y firmeza si eso es infracción o no según la normativa oficial.\n' +
+            '3. RESOLUCIÓN DIRECTA: Si el usuario plantea una duda o situación sobre normativa, comandos, negocios, garajes o bugs (ej: caché, F8 quit, F8 reconnect, badulaques gratis), respóndele directamente con la explicación exacta y termínale preguntando: "¿Te queda alguna otra duda o está todo claro?".\n' +
+            '4. PRECISIÓN TOTAL: No inventes nada. Usa la normativa oficial del servidor y la base de conocimientos.\n' +
+            '5. NUNCA pidas la ID de FiveM.\n' +
+            '6. LONGITUD: Máximo 2 o 3 frases directas y útiles. Cero textos gigantes.\n' +
+            '7. Si el usuario te indica que ya no tiene más dudas o que todo está claro, deséale buen rol de forma agradable.';
 
         const conversationHistory = userMessages.slice(-5).map(m => ({
             role: 'user',
