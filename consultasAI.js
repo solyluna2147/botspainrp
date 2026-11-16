@@ -79,16 +79,35 @@ async function loadConfig() {
             consultasActivas = !!config.value;
         }
 
-        // Cargar las 16 páginas de la normativa directamente desde MongoDB en la nube
-        const doc = await NormativaDoc.findOne({ key: 'normativa_general_2026' });
-        if (doc && doc.pages && doc.pages.length > 0) {
-            memoriaNormativaPages = doc.pages.map(p => p.text);
-            console.log(`📚 [CONSULTAS AI] Cargadas ${memoriaNormativaPages.length} páginas de la normativa oficial desde MongoDB.`);
+        // Cargar las páginas de la normativa directamente desde MongoDB o localmente
+        const docGeneral = await NormativaDoc.findOne({ key: 'normativa_general_2026' });
+        if (docGeneral && docGeneral.pages && docGeneral.pages.length > 0) {
+            memoriaNormativaPages = docGeneral.pages.map(p => p.text);
+            console.log(`📚 [CONSULTAS AI] Cargadas ${memoriaNormativaPages.length} páginas de la normativa general desde MongoDB.`);
         } else {
             const localTxt = path.join(__dirname, 'normativa_vallecas_completa.txt');
             if (fs.existsSync(localTxt)) {
                 const fullContent = fs.readFileSync(localTxt, 'utf8');
                 memoriaNormativaPages = fullContent.split(/(?=VALLECAS RP\s*\n\|\s*NORMATIVA GENERAL OFICIAL)/i).map(p => p.trim());
+            }
+        }
+
+        // Cargar la Normativa de Ilegales desde MongoDB (o respaldo local)
+        const docIlegales = await NormativaDoc.findOne({ key: 'normativa_ilegales_2026' });
+        if (docIlegales && docIlegales.pages && docIlegales.pages.length > 0) {
+            if (!memoriaNormativaPages) memoriaNormativaPages = [];
+            memoriaNormativaPages.push(...docIlegales.pages.map(p => p.text));
+            console.log(`🔫 [CONSULTAS AI] Cargadas ${docIlegales.pages.length} secciones de la Normativa de Ilegales desde MongoDB.`);
+        } else {
+            const ilegalesTxt = path.join(__dirname, 'normativa_ilegales.txt');
+            if (fs.existsSync(ilegalesTxt)) {
+                const ilegalesContent = fs.readFileSync(ilegalesTxt, 'utf8');
+                const ilegalesSections = ilegalesContent.split(/_{5,}|\n\n(?=[0-9]+\.\s+[A-ZÁÉÍÓÚÑ\s]+)/).map(s => s.trim()).filter(Boolean);
+                if (ilegalesSections.length > 0) {
+                    if (!memoriaNormativaPages) memoriaNormativaPages = [];
+                    memoriaNormativaPages.push(...ilegalesSections);
+                    console.log(`🔫 [CONSULTAS AI] Cargadas ${ilegalesSections.length} secciones de la Normativa de Ilegales desde archivo local.`);
+                }
             }
         }
     } catch (e) {
@@ -107,17 +126,24 @@ const JERGA_SINONIMOS = {
     'coche': ['coche', 'vehiculo', 'auto', 'moto', 'patrulla', 'conducir', 'disparar', 'buga'],
     'arma': ['pistola', 'fusil', 'ak', 'escopeta', 'pesada', 'armamento', 'blanca', 'pipa', 'plomo'],
     'secuestro': ['secuestro', 'secuestrar', 'rapto', 'retener', 'rehén', 'rehenes', 'rescate'],
-    'guerra': ['guerra', 'tiroteo', 'bandas', 'mafias', 'pacto', 'alianza', 'barrio'],
+    'guerra': ['guerra', 'tiroteo', 'bandas', 'mafias', 'pacto', 'alianza', 'barrio', 'cartel', 'carteles', 'ilegal', 'ilegales', 'limite', 'cupo', 'integrantes', 'alianzas'],
     'entorno': ['entorno', 'rde', 'comisaria', 'zona segura', 'zs', 'evasion', 'campeo', 'caliente']
 };
 
 // Helper para buscar las páginas y secciones más relevantes de la normativa según la pregunta del Staff
 function getRelevantNormativaSnippets(question) {
     if (!memoriaNormativaPages || memoriaNormativaPages.length === 0) {
+        memoriaNormativaPages = [];
         const localTxt = path.join(__dirname, 'normativa_vallecas_completa.txt');
         if (fs.existsSync(localTxt)) {
             const fullContent = fs.readFileSync(localTxt, 'utf8');
-            memoriaNormativaPages = fullContent.split(/(?=VALLECAS RP\s*\n\|\s*NORMATIVA GENERAL OFICIAL)/i).map(p => p.trim());
+            memoriaNormativaPages.push(...fullContent.split(/(?=VALLECAS RP\s*\n\|\s*NORMATIVA GENERAL OFICIAL)/i).map(p => p.trim()));
+        }
+        const ilegalesTxt = path.join(__dirname, 'normativa_ilegales.txt');
+        if (fs.existsSync(ilegalesTxt)) {
+            const ilegalesContent = fs.readFileSync(ilegalesTxt, 'utf8');
+            const ilegalesSections = ilegalesContent.split(/_{5,}|\n\n(?=[0-9]+\.\s+[A-ZÁÉÍÓÚÑ\s]+)/).map(s => s.trim()).filter(Boolean);
+            memoriaNormativaPages.push(...ilegalesSections);
         }
     }
     if (!memoriaNormativaPages || memoriaNormativaPages.length === 0) return '';
@@ -172,7 +198,9 @@ async function queryGroqAI(userQuestion) {
             '¿Hablar con Anubis? Tienes más probabilidades de tener una cena privada con el Papa en el Vaticano que de verle contestar al Discord. Búscate a otro Staff, crack. 💀',
             'Hablar con Anubis es como que te toque el Euromillones dos veces seguidas sin haber comprado boleto. Si tienes prisa, mejor reza un padrenuestro. 🍀',
             'Anubis es un ser mitológico que solo baja a la Tierra en año bisiesto si los astros se alinean. Sigue esperando sentado que de pie te vas a cansar. 🏛️',
-            'He consultado los registros del universo y es más fácil encontrar agua líquida en el Sol que pillar a Anubis disponible. Inténtalo en otra reencarnación. ⏳'
+            'He consultado los registros del universo y es más fácil encontrar agua líquida en el Sol que pillar a Anubis disponible. Inténtalo en otra reencarnación. ⏳',
+            'Dicen las malas lenguas que Anubis solo habla con mortales cuando lluevan billetes de 500€ en Vallecas. Mejor búscate a otro moderador. 💸',
+            'Espera sentado... De hecho, ponte cómodo, hazte unas palomitas y ponte una trilogía entera, porque la respuesta de Anubis va para largo. 🍿'
         ];
         return bromasAnubis[Math.floor(Math.random() * bromasAnubis.length)];
     }
