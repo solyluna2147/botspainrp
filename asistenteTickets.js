@@ -704,9 +704,7 @@ async function handleUserConversation(channel, user, category, combinedText, ses
     // Si el usuario pide explícitamente un Staff
     const userWantsStaff = isUserAskingForStaff(combinedText) || isUserAskingForStaff(allUserWords);
 
-    // Botones de opciones para el usuario:
-    // 1. [✅ Problema Solucionado]
-    // 2. [🙋‍♂️ Hablar con un Staff]
+    // Definición segura de botones para cualquier punto de la función
     const actionRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(`btn_problema_solucionado_${user.id}`)
@@ -717,6 +715,10 @@ async function handleUserConversation(channel, user, category, combinedText, ses
             .setLabel('🙋‍♂️ Hablar con un Staff')
             .setStyle(ButtonStyle.Primary)
     );
+
+    // Por defecto en la conversación normal NO se muestran botones para que la charla sea 100% fluida
+    let shouldShowButtons = userWantsStaff;
+    let componentsToSend = shouldShowButtons ? [actionRow] : [];
 
     // Comprobar si el usuario confirma directamente por texto que su incidencia quedó solucionada
     const isResolvedByText = isUserConfirmingResolved(combinedText);
@@ -746,14 +748,19 @@ async function handleUserConversation(channel, user, category, combinedText, ses
     // Intentar responder como un chat inteligente usando el motor de IA
     const aiReply = await generateAIResponse(category, session.userMessages || [], combinedText, user.tag);
     if (aiReply) {
-        // Analizar si esta respuesta de la IA ha aportado una solución/explicación real a la duda del usuario
-        const hasSolvedOrExplained = await checkIfAssistantGaveSolution(aiReply, combinedText);
+        // En conversación fluida: Si el usuario solo dice "vale", "ok", saluda o hace preguntas cortas, NO poner botones.
+        // Los botones SOLO se activan si el usuario pide explícitamente un Staff,
+        // o si tras al menos 2 intercambios el bot ya ha dado una respuesta detallada con instrucciones.
+        const isShortFollowUp = /^(vale|ok|oka|perfecto|entiendo|bien|ya veo|a vale|ah vale|gracias)[\s.!?,]*$/i.test(combinedText.trim());
+        if (userWantsStaff) {
+            shouldShowButtons = true;
+        } else if (!isShortFollowUp && userTurnCount >= 2 && aiReply.length > 70) {
+            shouldShowButtons = await checkIfAssistantGaveSolution(aiReply, combinedText);
+        } else {
+            shouldShowButtons = false;
+        }
 
-        // Los botones SOLO se muestran si:
-        // 1. La IA realmente ha dado una solución o explicación a la duda/problema
-        // 2. O si el usuario pide explícitamente un Staff
-        const shouldShowButtons = userWantsStaff || hasSolvedOrExplained;
-        const componentsToSend = shouldShowButtons ? [actionRow] : [];
+        componentsToSend = shouldShowButtons ? [actionRow] : [];
 
         const { embed, files } = buildBaseEmbed(
             guild,
