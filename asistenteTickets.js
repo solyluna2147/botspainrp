@@ -259,8 +259,80 @@ function extractStreamUrls(text) {
 }
 
 // ==========================================
-// RESUMIDOR INTELIGENTE DE MOTIVOS (IA GROQ + NLP)
+// RESUMIDOR Y RESOLUCIÓN INTELIGENTE (IA GROQ + NLP)
 // ==========================================
+
+// Helper para comprobar si el usuario está pidiendo explícitamente hablar con un Staff humano
+function isUserAskingForStaff(text) {
+    if (!text) return false;
+    const lower = text.toLowerCase();
+    const staffKeywords = [
+        'hablar con staff',
+        'hablar con un staff',
+        'llamar staff',
+        'llamar a un staff',
+        'quiero un staff',
+        'pasa un staff',
+        'pasame un staff',
+        'pásame un staff',
+        'avisa a un staff',
+        'avisen a un staff',
+        'necesito un staff',
+        'necesito hablar con staff',
+        'puedo hablar con un staff',
+        'que venga un staff',
+        'avisa al staff',
+        'llamar al staff',
+        'atencion de un staff',
+        'atención de un staff',
+        'que me atienda un staff',
+        'que me atienda alguien',
+        'persona real',
+        'humano'
+    ];
+    return staffKeywords.some(kw => lower.includes(kw));
+}
+
+// Helper para comprobar si el usuario confirma que su duda o problema ha quedado solucionado
+function isUserConfirmingResolved(text) {
+    if (!text) return false;
+    const lower = text.toLowerCase().trim();
+    const resolvedKeywords = [
+        'gracias ya esta',
+        'gracias ya está',
+        'ya esta solucionado',
+        'ya está solucionado',
+        'ya se soluciono',
+        'ya se solucionó',
+        'ya lo solucione',
+        'ya lo solucioné',
+        'ya me va',
+        'ya funciona',
+        'muchas gracias todo claro',
+        'todo claro gracias',
+        'ya entendi gracias',
+        'ya entendí gracias',
+        'perfecto gracias',
+        'solucionado gracias',
+        'ya esta todo solucionado',
+        'ya no necesito nada',
+        'ya se arreglo',
+        'ya se arregló',
+        'listo gracias',
+        'ya me quedo claro',
+        'ya me quedó claro'
+    ];
+    return resolvedKeywords.some(kw => lower.includes(kw));
+}
+
+// Carga en memoria del texto oficial de la normativa
+let normativaCompletaLocal = '';
+try {
+    const normPath = path.join(__dirname, 'normativa_vallecas_completa.txt');
+    if (fs.existsSync(normPath)) {
+        normativaCompletaLocal = fs.readFileSync(normPath, 'utf8');
+    }
+} catch (e) { }
 async function summarizeReasonWithAI(category, text) {
     if (!text || !text.trim()) return 'No especificado por el usuario';
 
@@ -502,39 +574,53 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
         const userProvidedEvidence = hasUserProvidedEvidence([...userMessages, { content: currentMessage }]);
 
         const categoryPrompts = {
-            donaciones: 'Eres un miembro del equipo de Donaciones de VALLECAS RP (servidor español de FiveM GTA V Roleplay). Habla como una persona real por chat de Discord: muy breve, cercano, sin formalismos exagerados ni parrafadas (máximo 2 o 3 frases). Si preguntan por un coche VIP, dinero o casa, diles que genial, confirma si lo quieren por Bizum o PayPal y aclara cualquier duda al grano.',
-            apelacion: 'Eres un moderador de atención de VALLECAS RP (servidor español de FiveM GTA V Roleplay). Habla como un colega del Staff atendiendo un chat: muy humano, directo, comprensivo y breve (máximo 2 frases cortas, PROHIBIDO textos largos o sonar a robot).\n' +
+            donaciones: 'Eres del equipo de atención de Donaciones de VALLECAS RP (servidor de FiveM). Habla cordial, natural y directo como un compañero humano por Discord (máximo 2 frases). Si preguntan por coches VIP, casas/MLOs, packs o dinero IC, explícales con claridad y confirma si prefieren abonarlo por Bizum o PayPal.',
+            apelacion: 'Eres un moderador de VALLECAS RP. Habla como un compañero del Staff por chat: respetuoso, humano y directo (máximo 2 frases cortas). ' +
                 (userProvidedEvidence
-                    ? '- ESTADO: EL USUARIO YA HA ADJUNTADO PRUEBAS (clip, link o captura). Reconóceselo en 1 o 2 frases cortas diciendo que queda adjuntada su prueba al expediente para que el Staff lo revise.'
-                    : '- ESTADO: EL USUARIO NO HA ADJUNTADO NINGUNA PRUEBA NI ENLACE TODAVÍA. Pregúntale de forma directa y casual: "¿Tienes algún clip (Medal, YouTube, Streamable...) o captura de lo que ocurrió para adjuntarla a la apelación?"'),
-            streamer: 'Eres del equipo de VALLECAS RP. Habla como una persona real, cercano y breve (máximo 2 frases). Pídele que te pase el link de su canal de Twitch, Kick o TikTok para revisarle las estadísticas.',
-            soporte: 'Eres un compañero de Soporte de VALLECAS RP (servidor español de FiveM). Habla como una persona real por chat: súper breve, directo y cercano (máximo 2 o 3 frases cortas). Todo es dentro del juego (scripts, garajes, reconectar F8, llaves). Si no ha dicho qué le pasa, pregúntaselo con naturalidad.'
+                    ? 'El usuario ya pasó clip o captura: dile que queda registrada su prueba para que la Administración revise su sanción.'
+                    : 'Pregúntale con naturalidad si tiene algún clip (Medal, YouTube...) o captura de lo ocurrido para adjuntarla a la apelación.'),
+            streamer: 'Eres del equipo de VALLECAS RP. Habla cordial y directo (máximo 2 frases). Pídele que te pase el link de su canal de Twitch, Kick o TikTok para revisarle las estadísticas.',
+            soporte: 'Eres un compañero de Soporte de VALLECAS RP (servidor español de FiveM). Tu función es resolver dudas y problemas habituales del juego (normativa, comandos, F8 reconectar, garajes, coches, inventarios, llaves, negocios, etc.). Sé directo, cercano, educado y resolutivo (máximo 2 o 3 frases). Si es una duda técnica o de rol que puedes responder, dale la solución exacta de inmediato sin rodeos.'
         };
 
         const systemPrompt = (categoryPrompts[category] || categoryPrompts.soporte) +
-            '\nREGLAS DE ORO OBLIGATORIAS:\n' +
-            '1. HABLA COMO UN HUMANO REAL EN DISCORD: Prohibido sonar como un contestador automático o redactar cartas formales.\n' +
-            '2. LONGITUD ULTRA CORTA: Máximo 2 frases directas (1 párrafo pequeño). Cero sermones.\n' +
-            '3. NO INVENTES: ' + (userProvidedEvidence ? 'El usuario SÍ ha adjuntado pruebas.' : 'El usuario NO ha pasado ningún enlace ni foto de momento.') + '\n' +
+            '\n\nREGLAS DE ORO OBLIGATORIAS:\n' +
+            '1. TONO 100% HUMANO Y CORDIAL: Habla como un Staff real español en Discord. PROHIBIDO terminantemente sonar a robot de atención al cliente (PROHIBIDO decir frases como "Lamento tu frustración", "Siento mucho los inconvenientes", "Comprendo tu dolor", "Entiendo que esto pueda molestarte", etc.). Sé natural, educado y al grano.\n' +
+            '2. RESOLUCIÓN DIRECTA: Si el usuario pregunta una duda sobre cómo funciona algo, qué dice la normativa, cómo abrir un negocio, qué comandos usar o cómo solucionar un bug habitual (ej: caché, F8 quit, F8 reconnect), respóndele directamente con la explicación exacta.\n' +
+            '3. PRECISIÓN TOTAL: No inventes nada. Usa la normativa oficial del servidor y la base de conocimientos.\n' +
             '4. NUNCA pidas la ID de FiveM.\n' +
-            '5. Español coloquial y natural de España.';
+            '5. LONGITUD: Máximo 2 o 3 frases directas y útiles. Cero textos gigantes.\n' +
+            '6. Si el usuario te confirma que ya se le solucionó o da las gracias porque le quedó claro, felicítale de forma agradable y dile que un Staff revisará su ticket en breve.';
 
-        const conversationHistory = userMessages.slice(-4).map(m => ({
+        const conversationHistory = userMessages.slice(-5).map(m => ({
             role: 'user',
             content: m.content
         }));
 
         conversationHistory.push({ role: 'user', content: currentMessage });
 
-        // Recuperar conocimientos y guías oficiales aprendidas en el canal 1571488286789079080
+        // Recuperar conocimientos oficiales y fragmentos relevantes de la normativa
         let knowledgeContext = '';
         try {
-            const allKnowledge = await TicketKnowledge.find({}).sort({ createdAt: -1 }).limit(15);
+            const allKnowledge = await TicketKnowledge.find({}).sort({ createdAt: -1 }).limit(20);
             if (allKnowledge && allKnowledge.length > 0) {
-                knowledgeContext = '\nBASE DE DATOS Y CONOCIMIENTOS OFICIALES DE VALLECAS RP (Reglas, precios y soluciones):\n' +
+                knowledgeContext += '\nBASE DE CONOCIMIENTOS OFICIALES DE VALLECAS RP:\n' +
                     allKnowledge.map(k => `• ${k.response}`).join('\n') + '\n';
             }
         } catch (e) { }
+
+        // Búsqueda contextual de la normativa
+        if (normativaCompletaLocal) {
+            const currentLower = currentMessage.toLowerCase();
+            const relevantLines = normativaCompletaLocal.split('\n').filter(line => {
+                const words = currentLower.split(/\s+/).filter(w => w.length > 3);
+                return words.some(w => line.toLowerCase().includes(w));
+            });
+            if (relevantLines.length > 0) {
+                knowledgeContext += '\nFRAGMENTOS RELEVANTES DE LA NORMATIVA DE VALLECAS RP:\n' +
+                    relevantLines.slice(0, 15).join('\n') + '\n';
+            }
+        }
 
         const finalSystemPrompt = systemPrompt + knowledgeContext;
 
@@ -550,8 +636,8 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
                     { role: 'system', content: finalSystemPrompt },
                     ...conversationHistory
                 ],
-                max_tokens: 140,
-                temperature: 0.6
+                max_tokens: 160,
+                temperature: 0.5
             })
         });
 
@@ -567,6 +653,7 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
     }
     return null;
 }
+
 async function handleUserConversation(channel, user, category, combinedText, session) {
     const guild = channel.guild;
 
@@ -575,39 +662,63 @@ async function handleUserConversation(channel, user, category, combinedText, ses
     const allUserWords = (session.userMessages || []).map(m => m.content).join(' ').toLowerCase();
     const isOnlyGreeting = /^(buenas|hola|buenas tardes|buenas noches|buenos dias|hey|ey|ola|buenas bro|buenas staff|buenas noches staff)[\s.!?,]*$/i.test(allUserWords.trim());
     
-    // El botón "Hablar con un Staff":
-    // - En APELACIONES: NO se muestra en el primer mensaje si NO hay pruebas.
-    //   Solo aparece si el usuario ya adjuntó pruebas (links/fotos/vídeos) o si ya es el turno 2+ (por ejemplo si dice que no tiene).
-    let shouldShowStaffButton = false;
-    const hasEvidence = hasUserProvidedEvidence([...(session.userMessages || []), { content: combinedText }]);
+    // Si el usuario pide explícitamente un Staff
+    const userWantsStaff = isUserAskingForStaff(combinedText) || isUserAskingForStaff(allUserWords);
 
-    if (category === 'apelacion') {
-        const saidNoEvidence = allUserWords.includes('no tengo') || allUserWords.includes('no grabe') || allUserWords.includes('no grabé') || allUserWords.includes('sin clip') || allUserWords.includes('sin prueba');
-        shouldShowStaffButton = hasEvidence || saidNoEvidence || userTurnCount >= 2;
-    } else {
-        shouldShowStaffButton = !isOnlyGreeting && userTurnCount >= 1;
-    }
-
-    const staffButtonRow = new ActionRowBuilder().addComponents(
+    // Botones de opciones para el usuario:
+    // 1. [✅ Problema Solucionado]
+    // 2. [🙋‍♂️ Hablar con un Staff]
+    const actionRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`btn_problema_solucionado_${user.id}`)
+            .setLabel('✅ Problema Solucionado')
+            .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
             .setCustomId(`btn_solicitar_staff_${user.id}`)
             .setLabel('🙋‍♂️ Hablar con un Staff')
             .setStyle(ButtonStyle.Primary)
     );
 
-    const componentsToSend = shouldShowStaffButton ? [staffButtonRow] : [];
+    // Comprobar si el usuario confirma directamente por texto que su incidencia quedó solucionada
+    const isResolvedByText = isUserConfirmingResolved(combinedText);
+    if (isResolvedByText && session.status !== 'solved') {
+        session.status = 'solved';
+        if (session.save) await session.save();
+
+        const replyMsg = `¡De nada <@${user.id}>! Me alegro mucho de que haya quedado solucionado. 👍\n\n` +
+                         `He dejado el ticket registrado como **SOLUCIONADO** para que el equipo de Staff lo revise y proceda a cerrarlo en cuanto esté libre. ¡Que disfrutes en la ciudad de **Vallecas RP**!`;
+
+        const { embed: resEmbed, files: resFiles } = buildBaseEmbed(guild, null, replyMsg, 0x2ecc71);
+        await channel.send({ embeds: [resEmbed], files: resFiles }).catch(() => {});
+
+        try {
+            const currentName = channel.name.replace(/^solucionado-?/i, '');
+            const newName = `solucionado-${currentName}`.slice(0, 32);
+            await channel.setName(newName, 'Ticket marcado como solucionado por el Asistente Virtual');
+            console.log(`🏷️ [ASISTENTE TICKETS] Ticket #${channel.name} renombrado a #${newName}`);
+        } catch (nameErr) {
+            console.warn('⚠️ [ASISTENTE TICKETS] No se pudo renombrar canal a solucionado:', nameErr.message);
+        }
+
+        await sendStaffSummary(channel, session, true);
+        return;
+    }
 
     // Intentar responder como un chat inteligente usando el motor de IA
     const aiReply = await generateAIResponse(category, session.userMessages || [], combinedText, user.tag);
     if (aiReply) {
-        const extraNote = shouldShowStaffButton
-            ? `\n\n*(Si ya has terminado de aportar tus datos, pulsa el botón de abajo para llamar al Staff).*`
+        // Mostrar los 2 botones cuando el bot responde a una duda o si el usuario pide staff
+        const shouldShowButtons = !isOnlyGreeting && userTurnCount >= 1;
+        const componentsToSend = shouldShowButtons ? [actionRow] : [];
+
+        const extraQuestion = shouldShowButtons
+            ? `\n\n*(¿Ha quedado resuelta tu duda con esta respuesta? Puedes indicarlo abajo pulsando el botón correspondiente).*`
             : '';
 
         const { embed, files } = buildBaseEmbed(
             guild,
             null,
-            `${aiReply}${extraNote}`,
+            `${aiReply}${extraQuestion}`,
             category === 'donaciones' ? 0x9b59b6 : (category === 'apelacion' ? 0xe67e22 : 0x3498db)
         );
         await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
@@ -746,7 +857,7 @@ async function sendCategoryWelcome(channel, user, category) {
 }
 
 // Resumen detallado para Staff
-async function sendStaffSummary(channel, session) {
+async function sendStaffSummary(channel, session, isResolved = false) {
     const guild = channel.guild;
     const category = session.category;
     const user = await channel.client.users.fetch(session.userId).catch(() => null);
@@ -754,10 +865,22 @@ async function sendStaffSummary(channel, session) {
 
     const allText = session.userMessages.map(m => m.content).join('\n');
 
-    let summaryTitle = '📋 RESUMEN DETALLADO PARA EL STAFF';
+    let summaryTitle = isResolved ? '✅ TICKET SOLUCIONADO POR ASISTENTE VIRTUAL' : '📋 RESUMEN DETALLADO PARA EL STAFF';
     let summaryDesc = '';
 
-    if (category === 'donaciones') {
+    if (isResolved) {
+        summaryTitle = '✅ INCIDENCIA RESUELTA | TICKET SOLUCIONADO';
+        const cleanSummary = await summarizeReasonWithAI(category, allText);
+        summaryDesc =
+            `👤 **Usuario:** ${userTag}\n` +
+            `📌 **Consulta / Incidencia tratada:**\n` +
+            `> ${cleanSummary}\n\n` +
+            `💬 **Últimos mensajes:**\n` +
+            `> *"${allText.replace(/\n+/g, ' ').slice(-200)}"\n\n` +
+            `🟢 **Estado:** SOLUCIONADO por el Asistente Virtual.\n` +
+            `⚖️ **Acción para el Staff:** El ticket ha sido renombrado a \`solucionado-...\`. Por favor, revisa el caso y procede al cierre manual cuando lo estimes oportuno.`;
+
+    } else if (category === 'donaciones') {
         summaryTitle = '💎 RESUMEN DE DONACIÓN | VALLECAS RP';
         const cleanSummary = await summarizeReasonWithAI('donaciones', allText);
         const item = session.extractedData.donationItem || 'A consultar con administración';
@@ -775,7 +898,6 @@ async function sendStaffSummary(channel, session) {
     } else if (category === 'apelacion') {
         summaryTitle = '🔨 INFORME DE APELACIÓN | VALLECAS RP';
         const cleanSummary = await summarizeReasonWithAI('apelacion', allText);
-        // Limpiar el texto visible de la declaración para no mostrar enlaces feos ni etiquetas internas
         const cleanDeclaration = allText.replace(/\[Adjunta imagen\/captura:[^\]]+\]/gi, '').replace(/\n+/g, ' ').trim();
 
         summaryDesc =
@@ -797,21 +919,23 @@ async function sendStaffSummary(channel, session) {
             `> *"${allText.replace(/\n+/g, ' ').slice(0, 200)}"*`;
 
     } else {
-        summaryTitle = '🛠️ RESUMEN DE INCIDENCIA | SOPORTE';
+        summaryTitle = '🛠️ RESUMEN DE INCIDENCIA | INTERVENCIÓN DE STAFF';
         const cleanSummary = await summarizeReasonWithAI('soporte', allText);
 
         summaryDesc =
             `👤 **Usuario:** ${userTag}\n` +
             `📌 **Motivo detectado:**\n` +
             `> ${cleanSummary}\n\n` +
+            `🤖 **Intervención del Asistente:**\n` +
+            `> El Asistente Virtual intentó guiar y solucionar la consulta del usuario, pero se requiere la intervención y atención directa de un miembro del Staff para resolverla.\n\n` +
             `💬 **Mensajes del usuario:**\n` +
             `> *"${allText.replace(/\n+/g, ' ').slice(0, 200)}"*\n\n` +
             `⏳ **Estado:** Esperando atención del Staff.`;
     }
 
-    const { embed, files } = buildBaseEmbed(guild, summaryTitle, summaryDesc, 0x2ecc71);
+    const embedColor = isResolved ? 0x2ecc71 : 0x3498db;
+    const { embed, files } = buildBaseEmbed(guild, summaryTitle, summaryDesc, embedColor);
 
-    // Si el usuario subió alguna captura o imagen, insertarla en grande dentro del Embed
     let foundImageUrl = session.extractedData?.attachmentUrl;
     if (!foundImageUrl) {
         const imgMatch = allText.match(/https?:\/\/[^\s]+?\.(png|jpg|jpeg|webp)/i) || allText.match(/https?:\/\/cdn\.discordapp\.com\/attachments\/[^\s]+/i);
@@ -824,8 +948,10 @@ async function sendStaffSummary(channel, session) {
         embed.setImage(foundImageUrl);
     }
 
+    const pingContent = isResolved ? `🔔 **Registro de Incidencia Solucionada:**` : `🔔 <@&${ROLE_STAFF_ID}>`;
+
     await channel.send({
-        content: `🔔 <@&${ROLE_STAFF_ID}>`,
+        content: pingContent,
         embeds: [embed],
         files: files
     }).catch(() => { });
@@ -1451,7 +1577,63 @@ module.exports = function initAsistenteTickets(client) {
                 // Enviar el diagnóstico estructurado para el Staff con mención al rol
                 session.status = 'summarized';
                 if (session.save) await session.save();
-                await sendStaffSummary(interaction.channel, session);
+                await sendStaffSummary(interaction.channel, session, false);
+                return;
+            }
+
+            // 0.1 Botón: "Problema Solucionado" (CUALQUIER USUARIO PUEDE PULSARLO)
+            if (customId.startsWith('btn_problema_solucionado_')) {
+                const targetUserId = customId.replace('btn_problema_solucionado_', '');
+
+                let session = await TicketSession.findOne({ channelId: interaction.channelId });
+                if (!session) {
+                    session = {
+                        channelId: interaction.channelId,
+                        userId: targetUserId,
+                        category: detectTicketCategory(interaction.channel),
+                        userMessages: [],
+                        extractedData: {}
+                    };
+                }
+
+                // Deshabilitar los botones de este mensaje para que no se pulse más
+                try {
+                    const disabledRow = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('btn_solucionado_disabled')
+                            .setLabel('✅ Incidencia Marcada como Solucionada')
+                            .setStyle(ButtonStyle.Success)
+                            .setDisabled(true)
+                    );
+                    await interaction.update({ components: [disabledRow] }).catch(() => {});
+                } catch (e) {
+                    await interaction.deferUpdate().catch(() => {});
+                }
+
+                if (session.status !== 'solved') {
+                    session.status = 'solved';
+                    if (session.save) await session.save();
+
+                    // 1. Mensaje cordial de confirmación para el usuario
+                    const replyMsg = `¡Estupendo <@${interaction.user.id}>! Nos alegra haberte ayudado y que la incidencia esté resuelta. 👍\n\n` +
+                                     `He registrado tu ticket como **SOLUCIONADO** para que el equipo de Staff lo revise y proceda a cerrarlo manualmente. ¡Muchas gracias y disfruta de **Vallecas RP**!`;
+
+                    const { embed: resEmbed, files: resFiles } = buildBaseEmbed(interaction.guild, null, replyMsg, 0x2ecc71);
+                    await interaction.channel.send({ embeds: [resEmbed], files: resFiles }).catch(() => {});
+
+                    // 2. Renombrar el ticket a solucionado-nombre (PROHIBIDO CERRAR)
+                    try {
+                        const currentName = interaction.channel.name.replace(/^solucionado-?/i, '');
+                        const newName = `solucionado-${currentName}`.slice(0, 32);
+                        await interaction.channel.setName(newName, 'Ticket marcado como solucionado por el usuario');
+                        console.log(`🏷️ [ASISTENTE TICKETS] Ticket #${interaction.channel.name} renombrado a #${newName}`);
+                    } catch (nameErr) {
+                        console.warn('⚠️ [ASISTENTE TICKETS] No se pudo renombrar canal a solucionado:', nameErr.message);
+                    }
+
+                    // 3. Dejar el resumen estructurado de ticket solucionado para que el Staff lo audite
+                    await sendStaffSummary(interaction.channel, session, true);
+                }
                 return;
             }
 
