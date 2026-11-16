@@ -10312,6 +10312,14 @@ async function startBot() {
     } catch (consultasErr) {
         console.error('⚠️ [CONSULTAS AI ERROR]:', consultasErr.message);
     }
+
+    // Sistema independiente de Detección Automática de Ascensos y Descensos de Staff
+    try {
+        const initStaffRanks = require('./staffRanks');
+        initStaffRanks(client);
+    } catch (ranksErr) {
+        console.error('⚠️ [STAFF RANKS ERROR]:', ranksErr.message);
+    }
 }
 
 startBot();
