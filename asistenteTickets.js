@@ -293,36 +293,34 @@ function isUserAskingForStaff(text) {
     return staffKeywords.some(kw => lower.includes(kw));
 }
 
-// Helper para comprobar si el usuario confirma que su duda o problema ha quedado solucionado
+// Helper para comprobar si el usuario indica que no tiene más dudas o que su consulta ha quedado resuelta
 function isUserConfirmingResolved(text) {
     if (!text) return false;
     const lower = text.toLowerCase().trim();
-    const resolvedKeywords = [
-        'gracias ya esta',
-        'gracias ya está',
-        'ya esta solucionado',
-        'ya está solucionado',
-        'ya se soluciono',
-        'ya se solucionó',
-        'ya lo solucione',
-        'ya lo solucioné',
-        'ya me va',
-        'ya funciona',
-        'muchas gracias todo claro',
-        'todo claro gracias',
-        'ya entendi gracias',
-        'ya entendí gracias',
-        'perfecto gracias',
-        'solucionado gracias',
-        'ya esta todo solucionado',
-        'ya no necesito nada',
-        'ya se arreglo',
-        'ya se arregló',
-        'listo gracias',
-        'ya me quedo claro',
-        'ya me quedó claro'
+    
+    // Frases o palabras que expresan que ya no hay más dudas o que está todo claro / solucionado
+    const resolvedPatterns = [
+        /^(vale|ok|oka|okay|perfecto|entendido|entiendo|bien|ya veo|a vale|ah vale|gracias|muchas gracias)[\s.!?,]*$/i,
+        /^(no|ninguna|nada|ya nada|todo bien|todo correcto|todo bien gracias|no gracias)[\s.!?,]*$/i,
+        /^(no( tengo)? (mas |más )?dudas?|ninguna duda( mas| más)?|ya (esta|está|estaria|estaría))[\s.!?,]*$/i,
+        /todo claro/i,
+        /ya (me )?qued(o|ó) claro/i,
+        /ya (me )?entendi/i,
+        /ya (me )?ha quedado claro/i,
+        /ya (esta|está) solucionado/i,
+        /ya se solucion(o|ó)/i,
+        /ya lo solucion(e|é)/i,
+        /ya me lo has solucionado/i,
+        /solucionado/i,
+        /ya me funciona/i,
+        /ya funciona/i,
+        /ya no necesito nada/i,
+        /ya se arregl(o|ó)/i,
+        /listo gracias/i,
+        /perfecto gracias/i
     ];
-    return resolvedKeywords.some(kw => lower.includes(kw));
+
+    return resolvedPatterns.some(pattern => pattern.test(lower));
 }
 
 // Carga en memoria del texto oficial de la normativa
@@ -580,17 +578,17 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
                     ? 'El usuario ya pasó clip o captura: dile que queda registrada su prueba para que la Administración revise su sanción.'
                     : 'Pregúntale con naturalidad si tiene algún clip (Medal, YouTube...) o captura de lo ocurrido para adjuntarla a la apelación.'),
             streamer: 'Eres del equipo de VALLECAS RP. Habla cordial y directo (máximo 2 frases). Pídele que te pase el link de su canal de Twitch, Kick o TikTok para revisarle las estadísticas.',
-            soporte: 'Eres un compañero de Soporte de VALLECAS RP (servidor español de FiveM). Tu función es resolver dudas y problemas habituales del juego (normativa, comandos, F8 reconectar, garajes, coches, inventarios, llaves, negocios, etc.). Sé directo, cercano, educado y resolutivo (máximo 2 o 3 frases). Si es una duda técnica o de rol que puedes responder, dale la solución exacta de inmediato sin rodeos.'
+            soporte: 'Eres un compañero de Soporte de VALLECAS RP (servidor español de FiveM). Tu función es atender y resolver dudas del usuario (normativa, comandos, garajes, coches, inventarios, llaves, negocios, bugs, etc.). Sé directo, cercano, educado y resolutivo (máximo 2 o 3 frases). Si es una duda o consulta, respóndela claramente y termina preguntándole con naturalidad si tiene alguna otra duda o le ha quedado todo claro.'
         };
 
         const systemPrompt = (categoryPrompts[category] || categoryPrompts.soporte) +
             '\n\nREGLAS DE ORO OBLIGATORIAS:\n' +
             '1. TONO 100% HUMANO Y CORDIAL: Habla como un Staff real español en Discord. PROHIBIDO terminantemente sonar a robot de atención al cliente (PROHIBIDO decir frases como "Lamento tu frustración", "Siento mucho los inconvenientes", "Comprendo tu dolor", "Entiendo que esto pueda molestarte", etc.). Sé natural, educado y al grano.\n' +
-            '2. RESOLUCIÓN DIRECTA: Si el usuario pregunta una duda sobre cómo funciona algo, qué dice la normativa, cómo abrir un negocio, qué comandos usar o cómo solucionar un bug habitual (ej: caché, F8 quit, F8 reconnect), respóndele directamente con la explicación exacta.\n' +
+            '2. RESOLUCIÓN DIRECTA: Si el usuario pregunta una duda sobre cómo funciona algo, qué dice la normativa, cómo abrir un negocio, qué comandos usar o cómo solucionar un bug habitual (ej: caché, F8 quit, F8 reconnect), respóndele directamente con la explicación exacta y termínale preguntando: "¿Te queda alguna otra duda o está todo claro?".\n' +
             '3. PRECISIÓN TOTAL: No inventes nada. Usa la normativa oficial del servidor y la base de conocimientos.\n' +
             '4. NUNCA pidas la ID de FiveM.\n' +
             '5. LONGITUD: Máximo 2 o 3 frases directas y útiles. Cero textos gigantes.\n' +
-            '6. Si el usuario te confirma que ya se le solucionó o da las gracias porque le quedó claro, felicítale de forma agradable y dile que un Staff revisará su ticket en breve.';
+            '6. Si el usuario te indica que ya no tiene más dudas o que todo está claro, deséale buen rol de forma agradable.';
 
         const conversationHistory = userMessages.slice(-5).map(m => ({
             role: 'user',
@@ -716,61 +714,46 @@ async function handleUserConversation(channel, user, category, combinedText, ses
             .setStyle(ButtonStyle.Primary)
     );
 
-    // Por defecto en la conversación normal NO se muestran botones para que la charla sea 100% fluida
-    let shouldShowButtons = userWantsStaff;
-    let componentsToSend = shouldShowButtons ? [actionRow] : [];
-
-    // Comprobar si el usuario confirma directamente por texto que su incidencia quedó solucionada
-    const isResolvedByText = isUserConfirmingResolved(combinedText);
-    if (isResolvedByText && session.status !== 'solved') {
-        session.status = 'solved';
-        if (session.save) await session.save();
-
-        const replyMsg = `¡De nada <@${user.id}>! Me alegro mucho de que haya quedado solucionado. 👍\n\n` +
-                         `He dejado el ticket registrado como **SOLUCIONADO** para que el equipo de Staff lo revise y proceda a cerrarlo en cuanto esté libre. ¡Que disfrutes en la ciudad de **Vallecas RP**!`;
-
-        const { embed: resEmbed, files: resFiles } = buildBaseEmbed(guild, null, replyMsg, 0x2ecc71);
-        await channel.send({ embeds: [resEmbed], files: resFiles }).catch(() => {});
-
-        try {
-            const currentName = channel.name.replace(/^solucionado-?/i, '');
-            const newName = `solucionado-${currentName}`.slice(0, 32);
-            await channel.setName(newName, 'Ticket marcado como solucionado por el Asistente Virtual');
-            console.log(`🏷️ [ASISTENTE TICKETS] Ticket #${channel.name} renombrado a #${newName}`);
-        } catch (nameErr) {
-            console.warn('⚠️ [ASISTENTE TICKETS] No se pudo renombrar canal a solucionado:', nameErr.message);
-        }
-
-        await sendStaffSummary(channel, session, true);
+    // 1. Comprobar si el usuario pide explícitamente hablar con un staff
+    if (userWantsStaff) {
+        const replyMsg = `¡Entendido <@${user.id}>! Puedes pulsar **Hablar con un Staff** para avisar al equipo y que te atiendan personalmente.`;
+        const { embed: staffEmbed, files: staffFiles } = buildBaseEmbed(guild, null, replyMsg, 0x3498db);
+        await channel.send({ embeds: [staffEmbed], files: staffFiles, components: [actionRow] }).catch(() => {});
         return;
     }
 
-    // Intentar responder como un chat inteligente usando el motor de IA
+    // 2. Comprobar si el usuario confirma que ya no tiene dudas o que el problema quedó solucionado
+    // (Ej: "vale", "perfecto", "no, ninguna", "todo claro", "gracias ya está", etc.)
+    const isResolvedByText = isUserConfirmingResolved(combinedText);
+    if (isResolvedByText && userTurnCount >= 1) {
+        const replyMsg = `¡Perfecto <@${user.id}>! Me alegro de que haya quedado todo aclarado. 😊\n\n` +
+                         `Para dejar constancia en el ticket y proceder, por favor utiliza los botones de aquí abajo:\n\n` +
+                         `• Pulsa **Problema Solucionado** si no necesitas nada más y el Staff lo revisará para proceder al cierre.\n` +
+                         `• O pulsa **Hablar con un Staff** si prefieres que un moderador revise tu caso personalmente.`;
+
+        const { embed: resEmbed, files: resFiles } = buildBaseEmbed(guild, null, replyMsg, 0x2ecc71);
+        await channel.send({ embeds: [resEmbed], files: resFiles, components: [actionRow] }).catch(() => {});
+        return;
+    }
+
+    // 3. Conversación fluida con IA (Responder dudas, explicar normativa, mecánicas...)
+    // Durante la conversación NORMAL, NO se muestran botones para que el diálogo sea natural y fluido
     const aiReply = await generateAIResponse(category, session.userMessages || [], combinedText, user.tag);
     if (aiReply) {
-        // En conversación fluida: Si el usuario solo dice "vale", "ok", saluda o hace preguntas cortas, NO poner botones.
-        // Los botones SOLO se activan si el usuario pide explícitamente un Staff,
-        // o si tras al menos 2 intercambios el bot ya ha dado una respuesta detallada con instrucciones.
-        const isShortFollowUp = /^(vale|ok|oka|perfecto|entiendo|bien|ya veo|a vale|ah vale|gracias)[\s.!?,]*$/i.test(combinedText.trim());
-        if (userWantsStaff) {
-            shouldShowButtons = true;
-        } else if (!isShortFollowUp && userTurnCount >= 2 && aiReply.length > 70) {
-            shouldShowButtons = await checkIfAssistantGaveSolution(aiReply, combinedText);
-        } else {
-            shouldShowButtons = false;
-        }
-
-        componentsToSend = shouldShowButtons ? [actionRow] : [];
-
         const { embed, files } = buildBaseEmbed(
             guild,
             null,
             aiReply,
             category === 'donaciones' ? 0x9b59b6 : (category === 'apelacion' ? 0xe67e22 : 0x3498db)
         );
-        await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
+        // Sin botones mientras el usuario sigue preguntando
+        await channel.send({ embeds: [embed], files, components: [] }).catch(() => { });
         return;
     }
+
+    // Variables de respaldo para respuestas predeterminadas en caso de fallo de IA
+    const shouldShowButtons = false;
+    const componentsToSend = [];
 
     // 1. Apelación de Baneo
     if (category === 'apelacion') {
