@@ -654,6 +654,45 @@ async function generateAIResponse(category, userMessages, currentMessage, userTa
     return null;
 }
 
+// Clasificador rápido con IA para saber si la respuesta del asistente proporciona una solución real
+async function checkIfAssistantGaveSolution(asistenteReply, userMsg) {
+    const groqKey = process.env.GROQ_API_KEY;
+    if (!groqKey || !asistenteReply) return false;
+
+    // Si es solo un saludo o pregunta pidiendo más detalles, NUNCA es solución
+    const isJustAskingForInfo = /¿(en qué|cuéntame|qué te ocurre|qué te pasa|dime qué|puedes decirme|puedes explicarme|qué necesitas)/i.test(asistenteReply);
+    if (isJustAskingForInfo && asistenteReply.length < 90) return false;
+
+    try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: 'qwen/qwen3.8-27b',
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'Eres un clasificador interno. Analiza si la respuesta del asistente explica o resuelve una duda/problema planteado por el usuario (responde SI), o si solo es un saludo o pregunta pidiendo que el usuario cuente qué le pasa (responde NO). Responde UNICAMENTE SI o NO.'
+                    },
+                    {
+                        role: 'user',
+                        content: `Mensaje del usuario: "${userMsg}"\nRespuesta del asistente: "${asistenteReply}"`
+                    }
+                ],
+                max_tokens: 5,
+                temperature: 0.1
+            })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            const text = data.choices?.[0]?.message?.content?.trim().toUpperCase();
+            return text && text.includes('SI');
+        }
+    } catch (e) { }
+    return false;
+}
+
 async function handleUserConversation(channel, user, category, combinedText, session) {
     const guild = channel.guild;
 
@@ -707,18 +746,19 @@ async function handleUserConversation(channel, user, category, combinedText, ses
     // Intentar responder como un chat inteligente usando el motor de IA
     const aiReply = await generateAIResponse(category, session.userMessages || [], combinedText, user.tag);
     if (aiReply) {
-        // Mostrar los 2 botones cuando el bot responde a una duda o si el usuario pide staff
-        const shouldShowButtons = !isOnlyGreeting && userTurnCount >= 1;
-        const componentsToSend = shouldShowButtons ? [actionRow] : [];
+        // Analizar si esta respuesta de la IA ha aportado una solución/explicación real a la duda del usuario
+        const hasSolvedOrExplained = await checkIfAssistantGaveSolution(aiReply, combinedText);
 
-        const extraQuestion = shouldShowButtons
-            ? `\n\n*(¿Ha quedado resuelta tu duda con esta respuesta? Puedes indicarlo abajo pulsando el botón correspondiente).*`
-            : '';
+        // Los botones SOLO se muestran si:
+        // 1. La IA realmente ha dado una solución o explicación a la duda/problema
+        // 2. O si el usuario pide explícitamente un Staff
+        const shouldShowButtons = userWantsStaff || hasSolvedOrExplained;
+        const componentsToSend = shouldShowButtons ? [actionRow] : [];
 
         const { embed, files } = buildBaseEmbed(
             guild,
             null,
-            `${aiReply}${extraQuestion}`,
+            aiReply,
             category === 'donaciones' ? 0x9b59b6 : (category === 'apelacion' ? 0xe67e22 : 0x3498db)
         );
         await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
@@ -727,7 +767,7 @@ async function handleUserConversation(channel, user, category, combinedText, ses
 
     // 1. Apelación de Baneo
     if (category === 'apelacion') {
-        const extraNote = shouldShowStaffButton
+        const extraNote = shouldShowButtons
             ? `\n\n*(Pulsa abajo en cuanto quieras enviar el aviso formal al Staff con tu expediente).*`
             : '';
 
@@ -1424,15 +1464,23 @@ module.exports = function initAsistenteTickets(client) {
             // (Si un staff o admin abre un ticket de soporte/donación para probar o como usuario, el bot SÍ le debe atender)
             let isAuthorTicketOwner = false;
             try {
-                // Comprobar si el autor fue mencionado en los primeros mensajes del ticket por el bot King
-                const pinnedOrFirst = await message.channel.messages.fetch({ limit: 10 }).catch(() => null);
-                if (pinnedOrFirst) {
-                    for (const m of pinnedOrFirst.values()) {
-                        if (m.author.bot && (m.content.includes(message.author.id) || (m.embeds && m.embeds.some(e => `${e.title || ''} ${e.description || ''}`.includes(message.author.id))))) {
-                            isAuthorTicketOwner = true;
-                            break;
-                        }
+                // A) Comprobar el topic del canal (donde King pone "por <@ID>")
+                if (message.channel.topic && message.channel.topic.includes(message.author.id)) {
+                    isAuthorTicketOwner = true;
+                }
+
+                // B) Comprobar la sesión previa de la BD
+                if (!isAuthorTicketOwner) {
+                    const existingSess = await TicketSession.findOne({ channelId: message.channel.id });
+                    if (existingSess && existingSess.userId === message.author.id) {
+                        isAuthorTicketOwner = true;
                     }
+                }
+
+                // C) Comprobar permisos del usuario en el canal (type: 1 = Member overwrite)
+                if (!isAuthorTicketOwner && message.channel.permissionOverwrites) {
+                    const hasUserOverwrite = message.channel.permissionOverwrites.cache.has(message.author.id);
+                    if (hasUserOverwrite) isAuthorTicketOwner = true;
                 }
             } catch (e) { }
 
@@ -1452,7 +1500,7 @@ module.exports = function initAsistenteTickets(client) {
                 });
             }
 
-            // Buffer anti-mensajes fragmentados (espera 3.5s tras el último mensaje)
+            // Buffer anti-mensajes fragmentados (espera rápida de 1.2s para respuesta casi instantánea)
             if (!userMessageBuffers.has(channelId)) {
                 userMessageBuffers.set(channelId, { timeout: null, messages: [] });
             }
@@ -1472,6 +1520,9 @@ module.exports = function initAsistenteTickets(client) {
             if (buffer.timeout) clearTimeout(buffer.timeout);
 
             buffer.timeout = setTimeout(async () => {
+                // Indicador de "Escribiendo..." de Discord para que el usuario vea que el bot le atiende de inmediato
+                message.channel.sendTyping().catch(() => {});
+
                 // Volver a comprobar que ningún staff haya escrito durante el buffer
                 const staffCheck = await hasStaffParticipated(message.channel);
                 if (staffCheck) {
