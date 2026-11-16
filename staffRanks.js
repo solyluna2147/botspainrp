@@ -72,9 +72,9 @@ async function flushAscensosBatch(client) {
         // Formato idéntico al estilo histórico de Deivizz dentro del Embed
         const embedDescLines = batch.map(item => {
             if (item.isNewStaff) {
-                return `> <@${item.member.id}> *Asciendes al Equipo de Staff como <@&${item.newRank.id}>*`;
+                return `<@${item.member.id}> *Asciendes al Equipo de Staff como <@&${item.newRank.id}>*`;
             }
-            return `> <@${item.member.id}> *Asciendes de <@&${item.oldRank.id}> a <@&${item.newRank.id}>*`;
+            return `<@${item.member.id}> *Asciendes de <@&${item.oldRank.id}> a <@&${item.newRank.id}>*`;
         }).join('\n');
 
         const logoPath = path.join(__dirname, 'assets', 'logo.png');
@@ -92,18 +92,8 @@ async function flushAscensosBatch(client) {
                 name: 'SISTEMA DE ADMINISTRACIÓN | VALLECAS RP',
                 iconURL: iconUrl
             })
-            .setTitle('📈 ¡NUEVO ASCENSO EN EL EQUIPO DE STAFF!')
             .setThumbnail(iconUrl)
-            .setDescription(
-                `\u200B\n` +
-                `${embedDescLines}\n\n` +
-                `✨ **¡Enhorabuena por vuestro ascenso y gracias por vuestro compromiso!**`
-            )
-            .setFooter({
-                text: 'VALLECAS RP • Departamento de Administración',
-                iconURL: iconUrl
-            })
-            .setTimestamp();
+            .setDescription(embedDescLines);
 
         await canalAscensos.send({
             content: pingMentions,
@@ -137,7 +127,7 @@ async function flushDescensosBatch(client) {
 
         // Formato estilo Deivizz dentro del embed
         const embedDescLines = batch.map(item => 
-            `> <@${item.member.id}> *Desciendes de <@&${item.oldRank.id}> a <@&${item.newRank.id}>*`
+            `<@${item.member.id}> *Desciendes de <@&${item.oldRank.id}> a <@&${item.newRank.id}>*`
         ).join('\n');
 
         const logoPath = path.join(__dirname, 'assets', 'logo.png');
@@ -155,18 +145,8 @@ async function flushDescensosBatch(client) {
                 name: 'SISTEMA DE ADMINISTRACIÓN | VALLECAS RP',
                 iconURL: iconUrl
             })
-            .setTitle('📉 ACTUALIZACIÓN DE RANGO EN EL EQUIPO DE STAFF')
             .setThumbnail(iconUrl)
-            .setDescription(
-                `\u200B\n` +
-                `${embedDescLines}\n\n` +
-                `⚖️ **Modificación oficial en el organigrama del equipo de staff.**`
-            )
-            .setFooter({
-                text: 'VALLECAS RP • Departamento de Administración',
-                iconURL: iconUrl
-            })
-            .setTimestamp();
+            .setDescription(embedDescLines);
 
         await canalDescensos.send({
             content: pingMentions,
