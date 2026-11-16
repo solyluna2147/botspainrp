@@ -1396,9 +1396,6 @@ module.exports = function initAsistenteTickets(client) {
             if (customId.startsWith('btn_solicitar_staff_')) {
                 const targetUserId = customId.replace('btn_solicitar_staff_', '');
                 
-                // Confirmar la interacción de inmediato sin mandar mensajes spam intermedios
-                await interaction.deferUpdate().catch(() => {});
-
                 let session = await TicketSession.findOne({ channelId: interaction.channelId });
                 if (!session) {
                     session = {
@@ -1410,7 +1407,48 @@ module.exports = function initAsistenteTickets(client) {
                     };
                 }
 
-                // Enviar directamente el diagnóstico estructurado para el Staff con mención al rol
+                // Si ya se ha enviado el resumen previamente en este ticket
+                if (session.status === 'summarized') {
+                    // Deshabilitar el botón en el mensaje original si aún existe
+                    try {
+                        const disabledRow = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('btn_solicitar_staff_disabled')
+                                .setLabel('✅ Resumen ya enviado al Staff')
+                                .setStyle(ButtonStyle.Secondary)
+                                .setDisabled(true)
+                        );
+                        await interaction.update({ components: [disabledRow] }).catch(() => {});
+                    } catch (e) { }
+
+                    // Enviar mensaje temporal avisando al usuario y auto-eliminarlo a los 6 segundos
+                    const tempNotice = await interaction.channel.send({
+                        content: `⚠️ <@${interaction.user.id}>, **el resumen de tu incidencia ya ha sido enviado al equipo de Staff**.\n> Por favor, mantén la calma y permanece a la espera; un miembro del Staff te atenderá a la mayor brevedad posible.`
+                    }).catch(() => null);
+
+                    if (tempNotice) {
+                        setTimeout(() => {
+                            tempNotice.delete().catch(() => {});
+                        }, 6000);
+                    }
+                    return;
+                }
+
+                // Deshabilitar de inmediato el botón en el mensaje donde se hizo clic para que no se pueda spamear
+                try {
+                    const disabledRow = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('btn_solicitar_staff_disabled')
+                            .setLabel('✅ Resumen enviado al Staff')
+                            .setStyle(ButtonStyle.Success)
+                            .setDisabled(true)
+                    );
+                    await interaction.update({ components: [disabledRow] }).catch(() => {});
+                } catch (e) {
+                    await interaction.deferUpdate().catch(() => {});
+                }
+
+                // Enviar el diagnóstico estructurado para el Staff con mención al rol
                 session.status = 'summarized';
                 if (session.save) await session.save();
                 await sendStaffSummary(interaction.channel, session);

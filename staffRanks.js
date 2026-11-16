@@ -66,15 +66,17 @@ async function flushAscensosBatch(client) {
             return;
         }
 
-        // 1. Mensaje de texto exacto con menciones idéntico al formato histórico
-        const textLines = batch.map(item => {
+        // Menciones ping arriba para que a los staffs les llegue la notificación
+        const pingMentions = batch.map(item => `<@${item.member.id}>`).join(' ');
+
+        // Formato idéntico al estilo histórico de Deivizz dentro del Embed
+        const embedDescLines = batch.map(item => {
             if (item.isNewStaff) {
-                return `<@${item.member.id}> *Asciendes al Equipo de Staff como <@&${item.newRank.id}>*`;
+                return `> <@${item.member.id}> *Asciendes al Equipo de Staff como <@&${item.newRank.id}>*`;
             }
-            return `<@${item.member.id}> *Asciendes de <@&${item.oldRank.id}> a <@&${item.newRank.id}>*`;
+            return `> <@${item.member.id}> *Asciendes de <@&${item.oldRank.id}> a <@&${item.newRank.id}>*`;
         }).join('\n');
 
-        // 2. Embed visual elegante de Vallecas RP
         const logoPath = path.join(__dirname, 'assets', 'logo.png');
         const files = [];
         let iconUrl = undefined;
@@ -84,28 +86,18 @@ async function flushAscensosBatch(client) {
             iconUrl = 'attachment://logo.png';
         }
 
-        const embedDesc = batch.map(item => {
-            if (item.isNewStaff) {
-                return `> 👤 <@${item.member.id}> \`(${item.member.user.tag})\`\n` +
-                       `> 🎉 Incorporación: <@&${item.newRank.id}>`;
-            }
-            return `> 👤 <@${item.member.id}> \`(${item.member.user.tag})\`\n` +
-                   `> 📈 Rango Anterior: <@&${item.oldRank.id}>\n` +
-                   `> ⭐ Nuevo Rango: <@&${item.newRank.id}>`;
-        }).join('\n\n');
-
         const embed = new EmbedBuilder()
-            .setColor(0x2ECC71) // Verde esmeralda / ascenso
+            .setColor(0xE67E22) // Tono dorado / naranja premium oficial de Vallecas RP
             .setAuthor({
-                name: 'SISTEMA DE GESTIÓN DE STAFF | VALLECAS RP',
+                name: 'SISTEMA DE ADMINISTRACIÓN | VALLECAS RP',
                 iconURL: iconUrl
             })
-            .setTitle('🎉 ¡NUEVO ASCENSO EN EL EQUIPO DE STAFF!')
+            .setTitle('📈 ¡NUEVO ASCENSO EN EL EQUIPO DE STAFF!')
             .setThumbnail(iconUrl)
             .setDescription(
-                `Se ha hecho oficial el ascenso dentro del organigrama del equipo administrativo:\n\n` +
-                `${embedDesc}\n\n` +
-                `✨ **¡Enhorabuena por vuestro compromiso y dedicación con la comunidad!**`
+                `\u200B\n` +
+                `${embedDescLines}\n\n` +
+                `✨ **¡Enhorabuena por vuestro ascenso y gracias por vuestro compromiso!**`
             )
             .setFooter({
                 text: 'VALLECAS RP • Departamento de Administración',
@@ -114,7 +106,7 @@ async function flushAscensosBatch(client) {
             .setTimestamp();
 
         await canalAscensos.send({
-            content: textLines,
+            content: pingMentions,
             embeds: [embed],
             files: files
         });
@@ -141,12 +133,13 @@ async function flushDescensosBatch(client) {
             return;
         }
 
-        // 1. Mensaje de texto exacto con menciones
-        const textLines = batch.map(item => 
-            `<@${item.member.id}> *Desciendes de <@&${item.oldRank.id}> a <@&${item.newRank.id}>*`
+        const pingMentions = batch.map(item => `<@${item.member.id}>`).join(' ');
+
+        // Formato estilo Deivizz dentro del embed
+        const embedDescLines = batch.map(item => 
+            `> <@${item.member.id}> *Desciendes de <@&${item.oldRank.id}> a <@&${item.newRank.id}>*`
         ).join('\n');
 
-        // 2. Embed visual elegante de Vallecas RP
         const logoPath = path.join(__dirname, 'assets', 'logo.png');
         const files = [];
         let iconUrl = undefined;
@@ -156,23 +149,18 @@ async function flushDescensosBatch(client) {
             iconUrl = 'attachment://logo.png';
         }
 
-        const embedDesc = batch.map(item => 
-            `> 👤 <@${item.member.id}> \`(${item.member.user.tag})\`\n` +
-            `> 📉 Rango Anterior: <@&${item.oldRank.id}>\n` +
-            `> 🔻 Nuevo Rango: <@&${item.newRank.id}>`
-        ).join('\n\n');
-
         const embed = new EmbedBuilder()
-            .setColor(0xE74C3C) // Rojo / descenso
+            .setColor(0xE74C3C) // Rojo advertencia / descenso
             .setAuthor({
-                name: 'SISTEMA DE GESTIÓN DE STAFF | VALLECAS RP',
+                name: 'SISTEMA DE ADMINISTRACIÓN | VALLECAS RP',
                 iconURL: iconUrl
             })
-            .setTitle('⚠️ ACTUALIZACIÓN DE RANGO ADMINISTRATIVO')
+            .setTitle('📉 ACTUALIZACIÓN DE RANGO EN EL EQUIPO DE STAFF')
             .setThumbnail(iconUrl)
             .setDescription(
-                `Se ha registrado una modificación en el organigrama del equipo administrativo:\n\n` +
-                `${embedDesc}`
+                `\u200B\n` +
+                `${embedDescLines}\n\n` +
+                `⚖️ **Modificación oficial en el organigrama del equipo de staff.**`
             )
             .setFooter({
                 text: 'VALLECAS RP • Departamento de Administración',
@@ -181,7 +169,7 @@ async function flushDescensosBatch(client) {
             .setTimestamp();
 
         await canalDescensos.send({
-            content: textLines,
+            content: pingMentions,
             embeds: [embed],
             files: files
         });
@@ -221,7 +209,7 @@ function initStaffRanks(client) {
                 // El rol nuevo de mayor nivel agregado
                 const highestAdded = addedRankRoles.sort((a, b) => b.level - a.level)[0];
 
-                // Rango anterior que tenía antes de este cambio (si tenía alguno)
+                // Rango anterior que tenía antes de este cambio (el más alto que tenía)
                 const prevRank = oldRanksInMember.sort((a, b) => b.level - a.level)[0];
 
                 if (prevRank && prevRank.id !== highestAdded.id) {
@@ -229,22 +217,7 @@ function initStaffRanks(client) {
                         // === ASCENSO AUTOMÁTICO ENTRE RANGOS ===
                         console.log(`📈 [STAFF RANKS] Detectado ASCENSO para ${newMember.displayName}: Nivel ${prevRank.level} (${prevRank.name}) -> Nivel ${highestAdded.level} (${highestAdded.name})`);
 
-                        // Evitar bucle mientras retiramos el rol antiguo
-                        cooldownModifications.add(userId);
-                        try {
-                            // Retirar los roles antiguos de la escala que ya no correspondan
-                            for (const oldR of oldRanksInMember) {
-                                if (oldR.id !== highestAdded.id && newMember.roles.cache.has(oldR.id)) {
-                                    await newMember.roles.remove(oldR.id, 'Auto-limpieza de rango anterior por ascenso');
-                                }
-                            }
-                        } catch (errRole) {
-                            console.warn(`⚠️ [STAFF RANKS] No se pudo retirar rol antiguo a ${newMember.displayName}:`, errRole.message);
-                        } finally {
-                            setTimeout(() => cooldownModifications.delete(userId), 3000);
-                        }
-
-                        // Agregar a la cola de ascensos
+                        // El bot NO elimina ningún rol, solo detecta y publica
                         ascensosQueue.push({
                             member: newMember,
                             oldRank: prevRank,
@@ -258,21 +231,7 @@ function initStaffRanks(client) {
                         // === DESCENSO AUTOMÁTICO (al darle un rol inferior) ===
                         console.log(`📉 [STAFF RANKS] Detectado DESCENSO para ${newMember.displayName}: Nivel ${prevRank.level} (${prevRank.name}) -> Nivel ${highestAdded.level} (${highestAdded.name})`);
 
-                        cooldownModifications.add(userId);
-                        try {
-                            // Retirar roles superiores
-                            for (const oldR of oldRanksInMember) {
-                                if (oldR.id !== highestAdded.id && newMember.roles.cache.has(oldR.id)) {
-                                    await newMember.roles.remove(oldR.id, 'Auto-limpieza de rango anterior por descenso');
-                                }
-                            }
-                        } catch (errRole) {
-                            console.warn(`⚠️ [STAFF RANKS] No se pudo retirar rol superior a ${newMember.displayName}:`, errRole.message);
-                        } finally {
-                            setTimeout(() => cooldownModifications.delete(userId), 3000);
-                        }
-
-                        // Agregar a la cola de descensos
+                        // El bot NO elimina ningún rol, solo detecta y publica
                         descensosQueue.push({
                             member: newMember,
                             oldRank: prevRank,
@@ -286,7 +245,6 @@ function initStaffRanks(client) {
                     // === NUEVA ENTRADA AL EQUIPO DE STAFF (Ascenso inicial / Incorporación) ===
                     console.log(`🎉 [STAFF RANKS] Detectada NUEVA INCORPORACIÓN / ASCENSO para ${newMember.displayName} a ${highestAdded.name}`);
 
-                    // Representamos el rango base anterior como Usuario / Sin Rango
                     const userBaseRank = {
                         id: 'USER',
                         name: 'Usuario / Ciudadano',
@@ -325,6 +283,24 @@ function initStaffRanks(client) {
             }
         } catch (err) {
             console.error('❌ [STAFF RANKS] Error procesando guildMemberUpdate:', err);
+        }
+    });
+
+    // Comando rápido para comprobar en Discord si el sistema está activo: !staff-estado o !staff-test
+    client.on('messageCreate', async (message) => {
+        if (!message.guild || message.author.bot) return;
+        const text = message.content.trim().toLowerCase();
+        if (text === '!staff-estado' || text === '!staff-test' || text === '!ascensos-estado') {
+            const cAsc = message.guild.channels.cache.get(CANAL_ASCENSOS_ID);
+            const cDesc = message.guild.channels.cache.get(CANAL_DESCENSOS_ID);
+            return message.reply({
+                content: `🛡️ **Sistema Automático de Ascensos y Descensos | VALLECAS RP**\n` +
+                         `> 🟢 **Estado:** ACTIVO y escuchando cambios de roles en tiempo real.\n` +
+                         `> 📈 **Canal Ascensos:** ${cAsc ? `<#${cAsc.id}>` : '❌ No encontrado'}\n` +
+                         `> 📉 **Canal Descensos:** ${cDesc ? `<#${cDesc.id}>` : '❌ No encontrado'}\n` +
+                         `> 📊 **Rangos Monitoreados:** 11 niveles de Staff.\n\n` +
+                         `*Para probarlo, añade o cambia un rol de staff a cualquier miembro en Discord y el bot lo publicará automáticamente.*`
+            }).catch(() => {});
         }
     });
 
