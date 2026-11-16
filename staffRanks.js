@@ -67,9 +67,12 @@ async function flushAscensosBatch(client) {
         }
 
         // 1. Mensaje de texto exacto con menciones idéntico al formato histórico
-        const textLines = batch.map(item => 
-            `<@${item.member.id}> *Asciendes de <@&${item.oldRank.id}> a <@&${item.newRank.id}>*`
-        ).join('\n');
+        const textLines = batch.map(item => {
+            if (item.isNewStaff) {
+                return `<@${item.member.id}> *Asciendes al Equipo de Staff como <@&${item.newRank.id}>*`;
+            }
+            return `<@${item.member.id}> *Asciendes de <@&${item.oldRank.id}> a <@&${item.newRank.id}>*`;
+        }).join('\n');
 
         // 2. Embed visual elegante de Vallecas RP
         const logoPath = path.join(__dirname, 'assets', 'logo.png');
@@ -81,11 +84,15 @@ async function flushAscensosBatch(client) {
             iconUrl = 'attachment://logo.png';
         }
 
-        const embedDesc = batch.map(item => 
-            `> 👤 <@${item.member.id}> \`(${item.member.user.tag})\`\n` +
-            `> 📈 Rango Anterior: <@&${item.oldRank.id}>\n` +
-            `> ⭐ Nuevo Rango: <@&${item.newRank.id}>`
-        ).join('\n\n');
+        const embedDesc = batch.map(item => {
+            if (item.isNewStaff) {
+                return `> 👤 <@${item.member.id}> \`(${item.member.user.tag})\`\n` +
+                       `> 🎉 Incorporación: <@&${item.newRank.id}>`;
+            }
+            return `> 👤 <@${item.member.id}> \`(${item.member.user.tag})\`\n` +
+                   `> 📈 Rango Anterior: <@&${item.oldRank.id}>\n` +
+                   `> ⭐ Nuevo Rango: <@&${item.newRank.id}>`;
+        }).join('\n\n');
 
         const embed = new EmbedBuilder()
             .setColor(0x2ECC71) // Verde esmeralda / ascenso
@@ -214,12 +221,12 @@ function initStaffRanks(client) {
                 // El rol nuevo de mayor nivel agregado
                 const highestAdded = addedRankRoles.sort((a, b) => b.level - a.level)[0];
 
-                // Rango anterior que tenía antes de este cambio
+                // Rango anterior que tenía antes de este cambio (si tenía alguno)
                 const prevRank = oldRanksInMember.sort((a, b) => b.level - a.level)[0];
 
                 if (prevRank && prevRank.id !== highestAdded.id) {
                     if (highestAdded.level > prevRank.level) {
-                        // === ASCENSO AUTOMÁTICO ===
+                        // === ASCENSO AUTOMÁTICO ENTRE RANGOS ===
                         console.log(`📈 [STAFF RANKS] Detectado ASCENSO para ${newMember.displayName}: Nivel ${prevRank.level} (${prevRank.name}) -> Nivel ${highestAdded.level} (${highestAdded.name})`);
 
                         // Evitar bucle mientras retiramos el rol antiguo
@@ -275,6 +282,26 @@ function initStaffRanks(client) {
                         if (batchTimeoutDescensos) clearTimeout(batchTimeoutDescensos);
                         batchTimeoutDescensos = setTimeout(() => flushDescensosBatch(client), 3500);
                     }
+                } else if (!prevRank) {
+                    // === NUEVA ENTRADA AL EQUIPO DE STAFF (Ascenso inicial / Incorporación) ===
+                    console.log(`🎉 [STAFF RANKS] Detectada NUEVA INCORPORACIÓN / ASCENSO para ${newMember.displayName} a ${highestAdded.name}`);
+
+                    // Representamos el rango base anterior como Usuario / Sin Rango
+                    const userBaseRank = {
+                        id: 'USER',
+                        name: 'Usuario / Ciudadano',
+                        level: 0
+                    };
+
+                    ascensosQueue.push({
+                        member: newMember,
+                        oldRank: userBaseRank,
+                        newRank: highestAdded,
+                        isNewStaff: true
+                    });
+
+                    if (batchTimeoutAscensos) clearTimeout(batchTimeoutAscensos);
+                    batchTimeoutAscensos = setTimeout(() => flushAscensosBatch(client), 3500);
                 }
             } 
             // Caso B: Se le retiró un rol de staff sin agregarle uno nuevo directamente
