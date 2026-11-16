@@ -294,19 +294,21 @@ function isUserAskingForStaff(text) {
 }
 
 // Helper para comprobar si el usuario indica que no tiene más dudas o que su consulta ha quedado resuelta
-function isUserConfirmingResolved(text) {
+async function isUserConfirmingResolved(text, lastAssistantMessage = '') {
     if (!text) return false;
     const lower = text.toLowerCase().trim();
     
     // Si el usuario incluye palabras que indican una nueva duda o pregunta ("otra duda", "pero", "y si", "tengo una duda"),
     // NUNCA debe tratarse como resuelto, sino responderle
-    if (/duda|pregunta|pero|y si|otra cosa/i.test(lower)) {
+    if (/duda|pregunta|pero|y si|otra cosa|se puede|puedo|es sancionable/i.test(lower)) {
         return false;
     }
     
-    // Frases o palabras que expresan que ya no hay más dudas o que está todo claro / solucionado
+    // 1. Detección rápida por patrones comunes (vale, ok, gracias, vale gracias, todo claro, etc.)
     const resolvedPatterns = [
         /^(vale|ok|oka|okay|perfecto|entendido|entiendo|bien|ya veo|a vale|ah vale|gracias|muchas gracias)[\s.!?,]*$/i,
+        /^(vale|ok|oka|ah vale|a vale)[\s,]+(gracias|muchas gracias|perfecto|todo claro|entendido)[\s.!?,]*$/i,
+        /^(gracias|muchas gracias)[\s,]+(vale|ok|amigo|bro|staff)[\s.!?,]*$/i,
         /^(no|ninguna|nada|ya nada|todo bien|todo correcto|todo bien gracias|no gracias)[\s.!?,]*$/i,
         /^(no( tengo)? (mas |más )?dudas?|ninguna duda( mas| más)?|ya (esta|está|estaria|estaría))[\s.!?,]*$/i,
         /todo claro/i,
@@ -326,7 +328,46 @@ function isUserConfirmingResolved(text) {
         /perfecto gracias/i
     ];
 
-    return resolvedPatterns.some(pattern => pattern.test(lower));
+    if (resolvedPatterns.some(pattern => pattern.test(lower))) {
+        return true;
+    }
+
+    // 2. Comprobación inteligente con IA si no coincidió con el regex directo
+    const groqKey = process.env.GROQ_API_KEY;
+    if (groqKey && text.length < 80) {
+        try {
+            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'qwen/qwen3.8-27b',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: 'Eres un evaluador de tickets de soporte. Analiza el último mensaje del usuario tras la explicación del asistente. Determina si el usuario confirma que ya no tiene más dudas, agradece, da por zanjado el problema o dice que todo quedó claro (responde SI). Si por el contrario plantea una nueva pregunta, duda o problema, responde NO. Responde ÚNICAMENTE SI o NO.'
+                        },
+                        {
+                            role: 'assistant',
+                            content: lastAssistantMessage || '¿Te queda alguna otra duda o está todo claro?'
+                        },
+                        {
+                            role: 'user',
+                            content: text
+                        }
+                    ],
+                    max_tokens: 5,
+                    temperature: 0.1
+                })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                const evalText = data.choices?.[0]?.message?.content?.trim().toUpperCase();
+                if (evalText && evalText.includes('SI')) return true;
+            }
+        } catch (e) { }
+    }
+
+    return false;
 }
 
 // Carga en memoria del texto oficial de la normativa
@@ -730,8 +771,11 @@ async function handleUserConversation(channel, user, category, combinedText, ses
     }
 
     // 2. Comprobar si el usuario confirma que ya no tiene dudas o que el problema quedó solucionado
-    // (Ej: "vale", "perfecto", "no, ninguna", "todo claro", "gracias ya está", etc.)
-    const isResolvedByText = isUserConfirmingResolved(combinedText);
+    // (Ej: "vale, gracias", "perfecto", "no, ninguna", "todo claro", "gracias ya está", etc.)
+    const lastBotMsg = (session.userMessages && session.userMessages.length > 1)
+        ? (session.userMessages[session.userMessages.length - 2]?.content || '')
+        : '';
+    const isResolvedByText = await isUserConfirmingResolved(combinedText, lastBotMsg);
     if (isResolvedByText && userTurnCount >= 1) {
         const replyMsg = `¡Perfecto <@${user.id}>! Me alegro de que haya quedado todo aclarado. 😊\n\n` +
                          `Para dejar constancia en el ticket y proceder, por favor utiliza los botones de aquí abajo:\n\n` +
