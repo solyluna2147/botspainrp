@@ -8,15 +8,15 @@ const CANAL_DESCENSOS_ID = '1569698056826265831'; // 【📉】𝑑𝑒𝑠𝑐�
 
 // Jerarquía estricta de Rangos de Staff (Nivel 1 al Nivel 11)
 const STAFF_RANKS = [
-    { level: 1,  id: '1538216635326931107', name: '🔎┃Soporte Prueba' },
-    { level: 2,  id: '1538216842374549525', name: '➕┃Soporte Plus' },
-    { level: 3,  id: '1538216732316016771', name: '📡┃Soporte Técnico' },
-    { level: 4,  id: '1538216283370422365', name: '🍋┃Moderador en Pruebas' },
-    { level: 5,  id: '1538216547816968324', name: '🍊┃Moderador Junior' },
-    { level: 6,  id: '1538216093544349696', name: '🔰┃Moderador' },
-    { level: 7,  id: '1538216430233854013', name: '🧀┃Moderador Experto' },
-    { level: 8,  id: '1538217498631999538', name: '🍭┃Administrador en Pruebas' },
-    { level: 9,  id: '1538217598578204682', name: '🍓┃Administrador Junior' },
+    { level: 1, id: '1538216635326931107', name: '🔎┃Soporte Prueba' },
+    { level: 2, id: '1538216842374549525', name: '➕┃Soporte Plus' },
+    { level: 3, id: '1538216732316016771', name: '📡┃Soporte Técnico' },
+    { level: 4, id: '1538216283370422365', name: '🍋┃Moderador en Pruebas' },
+    { level: 5, id: '1538216547816968324', name: '🍊┃Moderador Junior' },
+    { level: 6, id: '1538216093544349696', name: '🔰┃Moderador' },
+    { level: 7, id: '1538216430233854013', name: '🧀┃Moderador Experto' },
+    { level: 8, id: '1538217498631999538', name: '🍭┃Administrador en Pruebas' },
+    { level: 9, id: '1538217598578204682', name: '🍓┃Administrador Junior' },
     { level: 10, id: '1538217739485716480', name: '⚡┃Administrador' },
     { level: 11, id: '1538217844087595079', name: '⭐┃Jefe Administracion' }
 ];
@@ -69,12 +69,13 @@ async function flushAscensosBatch(client) {
         // Menciones ping arriba para que a los staffs les llegue la notificación
         const pingMentions = batch.map(item => `<@${item.member.id}>`).join(' ');
 
-        // Formato idéntico al estilo histórico de Deivizz dentro del Embed
+        // Formato exacto dentro del Embed:
+        // @STAFF Asciendes de @ROL_ANTERIOR a @ROL_NUEVO
         const embedDescLines = batch.map(item => {
-            if (item.isNewStaff) {
-                return `<@${item.member.id}> *Asciendes al Equipo de Staff como <@&${item.newRank.id}>*`;
-            }
-            return `<@${item.member.id}> *Asciendes de <@&${item.oldRank.id}> a <@&${item.newRank.id}>*`;
+            const oldRankId = item.oldRank ? item.oldRank.id : null;
+            // Si tenía un rol anterior de staff, usamos ese rol. Si no, nivel 1 base.
+            const displayOldRoleId = (oldRankId && oldRankId !== 'USER') ? oldRankId : '1538216635326931107';
+            return `<@${item.member.id}> *Asciendes de* <@&${displayOldRoleId}> *a* <@&${item.newRank.id}>`;
         }).join('\n');
 
         const logoPath = path.join(__dirname, 'assets', 'logo.png');
@@ -126,8 +127,8 @@ async function flushDescensosBatch(client) {
         const pingMentions = batch.map(item => `<@${item.member.id}>`).join(' ');
 
         // Formato estilo Deivizz dentro del embed
-        const embedDescLines = batch.map(item => 
-            `<@${item.member.id}> *Desciendes de <@&${item.oldRank.id}> a <@&${item.newRank.id}>*`
+        const embedDescLines = batch.map(item =>
+            `<@${item.member.id}> *Desciendes de* <@&${item.oldRank.id}> *a* <@&${item.newRank.id}>`
         ).join('\n');
 
         const logoPath = path.join(__dirname, 'assets', 'logo.png');
@@ -241,7 +242,7 @@ function initStaffRanks(client) {
                     if (batchTimeoutAscensos) clearTimeout(batchTimeoutAscensos);
                     batchTimeoutAscensos = setTimeout(() => flushAscensosBatch(client), 3500);
                 }
-            } 
+            }
             // Caso B: Se le retiró un rol de staff sin agregarle uno nuevo directamente
             // (Ejemplo: Le quitas 'Moderador' y se queda con 'Moderador Junior' que ya tenía de fondo)
             else if (removedRankRoles.length > 0 && newRanksInMember.length > 0) {
@@ -275,12 +276,12 @@ function initStaffRanks(client) {
             const cDesc = message.guild.channels.cache.get(CANAL_DESCENSOS_ID);
             return message.reply({
                 content: `🛡️ **Sistema Automático de Ascensos y Descensos | VALLECAS RP**\n` +
-                         `> 🟢 **Estado:** ACTIVO y escuchando cambios de roles en tiempo real.\n` +
-                         `> 📈 **Canal Ascensos:** ${cAsc ? `<#${cAsc.id}>` : '❌ No encontrado'}\n` +
-                         `> 📉 **Canal Descensos:** ${cDesc ? `<#${cDesc.id}>` : '❌ No encontrado'}\n` +
-                         `> 📊 **Rangos Monitoreados:** 11 niveles de Staff.\n\n` +
-                         `*Para probarlo, añade o cambia un rol de staff a cualquier miembro en Discord y el bot lo publicará automáticamente.*`
-            }).catch(() => {});
+                    `> 🟢 **Estado:** ACTIVO y escuchando cambios de roles en tiempo real.\n` +
+                    `> 📈 **Canal Ascensos:** ${cAsc ? `<#${cAsc.id}>` : '❌ No encontrado'}\n` +
+                    `> 📉 **Canal Descensos:** ${cDesc ? `<#${cDesc.id}>` : '❌ No encontrado'}\n` +
+                    `> 📊 **Rangos Monitoreados:** 11 niveles de Staff.\n\n` +
+                    `*Para probarlo, añade o cambia un rol de staff a cualquier miembro en Discord y el bot lo publicará automáticamente.*`
+            }).catch(() => { });
         }
     });
 
