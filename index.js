@@ -1356,8 +1356,8 @@ function buildStreamPanelRow() {
 }
 
 // Función para asegurar que el panel esté publicado en el canal asignado
-async function ensureStreamPanel() {
-    const channelId = botConfig.CHANNEL_STREAM_PANEL_ID;
+async function ensureStreamPanel(overrideChannelId = null) {
+    const channelId = overrideChannelId || botConfig.CHANNEL_STREAM_PANEL_ID;
     if (!channelId) return;
 
     try {
@@ -1377,7 +1377,7 @@ async function ensureStreamPanel() {
         const prevMsg = fetched ? fetched.find(m => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0].title?.includes('PANEL DE NOTIFICACIÓN DE DIRECTOS')) : null;
 
         if (prevMsg) {
-            await prevMsg.edit({ embeds: [embed], components: [row] }).catch(() => null);
+            await prevMsg.edit({ embeds: [embed], components: [row], files }).catch(() => null);
         } else {
             await channel.send({ embeds: [embed], components: [row], files }).catch(() => null);
         }
