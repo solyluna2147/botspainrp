@@ -60,6 +60,153 @@ const ROLE_STAFF_ID = '1538191116610838691';
 let consultasActivas = true;
 let memoriaNormativaPages = []; // Caché en memoria RAM de las 16 páginas completas
 
+// ==========================================
+// POOL DE MODELOS GROQ CON RESPALDO AUTOMÁTICO (600K TOKENS/DÍA GRATIS)
+// ==========================================
+const GROQ_MODELS = [
+    { id: 'qwen/qwen3.8-27b', label: 'Qwen 3.8 27B (Principal)', dailyLimit: 200000, dailyReqLimit: 1000 },
+    { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B (Respaldo 1)', dailyLimit: 200000, dailyReqLimit: 1000 },
+    { id: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B (Respaldo 2)', dailyLimit: 200000, dailyReqLimit: 1000 }
+];
+
+function getUtcDateKey() {
+    return new Date().toISOString().slice(0, 10);
+}
+
+function createEmptyTokenStats() {
+    const models = {};
+    for (const m of GROQ_MODELS) {
+        models[m.id] = { tokensUsed: 0, requests: 0, exhausted: false };
+    }
+    return {
+        date: getUtcDateKey(),
+        activeModel: GROQ_MODELS[0].id,
+        lastQueryTokens: 0,
+        models
+    };
+}
+
+let tokenStats = createEmptyTokenStats();
+let tokensPanelRef = null; // { channelId, messageId }
+
+function ensureTodayTokenStats() {
+    const today = getUtcDateKey();
+    if (!tokenStats || tokenStats.date !== today) {
+        tokenStats = createEmptyTokenStats();
+    } else {
+        if (!tokenStats.models) tokenStats.models = {};
+        for (const m of GROQ_MODELS) {
+            if (!tokenStats.models[m.id]) {
+                tokenStats.models[m.id] = { tokensUsed: 0, requests: 0, exhausted: false };
+            }
+        }
+    }
+    return tokenStats;
+}
+
+async function saveTokenStats() {
+    try {
+        await BotSetting.findOneAndUpdate(
+            { key: 'groq_tokens_stats' },
+            { key: 'groq_tokens_stats', value: tokenStats },
+            { upsert: true }
+        );
+    } catch (e) { }
+}
+
+function makeProgressBar(used, total, size = 10) {
+    const pct = total > 0 ? Math.min(1, Math.max(0, used / total)) : 0;
+    const filled = Math.round(pct * size);
+    const fillChar = pct >= 0.85 ? '🟥' : (pct >= 0.6 ? '🟨' : '🟩');
+    return fillChar.repeat(filled) + '⬛'.repeat(size - filled);
+}
+
+function buildTokensPanelEmbed() {
+    ensureTodayTokenStats();
+    const logoAttachment = getLogoAttachment();
+    const logoUrl = logoAttachment ? 'attachment://logo.png' : undefined;
+
+    const totalLimit = GROQ_MODELS.reduce((acc, m) => acc + m.dailyLimit, 0);
+    let totalUsed = 0;
+    let totalReqs = 0;
+
+    const modelLines = GROQ_MODELS.map(m => {
+        const st = tokenStats.models[m.id] || { tokensUsed: 0, requests: 0, exhausted: false };
+        totalUsed += st.tokensUsed;
+        totalReqs += st.requests;
+        const remaining = Math.max(0, m.dailyLimit - st.tokensUsed);
+        const pct = Math.min(100, Math.round((st.tokensUsed / m.dailyLimit) * 100));
+        const isCurrent = tokenStats.activeModel === m.id;
+        const statusBadge = st.exhausted
+            ? '🔴 **Agotado hoy**'
+            : (isCurrent ? '🟢 **Activo ahora**' : '🔵 **En reserva**');
+        const bar = makeProgressBar(st.tokensUsed, m.dailyLimit, 10);
+
+        return (
+            `**${m.label}** — ${statusBadge}\n` +
+            `${bar} \`${pct}%\`\n` +
+            `> 🪙 Usados: \`${st.tokensUsed.toLocaleString('es-ES')}\` / \`${m.dailyLimit.toLocaleString('es-ES')}\` • Quedan: \`${remaining.toLocaleString('es-ES')}\` • Consultas: \`${st.requests}\``
+        );
+    }).join('\n\n');
+
+    const totalRemaining = Math.max(0, totalLimit - totalUsed);
+    const totalPct = Math.min(100, Math.round((totalUsed / totalLimit) * 100));
+    const totalBar = makeProgressBar(totalUsed, totalLimit, 12);
+
+    return new EmbedBuilder()
+        .setColor(0xD900FF)
+        .setAuthor({
+            name: 'MONITOR DE TOKENS IA EN VIVO | VALLECAS RP',
+            iconURL: logoUrl
+        })
+        .setThumbnail(logoUrl)
+        .setTitle('📊 CONSUMO Y LÍMITES DE IA (GROQ)')
+        .setDescription(
+            `🤖 **Modelo activo:** \`${tokenStats.activeModel}\`\n` +
+            `🔄 **Cambio automático:** Activado *(si un modelo se agota, salta al siguiente solo)*\n\n` +
+            `📈 **TOTAL COMBINADO HOY (${tokenStats.date} UTC):**\n` +
+            `${totalBar} \`${totalPct}%\`\n` +
+            `> 🪙 **Gastados:** \`${totalUsed.toLocaleString('es-ES')}\` / \`${totalLimit.toLocaleString('es-ES')}\` tokens\n` +
+            `> 🟢 **Disponibles:** \`${totalRemaining.toLocaleString('es-ES')}\` tokens\n` +
+            `> 💬 **Consultas hoy:** \`${totalReqs}\` *(Última: \`+${(tokenStats.lastQueryTokens || 0).toLocaleString('es-ES')}\` tokens)*\n\n` +
+            `────────────────────────────\n` +
+            `${modelLines}`
+        )
+        .setFooter({
+            text: 'VALLECAS RP • Se actualiza automáticamente tras cada consulta (Reset 00:00 UTC)',
+            iconURL: logoUrl
+        })
+        .setTimestamp();
+}
+
+function buildTokensPanelRow() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('btn_refresh_tokens_panel')
+            .setLabel('Actualizar ahora')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('🔄')
+    );
+}
+
+async function updateTokensPanel(client) {
+    if (!client || !tokensPanelRef || !tokensPanelRef.channelId || !tokensPanelRef.messageId) return;
+    try {
+        const ch = client.channels.cache.get(tokensPanelRef.channelId) || await client.channels.fetch(tokensPanelRef.channelId).catch(() => null);
+        if (!ch || !ch.isTextBased()) return;
+        const msg = await ch.messages.fetch(tokensPanelRef.messageId).catch(() => null);
+        if (!msg) return;
+
+        const embed = buildTokensPanelEmbed();
+        const logoAttachment = getLogoAttachment();
+        await msg.edit({
+            embeds: [embed],
+            files: logoAttachment ? [logoAttachment] : [],
+            components: [buildTokensPanelRow()]
+        }).catch(() => {});
+    } catch (e) { }
+}
+
 // Helper para obtener el logo oficial
 function getLogoPath() {
     return path.join(__dirname, 'assets', 'logo.png');
@@ -141,6 +288,17 @@ async function loadConfig() {
 
         const settingUsers = await BotSetting.findOne({ key: 'CHANNEL_CONSULTAS_USERS_ID' });
         if (settingUsers && settingUsers.value) CANAL_CONSULTAS_USERS_ID = settingUsers.value;
+
+        // Cargar estadísticas de tokens y referencia del panel en vivo desde MongoDB
+        const savedStats = await BotSetting.findOne({ key: 'groq_tokens_stats' });
+        if (savedStats && savedStats.value && savedStats.value.date === getUtcDateKey()) {
+            tokenStats = savedStats.value;
+            ensureTodayTokenStats();
+        }
+        const savedPanel = await BotSetting.findOne({ key: 'groq_tokens_panel' });
+        if (savedPanel && savedPanel.value && savedPanel.value.channelId && savedPanel.value.messageId) {
+            tokensPanelRef = savedPanel.value;
+        }
 
         // Cargar las páginas de la normativa directamente desde MongoDB o localmente
         const docGeneral = await NormativaDoc.findOne({ key: 'normativa_general_2026' });
@@ -318,7 +476,7 @@ function getRelevantNormativaSnippets(question) {
 /**
  * Consulta la IA de Groq inyectando toda la base de conocimientos aprendida
  */
-async function queryGroqAI(userQuestion, isUserMode = false) {
+async function queryGroqAI(userQuestion, isUserMode = false, client = null) {
     const groqKey = process.env.GROQ_API_KEY;
     if (!groqKey) return null;
 
@@ -376,18 +534,22 @@ async function queryGroqAI(userQuestion, isUserMode = false) {
                   '4. BÁSATE 100% EN LA NORMATIVA DE VALLECAS RP.\n' +
                   '5. Habla en español de España de forma cercana y profesional hacia el Staff.');
 
-        let res = null;
-        let retries = 2;
-        while (retries > 0) {
+        ensureTodayTokenStats();
+
+        // Ordenar modelos: primero los NO agotados hoy; si todos están marcados como agotados, reintentarlos igualmente
+        const availableModels = GROQ_MODELS.filter(m => !tokenStats.models[m.id]?.exhausted);
+        const modelsToTry = availableModels.length > 0 ? availableModels : GROQ_MODELS;
+
+        for (const modelCfg of modelsToTry) {
             try {
-                res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${groqKey}`,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        model: 'qwen/qwen3.8-27b',
+                        model: modelCfg.id,
                         messages: [
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: userQuestion }
@@ -400,17 +562,38 @@ async function queryGroqAI(userQuestion, isUserMode = false) {
                 if (res.ok) {
                     const data = await res.json();
                     const reply = data.choices?.[0]?.message?.content?.trim();
-                    if (reply && reply.length > 5) return reply;
+                    if (reply && reply.length > 5) {
+                        const usedTokens = data.usage?.total_tokens || Math.ceil((systemPrompt.length + userQuestion.length + reply.length) / 4);
+                        const st = tokenStats.models[modelCfg.id];
+                        st.tokensUsed += usedTokens;
+                        st.requests += 1;
+                        st.exhausted = false;
+                        tokenStats.activeModel = modelCfg.id;
+                        tokenStats.lastQueryTokens = usedTokens;
+
+                        saveTokenStats();
+                        updateTokensPanel(client);
+                        return reply;
+                    }
                 } else if (res.status === 429) {
-                    // Si Groq devuelve rate limit, esperar 1.2 segundos y reintentar
-                    await new Promise(r => setTimeout(r, 1200));
+                    const errText = await res.text().catch(() => '');
+                    const isDailyLimit = /per day|TPD|RPD|daily/i.test(errText);
+                    if (isDailyLimit) {
+                        tokenStats.models[modelCfg.id].exhausted = true;
+                        console.warn(`⚠️ [CONSULTAS AI] Modelo ${modelCfg.id} agotó su límite diario. Cambiando automáticamente al siguiente respaldo...`);
+                    } else {
+                        console.warn(`⚠️ [CONSULTAS AI] Rate limit temporal (TPM) en ${modelCfg.id}. Saltando al siguiente modelo...`);
+                    }
+                    saveTokenStats();
+                    updateTokensPanel(client);
+                    continue; // Saltar inmediatamente al siguiente modelo de respaldo
                 } else {
-                    console.error('⚠️ [CONSULTAS AI Groq Error]:', res.status, await res.text());
+                    console.error(`⚠️ [CONSULTAS AI Groq Error ${modelCfg.id}]:`, res.status, await res.text().catch(() => ''));
+                    continue;
                 }
             } catch (netErr) {
-                console.error('⚠️ [CONSULTAS AI Net Error]:', netErr.message);
+                console.error(`⚠️ [CONSULTAS AI Net Error ${modelCfg.id}]:`, netErr.message);
             }
-            retries--;
         }
     } catch (e) {
         console.error('⚠️ [CONSULTAS AI Error]:', e.message);
@@ -521,6 +704,35 @@ function initConsultasAI(client) {
             }
 
             // ==========================================
+            // PANEL EN VIVO DE TOKENS IA: !panel-tokens / !tokens
+            // ==========================================
+            if (['!panel-tokens', '!paneltokens', '!tokens', '!ia-tokens', '!consultas tokens'].includes(contentLower)) {
+                if (!isStaff) return;
+                await message.delete().catch(() => {});
+
+                const embed = buildTokensPanelEmbed();
+                const logoAtt = getLogoAttachment();
+                const sentPanel = await message.channel.send({
+                    embeds: [embed],
+                    files: logoAtt ? [logoAtt] : [],
+                    components: [buildTokensPanelRow()]
+                }).catch(e => {
+                    console.error('Error enviando panel de tokens:', e);
+                    return null;
+                });
+
+                if (sentPanel) {
+                    tokensPanelRef = { channelId: sentPanel.channel.id, messageId: sentPanel.id };
+                    await BotSetting.findOneAndUpdate(
+                        { key: 'groq_tokens_panel' },
+                        { key: 'groq_tokens_panel', value: tokensPanelRef },
+                        { upsert: true }
+                    ).catch(() => {});
+                }
+                return;
+            }
+
+            // ==========================================
             // ATENCIÓN DE CONSULTAS EN LOS CANALES (STAFF Y USUARIOS)
             // ==========================================
             const isStaffChannel = (message.channel.id === CANAL_CONSULTAS_ID);
@@ -553,8 +765,8 @@ function initConsultasAI(client) {
                 // Indicador visual de que la IA está procesando la consulta
                 await message.channel.sendTyping().catch(() => {});
 
-                // Consultar la IA adaptando el rol según si es canal de usuarios o canal de staff
-                const aiAnswer = await queryGroqAI(questionText, isUsersChannel);
+                // Consultar la IA adaptando el rol según si es canal de usuarios o canal de staff (con respaldo automático y actualización del panel de tokens)
+                const aiAnswer = await queryGroqAI(questionText, isUsersChannel, client);
 
                 const logoAttachment = getLogoAttachment();
                 const iconUrl = logoAttachment ? 'attachment://logo.png' : (message.guild.iconURL() || undefined);
@@ -645,6 +857,23 @@ function initConsultasAI(client) {
     client.on('interactionCreate', async (interaction) => {
         try {
             if (!interaction.isButton()) return;
+
+            // Botón de actualización manual del Panel de Tokens IA
+            if (interaction.customId === 'btn_refresh_tokens_panel') {
+                const isStaff = isMemberStaff(interaction.member);
+                if (!isStaff) {
+                    return interaction.reply({ content: '⛔ Solo el Staff puede actualizar este panel.', ephemeral: true });
+                }
+                const embed = buildTokensPanelEmbed();
+                const logoAtt = getLogoAttachment();
+                await interaction.update({
+                    embeds: [embed],
+                    files: logoAtt ? [logoAtt] : [],
+                    components: [buildTokensPanelRow()]
+                }).catch(() => {});
+                return;
+            }
+
             if (interaction.customId.startsWith('btn_cerrar_consulta_')) {
                 const parts = interaction.customId.replace('btn_cerrar_consulta_', '').split('_');
                 const targetUserId = parts[0];
