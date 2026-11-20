@@ -5515,6 +5515,7 @@ client.on('messageCreate', async (message) => {
                             `> 📋 \`!panel-plantillas\` → Publica el panel selector de plantillas de postulación\n` +
                             `> ⚖️ \`!panel-sanciones\` → Publica el panel con el botón para emitir sanciones *(Canal: \`!setcanal panelsanciones\`)*\n` +
                             `> 🎉 \`!panel-eventos\` → Publica el panel con el botón para crear eventos *(Canal: \`!setcanal paneleventos\`)*\n` +
+                            `> 🧠 \`!panel-consultas\` → Publica el panel permanente de información en el canal de consultas\n` +
                             `> 🟣 \`!panel-stream\` → Publica el panel con el botón de notificar directos *(Canal: \`!setcanal streampanel\`)*\n` +
                             `> 📊 \`!panel-estado\` → Publica el panel auto-actualizable de jugadores de FiveM *(Canal: \`!setcanal status\`)*\n\n` +
                             `⚙️ **GESTIÓN DEL SISTEMA DE VALORACIONES (Exclusivo Owner):**\n` +
@@ -6539,6 +6540,9 @@ client.on('messageCreate', async (message) => {
                     `> 📜 **Normativas:** ${formatChannel(botConfig.CHANNEL_NORMATIVAS_ID)}\n` +
                     `> 🎫 **Tickets / Soporte:** ${formatChannel(botConfig.CHANNEL_TICKETS_ID)}\n` +
                     `> 💬 **General:** ${formatChannel(botConfig.CHANNEL_GENERAL_ID)}\n\n` +
+                    `🤖 **CANALES DE CONSULTAS IA:**\n` +
+                    `> 🛡️ **Consultas Staff (Canal 1):** ${formatChannel(botConfig.CHANNEL_CONSULTAS_STAFF_ID)}\n` +
+                    `> 👥 **Consultas Usuarios (Canal 2):** ${formatChannel(botConfig.CHANNEL_CONSULTAS_USERS_ID)}\n\n` +
                     `🚨 **CANALES DE MODERACIÓN & EVENTOS:**\n` +
                     `> ⚖️ **Sanciones:** ${formatChannel(botConfig.CHANNEL_SANCIONES_ID)}\n` +
                     `> 📋 **Panel Sanciones:** ${formatChannel(botConfig.CHANNEL_SANCIONES_PANEL_ID)}\n` +
@@ -6566,6 +6570,8 @@ client.on('messageCreate', async (message) => {
                     `• \`!setcanal normativas <#canal o ID>\`\n` +
                     `• \`!setcanal tickets <#canal o ID>\`\n` +
                     `• \`!setcanal general <#canal o ID>\`\n` +
+                    `• \`!setcanal consultas <#canal o ID>\` *(Consultas Staff)*\n` +
+                    `• \`!setcanal consultas2 <#canal o ID>\` *(Consultas Usuarios/Comunidad)*\n` +
                     `• \`!setrol staff <@rol o ID>\`\n` +
                     `• \`!setrol streamer <@rol o ID>\`\n` +
                     `• \`!setip <ip:puerto>\` *(Ej: 185.230.52.246:30120)*\n` +
@@ -6662,13 +6668,25 @@ client.on('messageCreate', async (message) => {
                 'paneleventos': 'CHANNEL_EVENTOS_PANEL_ID',
                 'panelevento': 'CHANNEL_EVENTOS_PANEL_ID',
                 'panel-eventos': 'CHANNEL_EVENTOS_PANEL_ID',
-                'panel-evento': 'CHANNEL_EVENTOS_PANEL_ID'
+                'panel-evento': 'CHANNEL_EVENTOS_PANEL_ID',
+                'consultas': 'CHANNEL_CONSULTAS_STAFF_ID',
+                'consulta': 'CHANNEL_CONSULTAS_STAFF_ID',
+                'consultasstaff': 'CHANNEL_CONSULTAS_STAFF_ID',
+                'consultas-staff': 'CHANNEL_CONSULTAS_STAFF_ID',
+                'consultas2': 'CHANNEL_CONSULTAS_USERS_ID',
+                'consulta2': 'CHANNEL_CONSULTAS_USERS_ID',
+                'consultasusers': 'CHANNEL_CONSULTAS_USERS_ID',
+                'consultas-users': 'CHANNEL_CONSULTAS_USERS_ID',
+                'consultasusuario': 'CHANNEL_CONSULTAS_USERS_ID',
+                'consultasusuarios': 'CHANNEL_CONSULTAS_USERS_ID',
+                'consultas-usuarios': 'CHANNEL_CONSULTAS_USERS_ID',
+                'consultascomunidad': 'CHANNEL_CONSULTAS_USERS_ID'
             };
 
             const configKey = channelKeyMap[tipo];
             if (!configKey) {
                 return message.reply({
-                    content: `❌ Tipo de canal no válido: \`${tipo}\`.\nOpciones: \`bienvenidas\`, \`solicitudes\`, \`aprobados\`, \`denegados\`, \`entrevistas\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\`, \`valoraciones\`, \`sanciones\`, \`eventos\`, \`paneleventos\``
+                    content: `❌ Tipo de canal no válido: \`${tipo}\`.\nOpciones: \`bienvenidas\`, \`solicitudes\`, \`aprobados\`, \`denegados\`, \`entrevistas\`, \`streampanel\`, \`streamaviso\`, \`status\`, \`normativas\`, \`tickets\`, \`general\`, \`valoraciones\`, \`sanciones\`, \`eventos\`, \`paneleventos\`, \`consultas\`, \`consultas2\``
                 });
             }
 
@@ -8865,6 +8883,71 @@ client.on('messageCreate', async (message) => {
             }).catch(e => console.error('Error al enviar panel de eventos:', e));
 
             console.log(`🎉 [PANEL EVENTOS] Panel interactivo de eventos enviado con éxito a #${targetChannel.name} por ${message.author.tag}`);
+            return;
+        }
+
+        // ====================================================
+        // COMANDOS DE CONSULTAS IA: !setcanal-consultas / !setcanal-consultas2
+        // ====================================================
+        // Configurar Canal Principal de Consultas IA (Staff)
+        if (['!setcanal-consultas', '!setcanal-consulta', '!canalconsultas', '!canal-consultas', '!fijar-consultas'].includes(command)) {
+            await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
+
+            const rawChannelId = args.slice(1).join(' ').match(/\d{17,20}/)?.[0];
+            let targetChannel = message.mentions.channels.first();
+
+            if (!targetChannel && rawChannelId) {
+                targetChannel = message.guild.channels.cache.get(rawChannelId) ||
+                    await client.channels.fetch(rawChannelId).catch(() => null);
+            }
+            if (!targetChannel) targetChannel = message.channel;
+
+            await updateConfig('CHANNEL_CONSULTAS_STAFF_ID', targetChannel.id);
+
+            const confEmbed = new EmbedBuilder()
+                .setColor(0x3498db)
+                .setTitle('🛡️ Canal de Consultas IA (Staff) Configurado')
+                .setDescription(`✅ El canal de consultas exclusivo para el **Staff** se ha establecido en: <#${targetChannel.id}> (\`${targetChannel.id}\`)`)
+                .setFooter({ text: 'VALLECAS RP • Consultas IA Staff' })
+                .setTimestamp();
+
+            const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
+            if (confMsg) setTimeout(() => confMsg.delete().catch(() => { }), 8000);
+            console.log(`🔧 [CONFIG] Canal de consultas Staff fijado en #${targetChannel.name || targetChannel.id} (${targetChannel.id}) por ${message.author.tag}`);
+            return;
+        }
+
+        // Configurar Canal Secundario de Consultas IA (Usuarios / Comunidad)
+        if (['!setcanal-consultas2', '!setcanal-consulta2', '!canalconsultas2', '!canal-consultas2', '!fijar-consultas2', '!setcanal-consultas-users', '!setcanal-consultas-usuarios'].includes(command)) {
+            await message.delete().catch(() => { });
+            if (message.author.id !== OWNER_ID) {
+                return sendDeniedAccessMessage(message);
+            }
+
+            const rawChannelId = args.slice(1).join(' ').match(/\d{17,20}/)?.[0];
+            let targetChannel = message.mentions.channels.first();
+
+            if (!targetChannel && rawChannelId) {
+                targetChannel = message.guild.channels.cache.get(rawChannelId) ||
+                    await client.channels.fetch(rawChannelId).catch(() => null);
+            }
+            if (!targetChannel) targetChannel = message.channel;
+
+            await updateConfig('CHANNEL_CONSULTAS_USERS_ID', targetChannel.id);
+
+            const confEmbed = new EmbedBuilder()
+                .setColor(0x9B59B6)
+                .setTitle('👥 Canal de Consultas IA (Usuarios) Configurado')
+                .setDescription(`✅ El canal de consultas para **Usuarios y Comunidad** se ha establecido en: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n*(Ahora todos los miembros de la comunidad pueden consultar sus dudas de normativa libremente aquí).*`)
+                .setFooter({ text: 'VALLECAS RP • Consultas IA Comunidad' })
+                .setTimestamp();
+
+            const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
+            if (confMsg) setTimeout(() => confMsg.delete().catch(() => { }), 8000);
+            console.log(`🔧 [CONFIG] Canal 2 de consultas Usuarios fijado en #${targetChannel.name || targetChannel.id} (${targetChannel.id}) por ${message.author.tag}`);
             return;
         }
 

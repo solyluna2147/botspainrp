@@ -10,7 +10,7 @@
   "CHANNEL_TICKETS_ID": "1517530849334136844",
   "CHANNEL_GENERAL_ID": "1517530849032016002",
   "CHANNEL_VALORACION_PANEL_ID": "1553817631188979991",
-  "CHANNEL_VALORACIONES_ID": "1552114778988609637",
+  "CHANNEL_VALORACIONES_ID": "1560654258636980344",
   "CHANNEL_SANCIONES_ID": "1521967248044986469",
   "CHANNEL_SANCIONES_PANEL_ID": "1552220752084869201",
   "CHANNEL_EVENTOS_ID": "1517530848876957706",
@@ -44,5 +44,7 @@
   "txt_denegado_titulo": "❌ ¡WHITELIST DENEGADA!",
   "txt_denegado_headline": "# ⚠️ ¡Atención {user}!\n# Tu solicitud ha sido denegada.",
   "txt_denegado_footer": "SPAIN RP • Sistema de Whitelist",
-  "txt_bienvenida_cuerpo": "➥ 𝗘𝘀𝗽𝗲𝗿𝗮𝗺𝗼𝘀 𝗾𝘂𝗲 𝗱𝗶𝘀𝗳𝗿𝘂𝘁𝗲𝘀 𝗱𝗲 𝗻𝘂𝗲𝘀𝘁𝗿𝗮 𝗰𝗼𝗺𝘂𝗻𝗶𝗱𝗮𝗱, 𝘁𝗼𝗱𝗼 𝗹𝗼 𝗾𝘂𝗲 𝗻𝗲𝗰𝗲𝘀𝗶𝘁𝗲𝘀 𝘀𝗮𝗯𝗲𝗿 𝗹𝗼 𝘁𝗲𝗻𝗱𝗿𝗮́𝘀 𝗲𝗻 𝗹𝗼𝘀 𝗿𝗲𝘀𝗽𝗲𝗰𝘁𝗶𝘃𝗼𝘀 𝗰𝗮𝗻𝗮𝗹𝗲𝘀 𝗰𝗼𝗿𝗿𝗲𝘀𝗽𝗼𝗻𝗱𝗶𝗲𝗻𝘁𝗲𝘀 ❗\n\n👤 **Usuario:** {user}\n👥 **Miembro Nº:** `#1361` ciudadanos\n📅 **Cuenta Creada:** hace un año\n\n\n📝 **| Puedes consultar nuestras,**\n> {canalNormativas} ❗\n\n📋 **| Puedes realizar tu Whitelist en,**\n> {canalSolicitudes} ❗\n\n📁 **| Si tienes alguna duda abre,**\n> {canalTickets} ❗\n\n🌍 **| Disfruta y diviértete en,**\n> {canalGeneral} ❗\n\n\n🇪🇸 **| ¡Disfruta de SPAIN RP! |** 🇪🇸"
+  "txt_bienvenida_cuerpo": "➥ 𝗘𝘀𝗽𝗲𝗿𝗮𝗺𝗼𝘀 𝗾𝘂𝗲 𝗱𝗶𝘀𝗳𝗿𝘂𝘁𝗲𝘀 𝗱𝗲 𝗻𝘂𝗲𝘀𝘁𝗿𝗮 𝗰𝗼𝗺𝘂𝗻𝗶𝗱𝗮𝗱, 𝘁𝗼𝗱𝗼 𝗹𝗼 𝗾𝘂𝗲 𝗻𝗲𝗰𝗲𝘀𝗶𝘁𝗲𝘀 𝘀𝗮𝗯𝗲𝗿 𝗹𝗼 𝘁𝗲𝗻𝗱𝗿𝗮́𝘀 𝗲𝗻 𝗹𝗼𝘀 𝗿𝗲𝘀𝗽𝗲𝗰𝘁𝗶𝘃𝗼𝘀 𝗰𝗮𝗻𝗮𝗹𝗲𝘀 𝗰𝗼𝗿𝗿𝗲𝘀𝗽𝗼𝗻𝗱𝗶𝗲𝗻𝘁𝗲𝘀 ❗\n\n👤 **Usuario:** {user}\n👥 **Miembro Nº:** `#1361` ciudadanos\n📅 **Cuenta Creada:** hace un año\n\n\n📝 **| Puedes consultar nuestras,**\n> {canalNormativas} ❗\n\n📋 **| Puedes realizar tu Whitelist en,**\n> {canalSolicitudes} ❗\n\n📁 **| Si tienes alguna duda abre,**\n> {canalTickets} ❗\n\n🌍 **| Disfruta y diviértete en,**\n> {canalGeneral} ❗\n\n\n🇪🇸 **| ¡Disfruta de SPAIN RP! |** 🇪🇸",
+  "CHANNEL_CONSULTAS_STAFF_ID": "1571567304628506855",
+  "CHANNEL_CONSULTAS_USERS_ID": ""
 }
