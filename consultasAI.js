@@ -465,9 +465,18 @@ function getRelevantNormativaSnippets(question) {
         });
 
         scored.sort((a, b) => b.score - a.score);
-        // Tomar las 3 páginas/secciones más relevantes
-        const bestMatches = scored.slice(0, 3).filter(s => s.score > 0).map(s => s.page.trim()).join('\n\n--- SIGUIENTE SECCIÓN DE LA NORMATIVA ---\n\n');
-        return bestMatches.slice(0, 6500);
+        // Tomar las 2 secciones más relevantes limpiando encabezados repetitivos para ahorrar tokens (~70% menos consumo)
+        const cleanPage = (txt) => txt
+            .replace(/VALLECAS RP\s*\r?\n\|\s*NORMATIVA GENERAL OFICIAL[\s\S]*?Documento de obligado cumplimiento/gi, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+
+        const bestMatches = scored
+            .slice(0, 2)
+            .filter(s => s.score > 0)
+            .map(s => cleanPage(s.page))
+            .join('\n---\n');
+        return bestMatches.slice(0, 2600);
     } catch (e) {
         return '';
     }
@@ -498,41 +507,36 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null) {
         // 1. Fragmentos directos del texto original del PDF de la normativa
         const exactNormativaText = getRelevantNormativaSnippets(userQuestion);
 
-        // 2. Conocimientos específicos en MongoDB
+        // 2. Conocimientos específicos en MongoDB (solo los que realmente coinciden con la pregunta, para no gastar tokens inútiles)
         let knowledgeContext = '';
         try {
-            const allKnowledge = await TicketKnowledge.find({}).sort({ createdAt: -1 }).limit(25);
+            const allKnowledge = await TicketKnowledge.find({}).sort({ createdAt: -1 }).limit(30);
             if (allKnowledge && allKnowledge.length > 0) {
-                knowledgeContext = '\nPUNTOS RESUMIDOS Y APRENDIZAJES:\n' +
-                    allKnowledge.map(k => `• ${k.response}`).join('\n') + '\n';
+                const qNorm = userQuestion.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                const qTerms = qNorm.split(/[^a-z0-9]+/i).filter(w => SHORT_RP_TERMS.has(w) || w.length >= 4);
+                const relevantKnowledge = allKnowledge
+                    .filter(k => {
+                        const txt = (k.response || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                        return qTerms.some(t => countTermMatches(txt, t) > 0);
+                    })
+                    .slice(0, 4);
+
+                if (relevantKnowledge.length > 0) {
+                    knowledgeContext = '\nNOTAS EXTRA:\n' +
+                        relevantKnowledge.map(k => `• ${k.response}`).join('\n').slice(0, 700) + '\n';
+                }
             }
         } catch (e) { }
 
-        const audienceText = isUserMode
-            ? 'Eres la IA Asesora Oficial de VALLECAS RP (FiveM GTA V Roleplay) para la Comunidad y Usuarios/Jugadores.\n' +
-              'REGLA CRÍTICA DE INTERPRETACIÓN:\n' +
-              'El jugador o usuario puede escribir con faltas de ortografía, sin tildes, con jerga callejera (ej: "cerrao", "pasa si un nota", "buga", "maderos") o explicarse con dificultad. DEBES descifrar exactamente qué está queriendo preguntar y resolver su duda según la normativa oficial de forma educada, amigable y clara.\n'
-            : 'Eres la IA Asesora Interna y Oficial de VALLECAS RP (FiveM GTA V Roleplay) para el Equipo de Staff y Administración.\n' +
-              'REGLA CRÍTICA DE INTERPRETACIÓN:\n' +
-              'El moderador o staff puede escribir con faltas de ortografía, sin tildes, con jerga callejera (ej: "cerrao", "pasa si un nota", "buga", "maderos") o explicarse con dificultad. DEBES descifrar exactamente qué está queriendo preguntar en el fondo y darle la solución oficial basándote en la normativa.\n';
+        const roleLine = isUserMode
+            ? 'Eres la IA Oficial de VALLECAS RP (FiveM) para usuarios. Responde en español de España, claro, cercano y en 1-2 párrafos breves.'
+            : 'Eres la IA Asesora Oficial de VALLECAS RP (FiveM) para el Staff. Responde en español de España, directo, citando artículos/cifras/sanciones en 1-2 párrafos breves.';
 
         const systemPrompt =
-            audienceText +
-            '\nTEXTO EXACTO DE LA NORMATIVA GENERAL OFICIAL (PDF):\n' +
-            (exactNormativaText ? exactNormativaText : 'Normativa general vigente.') + '\n' +
-            knowledgeContext +
-            '\nREGLAS DE RESPUESTA:\n' +
-            (isUserMode 
-                ? '1. Resuelve la duda del usuario de forma comprensible, citando la normativa de forma pedagógica y clara.\n' +
-                  '2. Si preguntan por siglas de Roleplay (RK, PK, CK, MG, PG, DM, VDM, HK, NVV, RDE, ZS, BH, CJ, BA, IOOC, etc.), define el término y explica exactamente cómo lo regula Vallecas RP (o bajo qué norma entra, ej. HK bajo VDM/vehículos aéreos, BA bajo FairPlay, IOOC bajo Faltas de respeto OOC).\n' +
-                  '3. Máximo 1 o 2 párrafos concisos y bien estructurados.\n' +
-                  '4. BÁSATE 100% EN LA NORMATIVA DE VALLECAS RP.\n' +
-                  '5. Habla en español de España de forma cercana, respetuosa y útil hacia el ciudadano/usuario.'
-                : '1. Da la solución exacta, clara y directa (citas de artículos, cifras numéricas, sanciones y recomendaciones para el Staff).\n' +
-                  '2. Si preguntan por siglas de Roleplay (RK, PK, CK, MG, PG, DM, VDM, HK, NVV, RDE, ZS, BH, CJ, BA, IOOC, etc.), define el término y cita exactamente el artículo o norma de Vallecas RP aplicable (o bajo qué norma entra, ej. HK bajo VDM/vehículos aéreos, BA bajo FairPlay, IOOC bajo 2.6 Faltas de respeto OOC).\n' +
-                  '3. Máximo 1 o 2 párrafos concisos y bien estructurados.\n' +
-                  '4. BÁSATE 100% EN LA NORMATIVA DE VALLECAS RP.\n' +
-                  '5. Habla en español de España de forma cercana y profesional hacia el Staff.');
+            `${roleLine}\n` +
+            `Entiende faltas de ortografía o jerga. Si preguntan siglas RP (RK, PK, CK, MG, PG, DM, VDM, HK, NVV, RDE, ZS, BH, CJ, BA, IOOC), defínelas y explica qué aplica en Vallecas RP. Básate 100% en esta normativa:\n` +
+            (exactNormativaText ? exactNormativaText : 'Normativa general vigente.') +
+            knowledgeContext;
 
         ensureTodayTokenStats();
 
@@ -554,7 +558,7 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null) {
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: userQuestion }
                         ],
-                        max_tokens: 350,
+                        max_tokens: 240,
                         temperature: 0.3
                     })
                 });
