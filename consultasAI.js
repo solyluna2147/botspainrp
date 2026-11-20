@@ -185,8 +185,8 @@ function buildTokensPanelEmbed() {
         const pct = Math.min(100, Math.round((cycleUsed / perCycleLimit) * 100));
         const isCurrentCycle = activeCycleIdx === k;
         const statusBadge = cycleExhausted
-            ? '🔴 **Agotado hoy**'
-            : (isCurrentCycle ? '🟢 **Activo ahora**' : '🔵 **En reserva**');
+            ? '🔴 `Agotado hoy`'
+            : (isCurrentCycle ? '🟢 `Activo ahora`' : '🔵 `En reserva`');
         const bar = makeProgressBar(cycleUsed, perCycleLimit, 10);
         const label = k === 1 ? 'Núcleo IA 1 (Principal)' : `Núcleo IA ${k} (Respaldo ${k - 1})`;
 
@@ -233,7 +233,7 @@ function buildTokensPanelEmbed() {
             `${nucleiLines.join('\n\n')}\n\n` +
             `────────────────────────────\n\n` +
             `⚙️ **SISTEMA Y CANALES ACTIVOS:**\n` +
-            `> ${consultasActivas ? '🟢 **Servicio:** Activo y respondiendo' : '🔴 **Servicio:** Pausado por Staff'}\n` +
+            `> ${consultasActivas ? '🟢 **Servicio:** `Activo y respondiendo`' : '🔴 **Servicio:** `Pausado por Staff`'}\n` +
             `> 📚 **Normativa en memoria:** \`${loadedSections}\` secciones oficiales\n` +
             `> 🛡️ **Canal Staff:** ${staffChText} • 👥 **Canal Usuarios:** ${usersChText}\n` +
             `> ⏳ **Reinicio de cupos:** en \`${resetH}h ${resetM}m\` *(00:00 UTC)*`

@@ -199,20 +199,20 @@ async function buildServiciosEmbed(client) {
         .setThumbnail(logoUrl)
         .setTitle('🖥️ ESTADO GENERAL DEL SISTEMA (VALLECAS CORE)')
         .setDescription(
-            `⚡ **Salud global:** ${okCount === services.length ? '🟢 **Todos los servicios operativos**' : '🟡 **Algunos servicios pausados o en respaldo**'}\n` +
+            `⚡ **Salud global:** ${okCount === services.length ? '🟢 `Todos los servicios operativos`' : '🟡 `Algunos servicios pausados`'}\n` +
             `${healthBar} \`${healthPct}%\` (\`${okCount}/${services.length}\` activos)\n\n` +
             `📡 **RENDIMIENTO DEL BOT:**\n` +
-            `> 🟢 **Estado:** Online • **Latencia:** \`${ping} ms\` • **Activo:** \`${uptimeStr}\`\n` +
+            `> 🟢 **Estado:** \`Online\` • **Latencia:** \`${ping} ms\` • **Activo:** \`${uptimeStr}\`\n` +
             `> 💾 **Memoria:** ${ramBar} \`${ramMb} MB\` (\`${ramPct}%\`)\n` +
-            `> 🗄️ **Base de Datos:** ${dbConnected ? '🟢 Conectada' : '🔴 Desconectada'}\n\n` +
+            `> 🗄️ **Base de Datos:** ${dbConnected ? '🟢 `Conectada`' : '🔴 `Desconectada`'}\n\n` +
             `────────────────────────────\n\n` +
             `⚙️ **MÓDULOS Y SERVICIOS DEL SERVIDOR:**\n` +
-            `> 🧠 **Consultas de Normativa IA:** ${aiCoreReady ? (consultasOn ? '🟢 Operativo' : '🔴 Pausado') : '🔴 Sin conexión'}\n` +
-            `> 🎫 **Asistente Virtual de Tickets:** ${asistenteOn ? '🟢 Operativo' : '🔴 Pausado'}\n` +
-            `> 🎙️ **Sistema de Locución y Soporte:** ${locucionOn ? '🟢 Operativo' : '🔴 Pausado'}\n` +
-            `> 🎤 **Motor de Voz Neuronal:** ${voiceCoreReady ? '🟢 Neuronal Activo' : '🟡 Modo Estándar'}\n` +
-            `> 🛡️ **Auditoría Anti-IA (Whitelist):** ${antiAiReady ? '🟢 Operativo' : '🟡 Modo Local'}\n` +
-            `> 📢 **Eventos, Directos y Sanciones:** 🟢 Operativo`
+            `> 🧠 **Consultas de Normativa IA:** ${aiCoreReady ? (consultasOn ? '🟢 `Operativo`' : '🔴 `Pausado`') : '🔴 `Sin conexión`'}\n` +
+            `> 🎫 **Asistente Virtual de Tickets:** ${asistenteOn ? '🟢 `Operativo`' : '🔴 `Pausado`'}\n` +
+            `> 🎙️ **Sistema de Locución y Soporte:** ${locucionOn ? '🟢 `Operativo`' : '🔴 `Pausado`'}\n` +
+            `> 🎤 **Motor de Voz Neuronal:** ${voiceCoreReady ? '🟢 `Neuronal Activo`' : '🟡 `Modo Estándar`'}\n` +
+            `> 🛡️ **Auditoría Anti-IA (Whitelist):** ${antiAiReady ? '🟢 `Operativo`' : '🟡 `Modo Local`'}\n` +
+            `> 📢 **Eventos, Directos y Sanciones:** 🟢 \`Operativo\``
         )
         .setFooter({
             text: 'VALLECAS RP • Auto-actualización cada 60s',
@@ -287,17 +287,17 @@ async function buildLocucionEmbed(client, guild, forceQuota = false) {
     const totalAudios = audioStatuses.length || 5;
     const audioBar = makeProgressBar(loadedCount, totalAudios, 10, 'health');
     const audioPct = Math.round((loadedCount / totalAudios) * 100);
-    const audioLines = audioStatuses.map(a => `> ${a.loaded ? '🟢' : '🔴'} **${a.label}:** ${a.loaded ? 'Cargado' : 'Sin cargar'}`).join('\n');
+    const audioLines = audioStatuses.map(a => `> ${a.loaded ? '🟢' : '🔴'} **${a.label}:** \`${a.loaded ? 'Cargado' : 'Sin cargar'}\``).join('\n');
 
     // Cuota del motor de voz neuronal (sin mencionar proveedor)
     const quota = await fetchVoiceQuota(forceQuota);
-    let voiceBlock = `> 🟡 **Motor de Voz Neuronal:** En modo estándar *(sin cuota activa)*`;
+    let voiceBlock = `> 🟡 **Motor de Voz Neuronal:** \`Modo Estándar\``;
     if (quota.available && quota.limit > 0) {
         const rem = Math.max(0, quota.limit - quota.used);
         const qPct = Math.min(100, Math.round((quota.used / quota.limit) * 100));
         const qBar = makeProgressBar(quota.used, quota.limit, 10, 'usage');
         voiceBlock =
-            `**Motor de Voz Neuronal (Entrevistas)** — 🟢 **Operativo**\n` +
+            `**Motor de Voz Neuronal (Entrevistas)** — 🟢 \`Operativo\`\n` +
             `${qBar} \`${qPct}%\`\n` +
             `> 🔊 Usados: \`${quota.used.toLocaleString('es-ES')}\` / \`${quota.limit.toLocaleString('es-ES')}\` car. • Quedan: \`${rem.toLocaleString('es-ES')}\``;
     }
@@ -311,8 +311,8 @@ async function buildLocucionEmbed(client, guild, forceQuota = false) {
         .setThumbnail(logoUrl)
         .setTitle('🎙️ SISTEMA DE LOCUCIÓN Y SALAS DE SOPORTE')
         .setDescription(
-            `🔊 **Estado del sistema:** ${locucionOn ? '🟢 **ACTIVADO**' : '🔴 **PAUSADO**'} • **Intervalo:** \`${Math.round(intervaloMin * 60)}s\`\n\n` +
-            `🎧 **Actividad actual:** ${botInVoice ? '🔊 **Reproduciendo locución en sala**' : '🟢 **En guardia (Listo)**'}\n\n` +
+            `🔊 **Estado del sistema:** ${locucionOn ? '🟢 `ACTIVADO`' : '🔴 `PAUSADO`'} • **Intervalo:** \`${Math.round(intervaloMin * 60)}s\`\n\n` +
+            `🎧 **Actividad actual:** ${botInVoice ? '🔊 `Reproduciendo locución`' : '🟢 `En guardia (Listo)`'}\n\n` +
             `👥 **SALAS DE SOPORTE EN TIEMPO REAL:**\n` +
             `> ⏳ **En Espera de Soporte:** \`${usersWaiting}\` usuario(s)\n` +
             `> 🛡️ **En Salas de Soporte (1-5):** \`${staffsInSupport}\` miembro(s)\n\n` +
@@ -380,7 +380,7 @@ async function buildTicketsEmbed(guild) {
         .setThumbnail(logoUrl)
         .setTitle('🎫 ASISTENTE VIRTUAL Y COLA DE TICKETS')
         .setDescription(
-            `🤖 **Asistente de Tickets:** ${asistenteOn ? '🟢 **ACTIVADO**' : '🔴 **PAUSADO**'}\n\n` +
+            `🤖 **Asistente de Tickets:** ${asistenteOn ? '🟢 `ACTIVADO`' : '🔴 `PAUSADO`'}\n\n` +
             `📂 **Tickets abiertos ahora mismo:** \`${totalOpen}\` en total\n\n` +
             `📋 **DESGLOSE POR CATEGORÍA (EN VIVO):**\n` +
             `> 🛠️ **Soporte:** \`${cSoporte}\` abierto(s)\n` +
