@@ -65,10 +65,21 @@ function getLogoPath() {
     return path.join(__dirname, 'assets', 'logo.png');
 }
 
+function getLogoAttachment() {
+    const p = getLogoPath();
+    if (fs.existsSync(p)) {
+        return new AttachmentBuilder(p, { name: 'logo.png' });
+    }
+    return null;
+}
+
 function getBannerAttachment() {
-    const bannerPath = path.join(__dirname, 'assets', 'banner_consultas.png');
-    if (fs.existsSync(bannerPath)) {
-        return new AttachmentBuilder(bannerPath, { name: 'banner_consultas.png' });
+    const candidates = ['banner_consultas.png', 'consultas.png', 'panel_consultas.png'];
+    for (const file of candidates) {
+        const bannerPath = path.join(__dirname, 'assets', file);
+        if (fs.existsSync(bannerPath)) {
+            return new AttachmentBuilder(bannerPath, { name: 'banner_consultas.png' });
+        }
     }
     return null;
 }
@@ -84,6 +95,7 @@ function buildPanelConsultasEmbed(isStaff = true) {
             name: isStaff ? 'SISTEMA DE CONSULTAS | VALLECAS RP' : 'CONSULTAS DE LA COMUNIDAD | VALLECAS RP',
             iconURL: logoUrl
         })
+        .setThumbnail(logoUrl)
         .setTitle(isStaff ? '🧠 ASESORÍA Y RESOLUCIÓN DE DUDAS (STAFF)' : '🧠 RESOLUCIÓN DE DUDAS Y NORMATIVA OFICIAL')
         .setDescription(
             (isStaff
@@ -99,7 +111,8 @@ function buildPanelConsultasEmbed(isStaff = true) {
             `💡 *El sistema cuenta con auto-borrado preventivo a los 90 segundos para que no se acumulen mensajes en el canal. Este mensaje informativo es permanente.*`
         )
         .setFooter({
-            text: isStaff ? 'VALLECAS RP • Sistema Oficial de Consultas Staff' : 'VALLECAS RP • Sistema Oficial de Consultas Ciudadanas'
+            text: isStaff ? 'VALLECAS RP • Sistema Oficial de Consultas Staff' : 'VALLECAS RP • Sistema Oficial de Consultas Ciudadanas',
+            iconURL: logoUrl
         })
         .setTimestamp();
 
@@ -422,7 +435,18 @@ function isMemberStaff(member) {
 function initConsultasAI(client) {
     loadConfig();
 
-    console.log('🤖 [CONSULTAS AI] Sistema independiente cargado. Canal:', CANAL_CONSULTAS_ID);
+    // Permite actualizar los canales en tiempo real cuando se usa !setcanal sin reiniciar el bot
+    client.updateConsultasChannel = (key, channelId) => {
+        if (key === 'CHANNEL_CONSULTAS_STAFF_ID' && channelId) {
+            CANAL_CONSULTAS_ID = channelId;
+            console.log(`🔄 [CONSULTAS AI] Canal Staff actualizado en vivo a: ${CANAL_CONSULTAS_ID}`);
+        } else if (key === 'CHANNEL_CONSULTAS_USERS_ID') {
+            CANAL_CONSULTAS_USERS_ID = channelId || '';
+            console.log(`🔄 [CONSULTAS AI] Canal Usuarios actualizado en vivo a: ${CANAL_CONSULTAS_USERS_ID}`);
+        }
+    };
+
+    console.log('🤖 [CONSULTAS AI] Sistema independiente cargado. Canal Staff:', CANAL_CONSULTAS_ID, '| Canal Usuarios:', CANAL_CONSULTAS_USERS_ID || 'No configurado');
 
     client.on('messageCreate', async (message) => {
         try {
