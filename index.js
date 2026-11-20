@@ -384,7 +384,7 @@ async function updateConfig(key, value) {
             console.error('Error guardando en Mongo config:', e);
         }
     }
-    if (key === 'CHANNEL_CONSULTAS_STAFF_ID' || key === 'CHANNEL_CONSULTAS_USERS_ID') {
+    if (key === 'CHANNEL_CONSULTAS_STAFF_ID' || key === 'CHANNEL_CONSULTAS_USERS_ID' || key === 'CHANNEL_CONSULTAS_LOGS_ID') {
         if (typeof client.updateConsultasChannel === 'function') {
             client.updateConsultasChannel(key, value);
         }
@@ -6685,7 +6685,11 @@ client.on('messageCreate', async (message) => {
                 'consultasusuario': 'CHANNEL_CONSULTAS_USERS_ID',
                 'consultasusuarios': 'CHANNEL_CONSULTAS_USERS_ID',
                 'consultas-usuarios': 'CHANNEL_CONSULTAS_USERS_ID',
-                'consultascomunidad': 'CHANNEL_CONSULTAS_USERS_ID'
+                'consultascomunidad': 'CHANNEL_CONSULTAS_USERS_ID',
+                'logsconsultas': 'CHANNEL_CONSULTAS_LOGS_ID',
+                'logs-consultas': 'CHANNEL_CONSULTAS_LOGS_ID',
+                'consultaslogs': 'CHANNEL_CONSULTAS_LOGS_ID',
+                'consultas-logs': 'CHANNEL_CONSULTAS_LOGS_ID'
             };
 
             const configKey = channelKeyMap[tipo];

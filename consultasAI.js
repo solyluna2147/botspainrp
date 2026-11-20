@@ -54,6 +54,7 @@ const BotSetting = mongoose.models.BotSetting || mongoose.model('BotSetting', bo
 // ==========================================
 let CANAL_CONSULTAS_ID = '1571567304628506855'; // Canal exclusivo Staff (Canal 1)
 let CANAL_CONSULTAS_USERS_ID = '';             // Canal para Usuarios (Canal 2 secundario)
+let CANAL_CONSULTAS_LOGS_ID = '';              // Canal de Logs de todas las consultas IA
 const CANAL_APRENDIZAJE_ID = '1571488286789079080';
 const ROLE_STAFF_ID = '1538191116610838691';
 
@@ -165,8 +166,8 @@ function buildTokensPanelEmbed() {
     let totalUsed = 0;
     let totalReqs = 0;
 
-    // 1. Resumen compacto de cada Ciclo conectado (sin repetir cifras de 600K)
-    const cycleLines = [];
+    // Desglose por cada uno de los Núcleos/Ciclos configurados (1 por cada clave conectada -> 4 Núcleos)
+    const nucleiLines = [];
     for (let k = 1; k <= keyCount; k++) {
         let cycleUsed = 0;
         let cycleReqs = 0;
@@ -180,60 +181,36 @@ function buildTokensPanelEmbed() {
         totalUsed += cycleUsed;
         totalReqs += cycleReqs;
 
-        const freePct = Math.max(0, 100 - Math.round((cycleUsed / perCycleLimit) * 100));
+        const rem = Math.max(0, perCycleLimit - cycleUsed);
+        const pct = Math.min(100, Math.round((cycleUsed / perCycleLimit) * 100));
         const isCurrentCycle = activeCycleIdx === k;
-        const badge = cycleExhausted
-            ? '🔴 **Agotado**'
+        const statusBadge = cycleExhausted
+            ? '🔴 **Agotado hoy**'
             : (isCurrentCycle ? '🟢 **Activo ahora**' : '🔵 **En reserva**');
-        const cycleName = k === 1 ? 'Ciclo 1 (Principal)' : `Ciclo ${k} (Respaldo)`;
+        const bar = makeProgressBar(cycleUsed, perCycleLimit, 10);
+        const label = k === 1 ? 'Núcleo IA 1 (Principal)' : `Núcleo IA ${k} (Respaldo ${k - 1})`;
 
-        cycleLines.push(
-            `> ${badge} • **${cycleName}** — Libre: \`${freePct}%\` • Consultas: \`${cycleReqs}\``
+        nucleiLines.push(
+            `**${label}** — ${statusBadge}\n` +
+            `${bar} \`${pct}%\`\n` +
+            `> 🪙 Usados: \`${formatNum(cycleUsed)}\` / \`${formatNum(perCycleLimit)}\` • Quedan: \`${formatNum(rem)}\` • Consultas: \`${formatNum(cycleReqs)}\``
         );
     }
-
-    // 2. Desglose de los 3 Núcleos IA con límite TOTAL combinado de todos los ciclos
-    const nucleiLines = GROQ_MODELS.map(m => {
-        const modelTotalLimit = m.dailyLimit * keyCount;
-        let used = 0;
-        let reqs = 0;
-        let allExhausted = true;
-        for (let k = 1; k <= keyCount; k++) {
-            const st = tokenStats.models[getSlotKey(k, m.id)] || { tokensUsed: 0, requests: 0, exhausted: false };
-            used += st.tokensUsed;
-            reqs += st.requests;
-            if (!st.exhausted) allExhausted = false;
-        }
-        const rem = Math.max(0, modelTotalLimit - used);
-        const pct = Math.min(100, Math.round((used / modelTotalLimit) * 100));
-        const isCurrentModel = tokenStats.activeModel === m.id;
-        const statusBadge = allExhausted
-            ? '🔴 **Agotado**'
-            : (isCurrentModel ? '🟢 **Activo**' : '🔵 **En reserva**');
-        const bar = makeProgressBar(used, modelTotalLimit, 10);
-
-        return (
-            `**${m.label}** — ${statusBadge}\n` +
-            `${bar} \`${pct}%\`\n` +
-            `> 🪙 Usados: \`${formatNum(used)}\` / \`${formatNum(modelTotalLimit)}\` • Quedan: \`${formatNum(rem)}\` • Consultas: \`${formatNum(reqs)}\``
-        );
-    }).join('\n\n');
 
     const totalRemaining = Math.max(0, totalLimit - totalUsed);
     const totalPct = Math.min(100, Math.round((totalUsed / totalLimit) * 100));
     const totalBar = makeProgressBar(totalUsed, totalLimit, 12);
 
-    // 3. Métricas inteligentes en vivo (media, consultas estimadas restantes y cuenta atrás al reset UTC)
-    const avgTokens = totalReqs > 0 ? Math.round(totalUsed / totalReqs) : 1200;
-    const estRemainingQueries = Math.floor(totalRemaining / Math.max(500, avgTokens));
     const now = new Date();
     const nextReset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0));
     const diffMs = Math.max(0, nextReset.getTime() - now.getTime());
     const resetH = Math.floor(diffMs / 3600000);
     const resetM = Math.floor((diffMs % 3600000) / 60000);
 
-    const activeModelCfg = GROQ_MODELS.find(m => m.id === tokenStats.activeModel) || GROQ_MODELS[0];
-    const activeCycleName = activeCycleIdx === 1 ? `Ciclo 1/${keyCount} (Principal)` : `Ciclo ${activeCycleIdx}/${keyCount} (Respaldo)`;
+    const activeNucleusName = activeCycleIdx === 1 ? `Núcleo IA 1/${keyCount} (Principal)` : `Núcleo IA ${activeCycleIdx}/${keyCount} (Respaldo)`;
+    const loadedSections = (memoriaNormativaPages || []).length;
+    const staffChText = CANAL_CONSULTAS_ID ? `<#${CANAL_CONSULTAS_ID}>` : '`No configurado`';
+    const usersChText = CANAL_CONSULTAS_USERS_ID ? `<#${CANAL_CONSULTAS_USERS_ID}>` : '`No configurado`';
 
     return new EmbedBuilder()
         .setColor(0xD900FF)
@@ -244,25 +221,22 @@ function buildTokensPanelEmbed() {
         .setThumbnail(logoUrl)
         .setTitle('📊 CONSUMO Y LÍMITES DE IA (VALLECAS AI)')
         .setDescription(
-            `🔌 **Ciclo activo:** \`${activeCycleName}\`\n\n` +
-            `🤖 **Motor activo:** \`${activeModelCfg.label}\`\n\n` +
-            `🔄 **Cambio automático:** Activado *(salta de núcleo y de ciclo solo si se agota)*\n\n` +
+            `🔌 **Núcleo activo:** \`${activeNucleusName}\`\n\n` +
+            `🔄 **Cambio automático:** Activado *(si un núcleo se agota, salta al siguiente solo)*\n\n` +
             `📈 **TOTAL COMBINADO HOY (${tokenStats.date} UTC):**\n` +
             `${totalBar} \`${totalPct}%\`\n` +
             `> 🪙 **Gastados:** \`${formatNum(totalUsed)}\` / \`${formatNum(totalLimit)}\` tokens\n` +
             `> 🟢 **Disponibles:** \`${formatNum(totalRemaining)}\` tokens\n` +
             `> 💬 **Consultas hoy:** \`${formatNum(totalReqs)}\` *(Última: \`+${formatNum(tokenStats.lastQueryTokens || 0)}\` tokens)*\n\n` +
             `────────────────────────────\n\n` +
-            `⚡ **ESTADO DE CICLOS (${keyCount} conectado${keyCount === 1 ? '' : 's'}):**\n` +
-            `${cycleLines.join('\n')}\n\n` +
+            `🧠 **NÚCLEOS IA (${keyCount} conectados):**\n\n` +
+            `${nucleiLines.join('\n\n')}\n\n` +
             `────────────────────────────\n\n` +
-            `🧠 **NÚCLEOS IA (CAPACIDAD TOTAL COMBINADA):**\n\n` +
-            `${nucleiLines}\n\n` +
-            `────────────────────────────\n\n` +
-            `📐 **ESTADÍSTICAS Y PREVISIÓN:**\n` +
-            `> ⚡ **Media por consulta:** \`~${formatNum(avgTokens)}\` tokens\n` +
-            `> 🔮 **Consultas restantes estimadas:** \`~${formatNum(estRemainingQueries)}\` hoy\n` +
-            `> ⏳ **Próximo reinicio diario:** en \`${resetH}h ${resetM}m\` *(00:00 UTC)*`
+            `⚙️ **SISTEMA Y CANALES ACTIVOS:**\n` +
+            `> ${consultasActivas ? '🟢 **Servicio:** Activo y respondiendo' : '🔴 **Servicio:** Pausado por Staff'}\n` +
+            `> 📚 **Normativa en memoria:** \`${loadedSections}\` secciones oficiales\n` +
+            `> 🛡️ **Canal Staff:** ${staffChText} • 👥 **Canal Usuarios:** ${usersChText}\n` +
+            `> ⏳ **Reinicio de cupos:** en \`${resetH}h ${resetM}m\` *(00:00 UTC)*`
         )
         .setFooter({
             text: 'VALLECAS RP • Se actualiza automáticamente tras cada consulta (Reset 00:00 UTC)',
@@ -371,6 +345,7 @@ async function loadConfig() {
                 const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
                 if (cfg.CHANNEL_CONSULTAS_STAFF_ID) CANAL_CONSULTAS_ID = cfg.CHANNEL_CONSULTAS_STAFF_ID;
                 if (cfg.CHANNEL_CONSULTAS_USERS_ID) CANAL_CONSULTAS_USERS_ID = cfg.CHANNEL_CONSULTAS_USERS_ID;
+                if (cfg.CHANNEL_CONSULTAS_LOGS_ID) CANAL_CONSULTAS_LOGS_ID = cfg.CHANNEL_CONSULTAS_LOGS_ID;
             } catch (e) { }
         }
 
@@ -379,6 +354,9 @@ async function loadConfig() {
 
         const settingUsers = await BotSetting.findOne({ key: 'CHANNEL_CONSULTAS_USERS_ID' });
         if (settingUsers && settingUsers.value) CANAL_CONSULTAS_USERS_ID = settingUsers.value;
+
+        const settingLogs = await BotSetting.findOne({ key: 'CHANNEL_CONSULTAS_LOGS_ID' });
+        if (settingLogs && settingLogs.value !== undefined) CANAL_CONSULTAS_LOGS_ID = settingLogs.value || '';
 
         // Cargar estadísticas de tokens y referencia del panel en vivo desde MongoDB
         const savedStats = await BotSetting.findOne({ key: 'groq_tokens_stats' });
@@ -728,8 +706,54 @@ function initConsultasAI(client) {
         } else if (key === 'CHANNEL_CONSULTAS_USERS_ID') {
             CANAL_CONSULTAS_USERS_ID = channelId || '';
             console.log(`🔄 [CONSULTAS AI] Canal Usuarios actualizado en vivo a: ${CANAL_CONSULTAS_USERS_ID}`);
+        } else if (key === 'CHANNEL_CONSULTAS_LOGS_ID') {
+            CANAL_CONSULTAS_LOGS_ID = channelId || '';
+            console.log(`🔄 [CONSULTAS AI] Canal Logs actualizado en vivo a: ${CANAL_CONSULTAS_LOGS_ID || 'Desactivado'}`);
         }
     };
+
+    // Envía un registro limpio de cada consulta al canal de logs (0 tokens consumidos)
+    async function sendConsultaLog({ message, questionText, aiAnswer, isStaffChannel, isPrivateAiCommand }) {
+        if (!CANAL_CONSULTAS_LOGS_ID) return;
+        try {
+            const logCh = client.channels.cache.get(CANAL_CONSULTAS_LOGS_ID) || await client.channels.fetch(CANAL_CONSULTAS_LOGS_ID).catch(() => null);
+            if (!logCh || !logCh.isTextBased()) return;
+
+            const activeIdx = tokenStats.activeKeyIdx || 1;
+            const lastToks = tokenStats.lastQueryTokens || 0;
+            const userAvatar = message.author.displayAvatarURL({ size: 128 });
+            const origenTxt = isStaffChannel ? '🛡️ Consultas Staff' : '👥 Consultas Usuarios';
+            const modoTxt = isPrivateAiCommand ? '🔒 Privado (`!ai`)' : '💬 En canal';
+
+            const safeQuestion = questionText.length > 900 ? questionText.slice(0, 897) + '...' : questionText;
+            const safeAnswer = (aiAnswer || 'Sin respuesta (error temporal)').length > 1800
+                ? aiAnswer.slice(0, 1797) + '...'
+                : (aiAnswer || 'Sin respuesta (error temporal)');
+
+            const logEmbed = new EmbedBuilder()
+                .setColor(0xD900FF)
+                .setAuthor({
+                    name: `LOG DE CONSULTA IA | ${message.author.username}`,
+                    iconURL: userAvatar
+                })
+                .setThumbnail(userAvatar)
+                .setDescription(
+                    `👤 **Usuario:** <@${message.author.id}> (\`${message.author.id}\`)\n` +
+                    `📍 **Origen:** <#${message.channel.id}> *(${origenTxt})* • ${modoTxt}\n` +
+                    `🔌 **Núcleo:** \`Núcleo IA ${activeIdx}\` • \`+${formatNum(lastToks)} tokens\`\n\n` +
+                    `❓ **Pregunta realizada:**\n` +
+                    `> ${safeQuestion.replace(/\n/g, '\n> ')}\n\n` +
+                    `💡 **Respuesta del bot:**\n` +
+                    `> ${safeAnswer.replace(/\n/g, '\n> ')}`
+                )
+                .setFooter({ text: 'VALLECAS RP • Registro Automático de Consultas IA' })
+                .setTimestamp();
+
+            await logCh.send({ embeds: [logEmbed] }).catch(() => {});
+        } catch (e) {
+            console.error('⚠️ [CONSULTAS AI LOG Error]:', e.message);
+        }
+    }
 
     console.log('🤖 [CONSULTAS AI] Sistema independiente cargado. Canal Staff:', CANAL_CONSULTAS_ID, '| Canal Usuarios:', CANAL_CONSULTAS_USERS_ID || 'No configurado');
 
@@ -839,6 +863,57 @@ function initConsultasAI(client) {
             }
 
             // ==========================================
+            // CONFIGURAR CANAL DE LOGS DE CONSULTAS: !logs-consultas [#canal | ID | off]
+            // ==========================================
+            if (contentLower === '!logs-consultas' || contentLower.startsWith('!logs-consultas ') || contentLower === '!logsconsultas' || contentLower.startsWith('!logsconsultas ')) {
+                if (!isStaff) return;
+                await message.delete().catch(() => {});
+
+                const argsLog = message.content.trim().split(/\s+/);
+                const param = (argsLog[1] || '').toLowerCase();
+
+                if (param === 'off' || param === 'desactivar' || param === 'quitar') {
+                    CANAL_CONSULTAS_LOGS_ID = '';
+                    await BotSetting.findOneAndUpdate(
+                        { key: 'CHANNEL_CONSULTAS_LOGS_ID' },
+                        { key: 'CHANNEL_CONSULTAS_LOGS_ID', value: '' },
+                        { upsert: true }
+                    ).catch(() => {});
+                    const offMsg = await message.channel.send('🔴 **Logs de Consultas IA desactivados.** Ya no se enviarán registros.');
+                    setTimeout(() => offMsg.delete().catch(() => {}), 6000);
+                    return;
+                }
+
+                const rawId = argsLog.slice(1).join(' ').match(/\d{17,20}/)?.[0];
+                let targetCh = message.mentions.channels.first();
+                if (!targetCh && rawId) {
+                    targetCh = message.guild.channels.cache.get(rawId) || await client.channels.fetch(rawId).catch(() => null);
+                }
+                if (!targetCh) targetCh = message.channel;
+
+                CANAL_CONSULTAS_LOGS_ID = targetCh.id;
+                await BotSetting.findOneAndUpdate(
+                    { key: 'CHANNEL_CONSULTAS_LOGS_ID' },
+                    { key: 'CHANNEL_CONSULTAS_LOGS_ID', value: targetCh.id },
+                    { upsert: true }
+                ).catch(() => {});
+
+                const okEmbed = new EmbedBuilder()
+                    .setColor(0xD900FF)
+                    .setTitle('📜 Canal de Logs de Consultas Configurado')
+                    .setDescription(
+                        `✅ Todas las consultas realizadas a la IA (tanto de **Staff** como de **Usuarios**) quedarán registradas automáticamente en <#${targetCh.id}> (\`${targetCh.id}\`).\n\n` +
+                        `> ℹ️ *Consume **0 tokens** adicionales: simplemente guarda cada pregunta y respuesta del bot.*`
+                    )
+                    .setFooter({ text: 'VALLECAS RP • Logs de Consultas IA' })
+                    .setTimestamp();
+
+                const confMsg = await message.channel.send({ embeds: [okEmbed] }).catch(() => null);
+                if (confMsg) setTimeout(() => confMsg.delete().catch(() => {}), 8000);
+                return;
+            }
+
+            // ==========================================
             // ATENCIÓN DE CONSULTAS EN LOS CANALES (STAFF Y USUARIOS)
             // ==========================================
             const isStaffChannel = (message.channel.id === CANAL_CONSULTAS_ID);
@@ -873,6 +948,9 @@ function initConsultasAI(client) {
 
                 // Consultar la IA adaptando el rol según si es canal de usuarios o canal de staff (con respaldo automático y actualización del panel de tokens)
                 const aiAnswer = await queryGroqAI(questionText, isUsersChannel, client);
+
+                // Registrar en el canal de logs (0 tokens consumidos)
+                sendConsultaLog({ message, questionText, aiAnswer, isStaffChannel, isPrivateAiCommand });
 
                 const logoAttachment = getLogoAttachment();
                 const iconUrl = logoAttachment ? 'attachment://logo.png' : (message.guild.iconURL() || undefined);
