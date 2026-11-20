@@ -69,17 +69,39 @@ const GROQ_MODELS = [
     { id: 'openai/gpt-oss-20b', label: 'Núcleo IA 3 (Respaldo 2)', dailyLimit: 200000, dailyReqLimit: 1000 }
 ];
 
+function getConfiguredApiKeys() {
+    const keys = [];
+    if (process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim()) {
+        keys.push({ idx: 1, key: process.env.GROQ_API_KEY.trim(), label: 'Servidor 1 (Principal)' });
+    }
+    for (let i = 2; i <= 10; i++) {
+        const val = process.env[`GROQ_API_KEY_${i}`];
+        if (val && val.trim()) {
+            keys.push({ idx: keys.length + 1, key: val.trim(), label: `Servidor ${keys.length + 1} (Respaldo)` });
+        }
+    }
+    return keys;
+}
+
+function getSlotKey(keyIdx, modelId) {
+    return keyIdx === 1 ? modelId : `k${keyIdx}:${modelId}`;
+}
+
 function getUtcDateKey() {
     return new Date().toISOString().slice(0, 10);
 }
 
 function createEmptyTokenStats() {
     const models = {};
-    for (const m of GROQ_MODELS) {
-        models[m.id] = { tokensUsed: 0, requests: 0, exhausted: false };
+    const keyCount = Math.max(1, getConfiguredApiKeys().length);
+    for (let k = 1; k <= keyCount; k++) {
+        for (const m of GROQ_MODELS) {
+            models[getSlotKey(k, m.id)] = { tokensUsed: 0, requests: 0, exhausted: false };
+        }
     }
     return {
         date: getUtcDateKey(),
+        activeKeyIdx: 1,
         activeModel: GROQ_MODELS[0].id,
         lastQueryTokens: 0,
         models
@@ -91,13 +113,18 @@ let tokensPanelRef = null; // { channelId, messageId }
 
 function ensureTodayTokenStats() {
     const today = getUtcDateKey();
+    const keyCount = Math.max(1, getConfiguredApiKeys().length);
     if (!tokenStats || tokenStats.date !== today) {
         tokenStats = createEmptyTokenStats();
     } else {
         if (!tokenStats.models) tokenStats.models = {};
-        for (const m of GROQ_MODELS) {
-            if (!tokenStats.models[m.id]) {
-                tokenStats.models[m.id] = { tokensUsed: 0, requests: 0, exhausted: false };
+        if (!tokenStats.activeKeyIdx) tokenStats.activeKeyIdx = 1;
+        for (let k = 1; k <= keyCount; k++) {
+            for (const m of GROQ_MODELS) {
+                const slot = getSlotKey(k, m.id);
+                if (!tokenStats.models[slot]) {
+                    tokenStats.models[slot] = { tokensUsed: 0, requests: 0, exhausted: false };
+                }
             }
         }
     }
@@ -126,34 +153,59 @@ function buildTokensPanelEmbed() {
     const logoAttachment = getLogoAttachment();
     const logoUrl = logoAttachment ? 'attachment://logo.png' : undefined;
 
-    const totalLimit = GROQ_MODELS.reduce((acc, m) => acc + m.dailyLimit, 0);
+    const apiKeys = getConfiguredApiKeys();
+    const keyCount = Math.max(1, apiKeys.length);
+    const perCycleLimit = GROQ_MODELS.reduce((acc, m) => acc + m.dailyLimit, 0); // 600.000 por ciclo
+    const totalLimit = perCycleLimit * keyCount;
+    const activeCycleIdx = tokenStats.activeKeyIdx || 1;
     let totalUsed = 0;
     let totalReqs = 0;
 
-    const modelLines = GROQ_MODELS.map(m => {
-        const st = tokenStats.models[m.id] || { tokensUsed: 0, requests: 0, exhausted: false };
-        totalUsed += st.tokensUsed;
-        totalReqs += st.requests;
-        const remaining = Math.max(0, m.dailyLimit - st.tokensUsed);
-        const pct = Math.min(100, Math.round((st.tokensUsed / m.dailyLimit) * 100));
-        const isCurrent = tokenStats.activeModel === m.id;
-        const statusBadge = st.exhausted
-            ? '🔴 **Agotado hoy**'
-            : (isCurrent ? '🟢 **Activo ahora**' : '🔵 **En reserva**');
-        const bar = makeProgressBar(st.tokensUsed, m.dailyLimit, 10);
+    // 1. Desglose por cada Ciclo / Servidor configurado (600K cada uno)
+    const cycleLines = [];
+    for (let k = 1; k <= keyCount; k++) {
+        let cycleUsed = 0;
+        let cycleReqs = 0;
+        let cycleExhausted = true;
+        for (const m of GROQ_MODELS) {
+            const st = tokenStats.models[getSlotKey(k, m.id)] || { tokensUsed: 0, requests: 0, exhausted: false };
+            cycleUsed += st.tokensUsed;
+            cycleReqs += st.requests;
+            if (!st.exhausted) cycleExhausted = false;
+        }
+        totalUsed += cycleUsed;
+        totalReqs += cycleReqs;
 
-        return (
-            `**${m.label}** — ${statusBadge}\n` +
-            `${bar} \`${pct}%\`\n` +
-            `> 🪙 Usados: \`${st.tokensUsed.toLocaleString('es-ES')}\` / \`${m.dailyLimit.toLocaleString('es-ES')}\` • Quedan: \`${remaining.toLocaleString('es-ES')}\` • Consultas: \`${st.requests}\``
+        const cycleRem = Math.max(0, perCycleLimit - cycleUsed);
+        const cyclePct = Math.min(100, Math.round((cycleUsed / perCycleLimit) * 100));
+        const isCurrentCycle = activeCycleIdx === k;
+        const cycleBadge = cycleExhausted
+            ? '🔴 **Agotado hoy**'
+            : (isCurrentCycle ? '🟢 **Activo ahora**' : '🔵 **En reserva**');
+        const cycleBar = makeProgressBar(cycleUsed, perCycleLimit, 10);
+        const cycleName = k === 1 ? 'Ciclo 1 (Principal)' : `Ciclo ${k} (Respaldo)`;
+
+        cycleLines.push(
+            `**${cycleName}** — ${cycleBadge}\n` +
+            `${cycleBar} \`${cyclePct}%\`\n` +
+            `> 🪙 Usados: \`${cycleUsed.toLocaleString('es-ES')}\` / \`${perCycleLimit.toLocaleString('es-ES')}\` • Quedan: \`${cycleRem.toLocaleString('es-ES')}\` • Consultas: \`${cycleReqs}\``
         );
-    }).join('\n\n');
+    }
+
+    // 2. Estado de los 3 Núcleos del Ciclo activo actual
+    const activeCycleNuclei = GROQ_MODELS.map(m => {
+        const st = tokenStats.models[getSlotKey(activeCycleIdx, m.id)] || { tokensUsed: 0, requests: 0, exhausted: false };
+        const isCurrentModel = tokenStats.activeModel === m.id;
+        const dot = st.exhausted ? '🔴' : (isCurrentModel ? '🟢' : '🔵');
+        return `> ${dot} **${m.label}:** \`${st.tokensUsed.toLocaleString('es-ES')}\` / \`${m.dailyLimit.toLocaleString('es-ES')}\` (\`${st.requests}\` cons.)`;
+    }).join('\n');
 
     const totalRemaining = Math.max(0, totalLimit - totalUsed);
     const totalPct = Math.min(100, Math.round((totalUsed / totalLimit) * 100));
     const totalBar = makeProgressBar(totalUsed, totalLimit, 12);
 
     const activeModelCfg = GROQ_MODELS.find(m => m.id === tokenStats.activeModel) || GROQ_MODELS[0];
+    const activeCycleName = activeCycleIdx === 1 ? `Ciclo 1/${keyCount} (Principal)` : `Ciclo ${activeCycleIdx}/${keyCount} (Respaldo)`;
 
     return new EmbedBuilder()
         .setColor(0xD900FF)
@@ -164,15 +216,20 @@ function buildTokensPanelEmbed() {
         .setThumbnail(logoUrl)
         .setTitle('📊 CONSUMO Y LÍMITES DE IA (VALLECAS AI)')
         .setDescription(
+            `🔌 **Ciclo activo:** \`${activeCycleName}\`\n\n` +
             `🤖 **Motor activo:** \`${activeModelCfg.label}\`\n\n` +
-            `🔄 **Cambio automático:** Activado *(si un núcleo se agota, salta al siguiente solo)*\n\n` +
+            `🔄 **Cambio automático:** Activado *(salta de núcleo y de ciclo solo si se agota)*\n\n` +
             `📈 **TOTAL COMBINADO HOY (${tokenStats.date} UTC):**\n` +
             `${totalBar} \`${totalPct}%\`\n` +
             `> 🪙 **Gastados:** \`${totalUsed.toLocaleString('es-ES')}\` / \`${totalLimit.toLocaleString('es-ES')}\` tokens\n` +
             `> 🟢 **Disponibles:** \`${totalRemaining.toLocaleString('es-ES')}\` tokens\n` +
             `> 💬 **Consultas hoy:** \`${totalReqs}\` *(Última: \`+${(tokenStats.lastQueryTokens || 0).toLocaleString('es-ES')}\` tokens)*\n\n` +
             `────────────────────────────\n\n` +
-            `${modelLines}`
+            `⚡ **ESTADO DE CICLOS (${keyCount} conectados):**\n\n` +
+            `${cycleLines.join('\n\n')}\n\n` +
+            `────────────────────────────\n\n` +
+            `🧠 **NÚCLEOS DEL CICLO ${activeCycleIdx}:**\n` +
+            `${activeCycleNuclei}`
         )
         .setFooter({
             text: 'VALLECAS RP • Se actualiza automáticamente tras cada consulta (Reset 00:00 UTC)',
@@ -487,8 +544,8 @@ function getRelevantNormativaSnippets(question) {
  * Consulta la IA de Groq inyectando toda la base de conocimientos aprendida
  */
 async function queryGroqAI(userQuestion, isUserMode = false, client = null) {
-    const groqKey = process.env.GROQ_API_KEY;
-    if (!groqKey) return null;
+    const apiKeys = getConfiguredApiKeys();
+    if (apiKeys.length === 0) return null;
 
     const qLower = userQuestion.toLowerCase();
     if (qLower.includes('anubis')) {
@@ -541,16 +598,22 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null) {
 
         ensureTodayTokenStats();
 
-        // Ordenar modelos: primero los NO agotados hoy; si todos están marcados como agotados, reintentarlos igualmente
-        const availableModels = GROQ_MODELS.filter(m => !tokenStats.models[m.id]?.exhausted);
-        const modelsToTry = availableModels.length > 0 ? availableModels : GROQ_MODELS;
+        // Construir cola de intentos: todos los (servidor, modelo) NO agotados hoy primero
+        const allSlots = [];
+        for (const keyObj of apiKeys) {
+            for (const modelCfg of GROQ_MODELS) {
+                allSlots.push({ keyObj, modelCfg, slotKey: getSlotKey(keyObj.idx, modelCfg.id) });
+            }
+        }
+        const availableSlots = allSlots.filter(s => !tokenStats.models[s.slotKey]?.exhausted);
+        const slotsToTry = availableSlots.length > 0 ? availableSlots : allSlots;
 
-        for (const modelCfg of modelsToTry) {
+        for (const { keyObj, modelCfg, slotKey } of slotsToTry) {
             try {
                 const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${groqKey}`,
+                        'Authorization': `Bearer ${keyObj.key}`,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
@@ -569,10 +632,11 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null) {
                     const reply = data.choices?.[0]?.message?.content?.trim();
                     if (reply && reply.length > 5) {
                         const usedTokens = data.usage?.total_tokens || Math.ceil((systemPrompt.length + userQuestion.length + reply.length) / 4);
-                        const st = tokenStats.models[modelCfg.id];
+                        const st = tokenStats.models[slotKey];
                         st.tokensUsed += usedTokens;
                         st.requests += 1;
                         st.exhausted = false;
+                        tokenStats.activeKeyIdx = keyObj.idx;
                         tokenStats.activeModel = modelCfg.id;
                         tokenStats.lastQueryTokens = usedTokens;
 
@@ -584,20 +648,20 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null) {
                     const errText = await res.text().catch(() => '');
                     const isDailyLimit = /per day|TPD|RPD|daily/i.test(errText);
                     if (isDailyLimit) {
-                        tokenStats.models[modelCfg.id].exhausted = true;
-                        console.warn(`⚠️ [CONSULTAS AI] Modelo ${modelCfg.id} agotó su límite diario. Cambiando automáticamente al siguiente respaldo...`);
+                        tokenStats.models[slotKey].exhausted = true;
+                        console.warn(`⚠️ [CONSULTAS AI] ${keyObj.label} / ${modelCfg.id} agotó su límite diario. Saltando al siguiente respaldo...`);
                     } else {
-                        console.warn(`⚠️ [CONSULTAS AI] Rate limit temporal (TPM) en ${modelCfg.id}. Saltando al siguiente modelo...`);
+                        console.warn(`⚠️ [CONSULTAS AI] Rate limit temporal (TPM) en ${keyObj.label} / ${modelCfg.id}. Saltando al siguiente...`);
                     }
                     saveTokenStats();
                     updateTokensPanel(client);
-                    continue; // Saltar inmediatamente al siguiente modelo de respaldo
+                    continue;
                 } else {
-                    console.error(`⚠️ [CONSULTAS AI Groq Error ${modelCfg.id}]:`, res.status, await res.text().catch(() => ''));
+                    console.error(`⚠️ [CONSULTAS AI Error ${keyObj.label} / ${modelCfg.id}]:`, res.status, await res.text().catch(() => ''));
                     continue;
                 }
             } catch (netErr) {
-                console.error(`⚠️ [CONSULTAS AI Net Error ${modelCfg.id}]:`, netErr.message);
+                console.error(`⚠️ [CONSULTAS AI Net Error ${keyObj.label} / ${modelCfg.id}]:`, netErr.message);
             }
         }
     } catch (e) {
