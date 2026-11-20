@@ -243,22 +243,23 @@ async function buildLocucionEmbed(client, guild, forceQuota = false) {
         if (tiempoSet && tiempoSet.value !== undefined) intervaloMin = Number(tiempoSet.value) || 0.5;
 
         const audioNames = [
-            { key: 'espera_soporte', label: 'Aviso Staff 1 (Espera)' },
-            { key: 'aviso_2', label: 'Aviso Staff 2 (Recordatorio)' },
-            { key: 'locucion_de_esperas', label: 'Locución Usuarios (Bienvenida)' },
-            { key: 'sancion_staffs', label: 'Aviso 3 (Sanción Staff)' },
-            { key: 'sala_de_staffs', label: 'Locución Sala de Charla' }
+            { key: 'espera_soporte', emoji: '🔔', label: 'Aviso Staff 1 (Espera)' },
+            { key: 'aviso_2', emoji: '⏰', label: 'Aviso Staff 2 (Recordatorio)' },
+            { key: 'locucion_de_esperas', emoji: '👋', label: 'Locución Usuarios (Bienvenida)' },
+            { key: 'sancion_staffs', emoji: '🚨', label: 'Aviso 3 (Sanción Staff)' },
+            { key: 'sala_de_staffs', emoji: '💬', label: 'Locución Sala de Charla' }
         ];
 
         if (mongoose.models.AudioAlert) {
             const docs = await mongoose.models.AudioAlert.find({}, { name: 1, size: 1 }).lean();
             const foundMap = new Map(docs.map(d => [d.name, d.size || 1]));
             audioStatuses = audioNames.map(a => ({
+                emoji: a.emoji,
                 label: a.label,
                 loaded: foundMap.has(a.key)
             }));
         } else {
-            audioStatuses = audioNames.map(a => ({ label: a.label, loaded: false }));
+            audioStatuses = audioNames.map(a => ({ emoji: a.emoji, label: a.label, loaded: false }));
         }
     } catch (e) { }
 
@@ -287,7 +288,7 @@ async function buildLocucionEmbed(client, guild, forceQuota = false) {
     const totalAudios = audioStatuses.length || 5;
     const audioBar = makeProgressBar(loadedCount, totalAudios, 10, 'health');
     const audioPct = Math.round((loadedCount / totalAudios) * 100);
-    const audioLines = audioStatuses.map(a => `> ${a.loaded ? '🟢' : '🔴'} **${a.label}:** \`${a.loaded ? 'Cargado' : 'Sin cargar'}\``).join('\n');
+    const audioLines = audioStatuses.map(a => `> ${a.emoji} **${a.label}:** ${a.loaded ? '🟢 `Activo`' : '🔴 `Inactivo`'}`).join('\n');
 
     // Cuota del motor de voz neuronal (sin mencionar proveedor)
     const quota = await fetchVoiceQuota(forceQuota);

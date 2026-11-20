@@ -233,13 +233,14 @@ function buildTokensPanelEmbed() {
             `${nucleiLines.join('\n\n')}\n\n` +
             `────────────────────────────\n\n` +
             `⚙️ **SISTEMA Y CANALES ACTIVOS:**\n` +
-            `> ${consultasActivas ? '🟢 **Servicio:** `Activo y respondiendo`' : '🔴 **Servicio:** `Pausado por Staff`'}\n` +
+            `> ⚡ **Servicio:** ${consultasActivas ? '🟢 `Activo y respondiendo`' : '🔴 `Pausado por Staff`'}\n` +
             `> 📚 **Normativa en memoria:** \`${loadedSections}\` secciones oficiales\n` +
-            `> 🛡️ **Canal Staff:** ${staffChText} • 👥 **Canal Usuarios:** ${usersChText}\n` +
-            `> ⏳ **Reinicio de cupos:** en \`${resetH}h ${resetM}m\` *(00:00 UTC)*`
+            `> 🛡️ **Canal Staff:** ${staffChText}\n` +
+            `> 👥 **Canal Usuarios:** ${usersChText}\n` +
+            `> ⏳ **Reinicio de cupos:** en \`${resetH}h ${resetM}m\``
         )
         .setFooter({
-            text: 'VALLECAS RP • Se actualiza automáticamente tras cada consulta (Reset 00:00 UTC)',
+            text: 'VALLECAS RP • Se actualiza automáticamente tras cada consulta',
             iconURL: logoUrl
         })
         .setTimestamp();
