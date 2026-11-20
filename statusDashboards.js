@@ -73,10 +73,17 @@ function isMemberStaff(member) {
     return false;
 }
 
-function makeProgressBar(used, total, size = 10) {
+function makeProgressBar(used, total, size = 10, mode = 'usage') {
     const pct = total > 0 ? Math.min(1, Math.max(0, used / total)) : 0;
     const filled = Math.round(pct * size);
-    const fillChar = pct >= 0.85 ? '🟥' : (pct >= 0.6 ? '🟨' : '🟩');
+    let fillChar;
+    if (mode === 'health') {
+        // En barras de salud/carga: alto = bien (verde), bajo = mal (rojo)
+        fillChar = pct >= 0.8 ? '🟩' : (pct >= 0.5 ? '🟨' : '🟥');
+    } else {
+        // En barras de consumo (RAM/cuota): bajo = bien (verde), alto = alerta (rojo)
+        fillChar = pct >= 0.85 ? '🟥' : (pct >= 0.6 ? '🟨' : '🟩');
+    }
     return fillChar.repeat(filled) + '⬛'.repeat(size - filled);
 }
 
@@ -180,7 +187,7 @@ async function buildServiciosEmbed(client) {
         true // Directos & Eventos
     ];
     const okCount = services.filter(Boolean).length;
-    const healthBar = makeProgressBar(okCount, services.length, 12);
+    const healthBar = makeProgressBar(okCount, services.length, 12, 'health');
     const healthPct = Math.round((okCount / services.length) * 100);
 
     const embed = new EmbedBuilder()
@@ -198,12 +205,12 @@ async function buildServiciosEmbed(client) {
             `> 🟢 **Estado:** Online • **Latencia:** \`${ping} ms\` • **Activo:** \`${uptimeStr}\`\n` +
             `> 💾 **Memoria:** ${ramBar} \`${ramMb} MB\` (\`${ramPct}%\`)\n` +
             `> 🗄️ **Base de Datos:** ${dbConnected ? '🟢 Conectada' : '🔴 Desconectada'}\n\n` +
-            `────────────────────────────\n` +
-            `**MÓDULOS Y SERVICIOS DEL SERVIDOR:**\n` +
+            `────────────────────────────\n\n` +
+            `⚙️ **MÓDULOS Y SERVICIOS DEL SERVIDOR:**\n` +
             `> 🧠 **Consultas de Normativa IA:** ${aiCoreReady ? (consultasOn ? '🟢 Operativo' : '🔴 Pausado') : '🔴 Sin conexión'}\n` +
             `> 🎫 **Asistente Virtual de Tickets:** ${asistenteOn ? '🟢 Operativo' : '🔴 Pausado'}\n` +
             `> 🎙️ **Sistema de Locución y Soporte:** ${locucionOn ? '🟢 Operativo' : '🔴 Pausado'}\n` +
-            `> 🎤 **Motor de Voz Neuronal (Entrevistas):** ${voiceCoreReady ? '🟢 Neuronal Activo' : '🟡 Modo Estándar'}\n` +
+            `> 🎤 **Motor de Voz Neuronal:** ${voiceCoreReady ? '🟢 Neuronal Activo' : '🟡 Modo Estándar'}\n` +
             `> 🛡️ **Auditoría Anti-IA (Whitelist):** ${antiAiReady ? '🟢 Operativo' : '🟡 Modo Local'}\n` +
             `> 📢 **Eventos, Directos y Sanciones:** 🟢 Operativo`
         )
@@ -278,7 +285,7 @@ async function buildLocucionEmbed(client, guild, forceQuota = false) {
 
     const loadedCount = audioStatuses.filter(a => a.loaded).length;
     const totalAudios = audioStatuses.length || 5;
-    const audioBar = makeProgressBar(loadedCount, totalAudios, 10);
+    const audioBar = makeProgressBar(loadedCount, totalAudios, 10, 'health');
     const audioPct = Math.round((loadedCount / totalAudios) * 100);
     const audioLines = audioStatuses.map(a => `> ${a.loaded ? '🟢' : '🔴'} **${a.label}:** ${a.loaded ? 'Cargado' : 'Sin cargar'}`).join('\n');
 
@@ -288,7 +295,7 @@ async function buildLocucionEmbed(client, guild, forceQuota = false) {
     if (quota.available && quota.limit > 0) {
         const rem = Math.max(0, quota.limit - quota.used);
         const qPct = Math.min(100, Math.round((quota.used / quota.limit) * 100));
-        const qBar = makeProgressBar(quota.used, quota.limit, 10);
+        const qBar = makeProgressBar(quota.used, quota.limit, 10, 'usage');
         voiceBlock =
             `**Motor de Voz Neuronal (Entrevistas)** — 🟢 **Operativo**\n` +
             `${qBar} \`${qPct}%\`\n` +
@@ -304,20 +311,20 @@ async function buildLocucionEmbed(client, guild, forceQuota = false) {
         .setThumbnail(logoUrl)
         .setTitle('🎙️ SISTEMA DE LOCUCIÓN Y SALAS DE SOPORTE')
         .setDescription(
-            `🔊 **Estado del sistema:** ${locucionOn ? '🟢 **ACTIVADO**' : '🔴 **PAUSADO**'} • **Intervalo:** \`${Math.round(intervaloMin * 60)}s\`\n` +
+            `🔊 **Estado del sistema:** ${locucionOn ? '🟢 **ACTIVADO**' : '🔴 **PAUSADO**'} • **Intervalo:** \`${Math.round(intervaloMin * 60)}s\`\n\n` +
             `🎧 **Actividad actual:** ${botInVoice ? '🔊 **Reproduciendo locución en sala**' : '🟢 **En guardia (Listo)**'}\n\n` +
             `👥 **SALAS DE SOPORTE EN TIEMPO REAL:**\n` +
             `> ⏳ **En Espera de Soporte:** \`${usersWaiting}\` usuario(s)\n` +
             `> 🛡️ **En Salas de Soporte (1-5):** \`${staffsInSupport}\` miembro(s)\n\n` +
-            `────────────────────────────\n` +
+            `────────────────────────────\n\n` +
             `🎵 **AUDIOS DEL SISTEMA (${loadedCount}/${totalAudios}):**\n` +
             `${audioBar} \`${audioPct}%\`\n` +
             `${audioLines}\n\n` +
-            `────────────────────────────\n` +
+            `────────────────────────────\n\n` +
             `${voiceBlock}`
         )
         .setFooter({
-            text: 'VALLECAS RP • Auto-actualización cada 30s',
+            text: 'VALLECAS RP • Actualización en tiempo real',
             iconURL: logoUrl
         })
         .setTimestamp();
@@ -373,21 +380,21 @@ async function buildTicketsEmbed(guild) {
         .setThumbnail(logoUrl)
         .setTitle('🎫 ASISTENTE VIRTUAL Y COLA DE TICKETS')
         .setDescription(
-            `🤖 **Asistente de Tickets:** ${asistenteOn ? '🟢 **ACTIVADO**' : '🔴 **PAUSADO**'}\n` +
+            `🤖 **Asistente de Tickets:** ${asistenteOn ? '🟢 **ACTIVADO**' : '🔴 **PAUSADO**'}\n\n` +
             `📂 **Tickets abiertos ahora mismo:** \`${totalOpen}\` en total\n\n` +
             `📋 **DESGLOSE POR CATEGORÍA (EN VIVO):**\n` +
             `> 🛠️ **Soporte:** \`${cSoporte}\` abierto(s)\n` +
             `> 🔨 **Apelaciones de Baneo:** \`${cApelacion}\` abierto(s)\n` +
             `> 🎬 **Creadores de Contenido:** \`${cStreamer}\` abierto(s)\n` +
             `> 💎 **Donaciones:** \`${cDonaciones}\` abierto(s)\n\n` +
-            `────────────────────────────\n` +
+            `────────────────────────────\n\n` +
             `📈 **HISTÓRICO DEL ASISTENTE:**\n` +
             `> 📨 **Resúmenes preparados al Staff:** \`${totalSummarized}\`\n` +
             `> ✅ **Resueltos por el Asistente:** \`${totalSolved}\`\n` +
             `> 🧠 **Base de conocimiento:** \`${knowledgeCount}\` entradas`
         )
         .setFooter({
-            text: 'VALLECAS RP • Auto-actualización cada 60s',
+            text: 'VALLECAS RP • Actualización en tiempo real',
             iconURL: logoUrl
         })
         .setTimestamp();
@@ -427,29 +434,61 @@ async function editSavedPanel(client, type) {
             btnId = 'btn_dash_refresh_tickets';
         }
 
+        // Al editar, NO re-subimos logo.png (3.5 MB) para ahorrar tráfico en Railway; Discord conserva el adjunto existente
         await msg.edit({
             embeds: [built.embed],
-            files: built.logoAttachment ? [built.logoAttachment] : [],
             components: [buildRefreshRow(btnId)]
         }).catch(() => {});
     } catch (e) { }
 }
 
+const debounceTimers = new Map();
+function schedulePanelUpdate(client, type, delayMs = 2000) {
+    if (debounceTimers.has(type)) clearTimeout(debounceTimers.get(type));
+    debounceTimers.set(type, setTimeout(() => {
+        debounceTimers.delete(type);
+        if (client.isReady()) editSavedPanel(client, type);
+    }, delayMs));
+}
+
 module.exports = function initStatusDashboards(client) {
     loadPanelRefs();
-    console.log('📊 [DASHBOARDS] Sistema de paneles de estado en vivo cargado (!panel-servicios, !panel-locucion, !panel-tickets).');
+    console.log('📊 [DASHBOARDS] Sistema de paneles en tiempo real cargado (!panel-servicios, !panel-locucion, !panel-tickets).');
 
-    // Auto-actualización periódica segura (sin rate limits)
+    const watchedVoiceIds = new Set([CANAL_ESPERA_ID, ...CANALES_SOPORTE_IDS]);
+    const watchedTicketCats = new Set([
+        CATEGORIA_SOPORTE_ID,
+        CATEGORIA_APELACION_ID,
+        CATEGORIA_STREAMER_ID,
+        CATEGORIA_DONACIONES_ID
+    ]);
+
+    // Actualización INSTANTÁNEA de !panel-locucion cuando alguien entra o sale de salas de soporte / espera
+    client.on('voiceStateUpdate', (oldState, newState) => {
+        if (watchedVoiceIds.has(oldState.channelId) || watchedVoiceIds.has(newState.channelId)) {
+            schedulePanelUpdate(client, 'locucion', 1500);
+        }
+    });
+
+    // Actualización INSTANTÁNEA de !panel-tickets cuando se abre o cierra un ticket
+    client.on('channelCreate', (channel) => {
+        if (channel && channel.type === 0 && watchedTicketCats.has(channel.parentId)) {
+            schedulePanelUpdate(client, 'tickets', 2000);
+        }
+    });
+    client.on('channelDelete', (channel) => {
+        if (channel && channel.type === 0 && watchedTicketCats.has(channel.parentId)) {
+            schedulePanelUpdate(client, 'tickets', 1500);
+        }
+    });
+
+    // Respaldo periódico cada 60s (actualiza RAM, latencia, uptime y sincroniza todo sin rate limits)
     setInterval(() => {
         if (!client.isReady()) return;
         editSavedPanel(client, 'servicios');
-        editSavedPanel(client, 'tickets');
-    }, 60 * 1000); // Cada 60 segundos
-
-    setInterval(() => {
-        if (!client.isReady()) return;
         editSavedPanel(client, 'locucion');
-    }, 30 * 1000); // Cada 30 segundos (salas de soporte en vivo)
+        editSavedPanel(client, 'tickets');
+    }, 60 * 1000);
 
     client.on('messageCreate', async (message) => {
         try {
@@ -552,7 +591,6 @@ module.exports = function initStatusDashboards(client) {
 
             await interaction.update({
                 embeds: [built.embed],
-                files: built.logoAttachment ? [built.logoAttachment] : [],
                 components: [buildRefreshRow(id)]
             }).catch(() => {});
         } catch (err) {
