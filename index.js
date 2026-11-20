@@ -384,6 +384,11 @@ async function updateConfig(key, value) {
             console.error('Error guardando en Mongo config:', e);
         }
     }
+    if (key === 'CHANNEL_CONSULTAS_STAFF_ID' || key === 'CHANNEL_CONSULTAS_USERS_ID') {
+        if (typeof client.updateConsultasChannel === 'function') {
+            client.updateConsultasChannel(key, value);
+        }
+    }
 }
 
 // ==========================================
@@ -10402,6 +10407,14 @@ async function startBot() {
         initStaffRanks(client);
     } catch (ranksErr) {
         console.error('⚠️ [STAFF RANKS ERROR]:', ranksErr.message);
+    }
+
+    // Sistema independiente de Dashboards de Estado en Vivo (!panel-servicios, !panel-locucion, !panel-tickets)
+    try {
+        const initStatusDashboards = require('./statusDashboards');
+        initStatusDashboards(client);
+    } catch (dashErr) {
+        console.error('⚠️ [DASHBOARDS ERROR]:', dashErr.message);
     }
 }
 
