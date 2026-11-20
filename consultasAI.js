@@ -738,8 +738,8 @@ function initConsultasAI(client) {
                 })
                 .setThumbnail(userAvatar)
                 .setDescription(
-                    `👤 **Usuario:** <@${message.author.id}> (\`${message.author.id}\`)\n` +
-                    `📍 **Origen:** <#${message.channel.id}> *(${origenTxt})* • ${modoTxt}\n` +
+                    `👤 **Usuario:** <@${message.author.id}>\n` +
+                    `📍 **Origen:** <#${message.channel.id}> *(${origenTxt})*${isPrivateAiCommand ? ' • 🔒 Privado' : ''}\n` +
                     `🔌 **Núcleo:** \`Núcleo IA ${activeIdx}\` • \`+${formatNum(lastToks)} tokens\`\n\n` +
                     `❓ **Pregunta realizada:**\n` +
                     `> ${safeQuestion.replace(/\n/g, '\n> ')}\n\n` +
