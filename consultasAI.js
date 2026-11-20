@@ -64,9 +64,9 @@ let memoriaNormativaPages = []; // Caché en memoria RAM de las 16 páginas comp
 // POOL DE MODELOS GROQ CON RESPALDO AUTOMÁTICO (600K TOKENS/DÍA GRATIS)
 // ==========================================
 const GROQ_MODELS = [
-    { id: 'qwen/qwen3.8-27b', label: 'Qwen 3.8 27B (Principal)', dailyLimit: 200000, dailyReqLimit: 1000 },
-    { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B (Respaldo 1)', dailyLimit: 200000, dailyReqLimit: 1000 },
-    { id: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B (Respaldo 2)', dailyLimit: 200000, dailyReqLimit: 1000 }
+    { id: 'qwen/qwen3.8-27b', label: 'Núcleo IA 1 (Principal)', dailyLimit: 200000, dailyReqLimit: 1000 },
+    { id: 'openai/gpt-oss-120b', label: 'Núcleo IA 2 (Respaldo 1)', dailyLimit: 200000, dailyReqLimit: 1000 },
+    { id: 'openai/gpt-oss-20b', label: 'Núcleo IA 3 (Respaldo 2)', dailyLimit: 200000, dailyReqLimit: 1000 }
 ];
 
 function getUtcDateKey() {
@@ -153,6 +153,8 @@ function buildTokensPanelEmbed() {
     const totalPct = Math.min(100, Math.round((totalUsed / totalLimit) * 100));
     const totalBar = makeProgressBar(totalUsed, totalLimit, 12);
 
+    const activeModelCfg = GROQ_MODELS.find(m => m.id === tokenStats.activeModel) || GROQ_MODELS[0];
+
     return new EmbedBuilder()
         .setColor(0xD900FF)
         .setAuthor({
@@ -160,10 +162,10 @@ function buildTokensPanelEmbed() {
             iconURL: logoUrl
         })
         .setThumbnail(logoUrl)
-        .setTitle('📊 CONSUMO Y LÍMITES DE IA (GROQ)')
+        .setTitle('📊 CONSUMO Y LÍMITES DE IA (VALLECAS AI)')
         .setDescription(
-            `🤖 **Modelo activo:** \`${tokenStats.activeModel}\`\n` +
-            `🔄 **Cambio automático:** Activado *(si un modelo se agota, salta al siguiente solo)*\n\n` +
+            `🤖 **Motor activo:** \`${activeModelCfg.label}\`\n` +
+            `🔄 **Cambio automático:** Activado *(si un núcleo se agota, salta al siguiente solo)*\n\n` +
             `📈 **TOTAL COMBINADO HOY (${tokenStats.date} UTC):**\n` +
             `${totalBar} \`${totalPct}%\`\n` +
             `> 🪙 **Gastados:** \`${totalUsed.toLocaleString('es-ES')}\` / \`${totalLimit.toLocaleString('es-ES')}\` tokens\n` +
@@ -198,10 +200,9 @@ async function updateTokensPanel(client) {
         if (!msg) return;
 
         const embed = buildTokensPanelEmbed();
-        const logoAttachment = getLogoAttachment();
+        // Sin re-subir logo.png al editar para ahorrar tráfico de red
         await msg.edit({
             embeds: [embed],
-            files: logoAttachment ? [logoAttachment] : [],
             components: [buildTokensPanelRow()]
         }).catch(() => {});
     } catch (e) { }
@@ -869,10 +870,8 @@ function initConsultasAI(client) {
                     return interaction.reply({ content: '⛔ Solo el Staff puede actualizar este panel.', ephemeral: true });
                 }
                 const embed = buildTokensPanelEmbed();
-                const logoAtt = getLogoAttachment();
                 await interaction.update({
                     embeds: [embed],
-                    files: logoAtt ? [logoAtt] : [],
                     components: [buildTokensPanelRow()]
                 }).catch(() => {});
                 return;
