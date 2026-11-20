@@ -141,6 +141,10 @@ async function saveTokenStats() {
     } catch (e) { }
 }
 
+function formatNum(n) {
+    return Math.round(Number(n) || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
 function makeProgressBar(used, total, size = 10) {
     const pct = total > 0 ? Math.min(1, Math.max(0, used / total)) : 0;
     const filled = Math.round(pct * size);
@@ -155,13 +159,13 @@ function buildTokensPanelEmbed() {
 
     const apiKeys = getConfiguredApiKeys();
     const keyCount = Math.max(1, apiKeys.length);
-    const perCycleLimit = GROQ_MODELS.reduce((acc, m) => acc + m.dailyLimit, 0); // 600.000 por ciclo
+    const perCycleLimit = GROQ_MODELS.reduce((acc, m) => acc + m.dailyLimit, 0);
     const totalLimit = perCycleLimit * keyCount;
     const activeCycleIdx = tokenStats.activeKeyIdx || 1;
     let totalUsed = 0;
     let totalReqs = 0;
 
-    // 1. Desglose por cada Ciclo / Servidor configurado (600K cada uno)
+    // 1. Resumen compacto de cada Ciclo conectado (sin repetir cifras de 600K)
     const cycleLines = [];
     for (let k = 1; k <= keyCount; k++) {
         let cycleUsed = 0;
@@ -176,33 +180,57 @@ function buildTokensPanelEmbed() {
         totalUsed += cycleUsed;
         totalReqs += cycleReqs;
 
-        const cycleRem = Math.max(0, perCycleLimit - cycleUsed);
-        const cyclePct = Math.min(100, Math.round((cycleUsed / perCycleLimit) * 100));
+        const freePct = Math.max(0, 100 - Math.round((cycleUsed / perCycleLimit) * 100));
         const isCurrentCycle = activeCycleIdx === k;
-        const cycleBadge = cycleExhausted
-            ? '🔴 **Agotado hoy**'
+        const badge = cycleExhausted
+            ? '🔴 **Agotado**'
             : (isCurrentCycle ? '🟢 **Activo ahora**' : '🔵 **En reserva**');
-        const cycleBar = makeProgressBar(cycleUsed, perCycleLimit, 10);
         const cycleName = k === 1 ? 'Ciclo 1 (Principal)' : `Ciclo ${k} (Respaldo)`;
 
         cycleLines.push(
-            `**${cycleName}** — ${cycleBadge}\n` +
-            `${cycleBar} \`${cyclePct}%\`\n` +
-            `> 🪙 Usados: \`${cycleUsed.toLocaleString('es-ES')}\` / \`${perCycleLimit.toLocaleString('es-ES')}\` • Quedan: \`${cycleRem.toLocaleString('es-ES')}\` • Consultas: \`${cycleReqs}\``
+            `> ${badge} • **${cycleName}** — Libre: \`${freePct}%\` • Consultas: \`${cycleReqs}\``
         );
     }
 
-    // 2. Estado de los 3 Núcleos del Ciclo activo actual
-    const activeCycleNuclei = GROQ_MODELS.map(m => {
-        const st = tokenStats.models[getSlotKey(activeCycleIdx, m.id)] || { tokensUsed: 0, requests: 0, exhausted: false };
+    // 2. Desglose de los 3 Núcleos IA con límite TOTAL combinado de todos los ciclos
+    const nucleiLines = GROQ_MODELS.map(m => {
+        const modelTotalLimit = m.dailyLimit * keyCount;
+        let used = 0;
+        let reqs = 0;
+        let allExhausted = true;
+        for (let k = 1; k <= keyCount; k++) {
+            const st = tokenStats.models[getSlotKey(k, m.id)] || { tokensUsed: 0, requests: 0, exhausted: false };
+            used += st.tokensUsed;
+            reqs += st.requests;
+            if (!st.exhausted) allExhausted = false;
+        }
+        const rem = Math.max(0, modelTotalLimit - used);
+        const pct = Math.min(100, Math.round((used / modelTotalLimit) * 100));
         const isCurrentModel = tokenStats.activeModel === m.id;
-        const dot = st.exhausted ? '🔴' : (isCurrentModel ? '🟢' : '🔵');
-        return `> ${dot} **${m.label}:** \`${st.tokensUsed.toLocaleString('es-ES')}\` / \`${m.dailyLimit.toLocaleString('es-ES')}\` (\`${st.requests}\` cons.)`;
-    }).join('\n');
+        const statusBadge = allExhausted
+            ? '🔴 **Agotado**'
+            : (isCurrentModel ? '🟢 **Activo**' : '🔵 **En reserva**');
+        const bar = makeProgressBar(used, modelTotalLimit, 10);
+
+        return (
+            `**${m.label}** — ${statusBadge}\n` +
+            `${bar} \`${pct}%\`\n` +
+            `> 🪙 Usados: \`${formatNum(used)}\` / \`${formatNum(modelTotalLimit)}\` • Quedan: \`${formatNum(rem)}\` • Consultas: \`${formatNum(reqs)}\``
+        );
+    }).join('\n\n');
 
     const totalRemaining = Math.max(0, totalLimit - totalUsed);
     const totalPct = Math.min(100, Math.round((totalUsed / totalLimit) * 100));
     const totalBar = makeProgressBar(totalUsed, totalLimit, 12);
+
+    // 3. Métricas inteligentes en vivo (media, consultas estimadas restantes y cuenta atrás al reset UTC)
+    const avgTokens = totalReqs > 0 ? Math.round(totalUsed / totalReqs) : 1200;
+    const estRemainingQueries = Math.floor(totalRemaining / Math.max(500, avgTokens));
+    const now = new Date();
+    const nextReset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0));
+    const diffMs = Math.max(0, nextReset.getTime() - now.getTime());
+    const resetH = Math.floor(diffMs / 3600000);
+    const resetM = Math.floor((diffMs % 3600000) / 60000);
 
     const activeModelCfg = GROQ_MODELS.find(m => m.id === tokenStats.activeModel) || GROQ_MODELS[0];
     const activeCycleName = activeCycleIdx === 1 ? `Ciclo 1/${keyCount} (Principal)` : `Ciclo ${activeCycleIdx}/${keyCount} (Respaldo)`;
@@ -221,15 +249,20 @@ function buildTokensPanelEmbed() {
             `🔄 **Cambio automático:** Activado *(salta de núcleo y de ciclo solo si se agota)*\n\n` +
             `📈 **TOTAL COMBINADO HOY (${tokenStats.date} UTC):**\n` +
             `${totalBar} \`${totalPct}%\`\n` +
-            `> 🪙 **Gastados:** \`${totalUsed.toLocaleString('es-ES')}\` / \`${totalLimit.toLocaleString('es-ES')}\` tokens\n` +
-            `> 🟢 **Disponibles:** \`${totalRemaining.toLocaleString('es-ES')}\` tokens\n` +
-            `> 💬 **Consultas hoy:** \`${totalReqs}\` *(Última: \`+${(tokenStats.lastQueryTokens || 0).toLocaleString('es-ES')}\` tokens)*\n\n` +
+            `> 🪙 **Gastados:** \`${formatNum(totalUsed)}\` / \`${formatNum(totalLimit)}\` tokens\n` +
+            `> 🟢 **Disponibles:** \`${formatNum(totalRemaining)}\` tokens\n` +
+            `> 💬 **Consultas hoy:** \`${formatNum(totalReqs)}\` *(Última: \`+${formatNum(tokenStats.lastQueryTokens || 0)}\` tokens)*\n\n` +
             `────────────────────────────\n\n` +
-            `⚡ **ESTADO DE CICLOS (${keyCount} conectados):**\n\n` +
-            `${cycleLines.join('\n\n')}\n\n` +
+            `⚡ **ESTADO DE CICLOS (${keyCount} conectado${keyCount === 1 ? '' : 's'}):**\n` +
+            `${cycleLines.join('\n')}\n\n` +
             `────────────────────────────\n\n` +
-            `🧠 **NÚCLEOS DEL CICLO ${activeCycleIdx}:**\n` +
-            `${activeCycleNuclei}`
+            `🧠 **NÚCLEOS IA (CAPACIDAD TOTAL COMBINADA):**\n\n` +
+            `${nucleiLines}\n\n` +
+            `────────────────────────────\n\n` +
+            `📐 **ESTADÍSTICAS Y PREVISIÓN:**\n` +
+            `> ⚡ **Media por consulta:** \`~${formatNum(avgTokens)}\` tokens\n` +
+            `> 🔮 **Consultas restantes estimadas:** \`~${formatNum(estRemainingQueries)}\` hoy\n` +
+            `> ⏳ **Próximo reinicio diario:** en \`${resetH}h ${resetM}m\` *(00:00 UTC)*`
         )
         .setFooter({
             text: 'VALLECAS RP • Se actualiza automáticamente tras cada consulta (Reset 00:00 UTC)',
@@ -530,11 +563,11 @@ function getRelevantNormativaSnippets(question) {
             .trim();
 
         const bestMatches = scored
-            .slice(0, 2)
+            .slice(0, 4)
             .filter(s => s.score > 0)
             .map(s => cleanPage(s.page))
             .join('\n---\n');
-        return bestMatches.slice(0, 2600);
+        return bestMatches.slice(0, 5500);
     } catch (e) {
         return '';
     }
@@ -565,34 +598,38 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null) {
         // 1. Fragmentos directos del texto original del PDF de la normativa
         const exactNormativaText = getRelevantNormativaSnippets(userQuestion);
 
-        // 2. Conocimientos específicos en MongoDB (solo los que realmente coinciden con la pregunta, para no gastar tokens inútiles)
+        // 2. Conocimientos específicos en MongoDB (máxima precisión: hasta 10 notas relevantes + últimas directrices)
         let knowledgeContext = '';
         try {
-            const allKnowledge = await TicketKnowledge.find({}).sort({ createdAt: -1 }).limit(30);
+            const allKnowledge = await TicketKnowledge.find({}).sort({ createdAt: -1 }).limit(40);
             if (allKnowledge && allKnowledge.length > 0) {
                 const qNorm = userQuestion.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-                const qTerms = qNorm.split(/[^a-z0-9]+/i).filter(w => SHORT_RP_TERMS.has(w) || w.length >= 4);
+                const qTerms = qNorm.split(/[^a-z0-9]+/i).filter(w => SHORT_RP_TERMS.has(w) || w.length >= 3);
                 const relevantKnowledge = allKnowledge
                     .filter(k => {
                         const txt = (k.response || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
                         return qTerms.some(t => countTermMatches(txt, t) > 0);
                     })
-                    .slice(0, 4);
+                    .slice(0, 10);
 
-                if (relevantKnowledge.length > 0) {
-                    knowledgeContext = '\nNOTAS EXTRA:\n' +
-                        relevantKnowledge.map(k => `• ${k.response}`).join('\n').slice(0, 700) + '\n';
+                const finalNotes = relevantKnowledge.length >= 4
+                    ? relevantKnowledge
+                    : [...relevantKnowledge, ...allKnowledge.filter(k => !relevantKnowledge.includes(k)).slice(0, 4 - relevantKnowledge.length)];
+
+                if (finalNotes.length > 0) {
+                    knowledgeContext = '\nNOTAS Y DIRECTRICES EXTRA DEL SERVIDOR:\n' +
+                        finalNotes.map(k => `• ${k.response}`).join('\n').slice(0, 1500) + '\n';
                 }
             }
         } catch (e) { }
 
         const roleLine = isUserMode
-            ? 'Eres la IA Oficial de VALLECAS RP (FiveM) para usuarios. Responde en español de España, claro, cercano y en 1-2 párrafos breves.'
-            : 'Eres la IA Asesora Oficial de VALLECAS RP (FiveM) para el Staff. Responde en español de España, directo, citando artículos/cifras/sanciones en 1-2 párrafos breves.';
+            ? 'Eres la IA Oficial de VALLECAS RP (FiveM) para usuarios. Responde en español de España de forma exacta, clara, cercana y bien estructurada (citas de artículos, cifras exactas de dinero/policías/tiempos y excepciones si existen).'
+            : 'Eres la IA Asesora Oficial de VALLECAS RP (FiveM) para el Staff. Responde en español de España de forma ultra precisa, directa y completa (cita artículos exactos, cifras, tiempos, sanciones aplicables y excepciones).';
 
         const systemPrompt =
             `${roleLine}\n` +
-            `Entiende faltas de ortografía o jerga. Si preguntan siglas RP (RK, PK, CK, MG, PG, DM, VDM, HK, NVV, RDE, ZS, BH, CJ, BA, IOOC), defínelas y explica qué aplica en Vallecas RP. Básate 100% en esta normativa:\n` +
+            `Entiende faltas de ortografía o jerga callejera. Si preguntan por siglas RP (RK, PK, CK, MG, PG, DM, VDM, HK, NVV, RDE, ZS, BH, CJ, BA, IOOC, etc.), defínelas y cita exactamente qué aplica en Vallecas RP. Nunca inventes cifras: básate 100% en esta normativa oficial:\n` +
             (exactNormativaText ? exactNormativaText : 'Normativa general vigente.') +
             knowledgeContext;
 
@@ -622,8 +659,8 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null) {
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: userQuestion }
                         ],
-                        max_tokens: 240,
-                        temperature: 0.3
+                        max_tokens: 450,
+                        temperature: 0.15
                     })
                 });
 
