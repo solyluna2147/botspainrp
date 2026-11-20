@@ -84,34 +84,30 @@ function getBannerAttachment() {
     return null;
 }
 
-function buildPanelConsultasEmbed(isStaff = true) {
+function buildPanelConsultasEmbed() {
     const logoAttachment = getLogoAttachment();
     const bannerAttachment = getBannerAttachment();
     const logoUrl = logoAttachment ? 'attachment://logo.png' : undefined;
 
     const embed = new EmbedBuilder()
-        .setColor(isStaff ? 0x3498db : 0xD900FF)
+        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
         .setAuthor({
-            name: isStaff ? 'SISTEMA DE CONSULTAS | VALLECAS RP' : 'CONSULTAS DE LA COMUNIDAD | VALLECAS RP',
+            name: 'SISTEMA DE CONSULTAS | VALLECAS RP',
             iconURL: logoUrl
         })
         .setThumbnail(logoUrl)
-        .setTitle(isStaff ? '🧠 ASESORÍA Y RESOLUCIÓN DE DUDAS (STAFF)' : '🧠 RESOLUCIÓN DE DUDAS Y NORMATIVA OFICIAL')
+        .setTitle('🧠 CONSULTAS DE LA NORMATIVA OFICIAL')
         .setDescription(
-            (isStaff
-                ? `Bienvenido al **Canal de Consultas con Inteligencia Artificial** exclusivo para el equipo de Staff de **VALLECAS RP** 🇪🇸.\n\n` +
-                  `Este sistema resuelve al instante dudas de normativa general, sanciones, directrices de rol e ilegales con base 100% oficial para agilizar la moderación y soporte.\n\n`
-                : `Bienvenido al **Canal Oficial de Consultas de la Normativa** con Inteligencia Artificial de **VALLECAS RP** 🇪🇸.\n\n` +
-                  `Aquí podrás resolver al instante cualquier duda sobre normativas de rol, conceptos, zonas seguras, atracos, vehículos e ilegales sin esperar a que un Staff esté disponible.\n\n`
-            ) +
+            `Bienvenido al **Canal Oficial de Consultas con Inteligencia Artificial** exclusivo de **VALLECAS RP** 🇪🇸.\n\n` +
+            `Este sistema resuelve al instante cualquier duda sobre la normativa general, conceptos de rol, sanciones, zonas seguras, atracos, vehículos e ilegales con base 100% oficial.\n\n` +
             `📋 **¿Cómo realizar una consulta?**\n` +
-            `> 1️⃣ **Escribe tu duda en este canal** normalmente como un mensaje (o usa \`!ai <tu duda>\` si quieres recibir la respuesta 100% privada por mensaje directo).\n` +
+            `> 1️⃣ **Tan solo escribe tu duda en este canal** hablando normalmente, sin necesidad de usar ningún comando.\n` +
             `> 2️⃣ La IA analizará la normativa oficial y te responderá en pocos segundos.\n` +
             `> 3️⃣ Una vez leída la respuesta, pulsa el botón **"🗑️ Cerrar / Borrar"** para mantener el canal limpio y ordenado.\n\n` +
             `💡 *El sistema cuenta con auto-borrado preventivo a los 90 segundos para que no se acumulen mensajes en el canal. Este mensaje informativo es permanente.*`
         )
         .setFooter({
-            text: isStaff ? 'VALLECAS RP • Sistema Oficial de Consultas Staff' : 'VALLECAS RP • Sistema Oficial de Consultas Ciudadanas',
+            text: 'VALLECAS RP • Sistema Oficial de Consultas',
             iconURL: logoUrl
         })
         .setTimestamp();
@@ -487,6 +483,7 @@ function initConsultasAI(client) {
                     // Filtrar mensajes para no borrar nunca los paneles permanentes del bot
                     const msgsToDelete = msgs.filter(m => {
                         const isPanel = m.author.id === client.user.id && m.embeds.some(e => 
+                            e.title?.includes('CONSULTAS DE LA NORMATIVA OFICIAL') ||
                             e.title?.includes('ASESORÍA Y RESOLUCIÓN DE DUDAS') || 
                             e.title?.includes('RESOLUCIÓN DE DUDAS Y NORMATIVA OFICIAL')
                         );
@@ -565,8 +562,8 @@ function initConsultasAI(client) {
                 // Diseño limpio y profesional adaptado al contexto
                 const authorTitle = isStaffChannel
                     ? 'ASESORÍA DE STAFF | VALLECAS RP'
-                    : 'CONSULTAS CIUDADANAS IA | VALLECAS RP';
-                const embedColor = isStaffChannel ? 0x3498db : 0x9B59B6;
+                    : 'CONSULTAS DE LA NORMATIVA | VALLECAS RP';
+                const embedColor = 0xD900FF; // Morado Magenta VALLECAS RP
 
                 const embed = new EmbedBuilder()
                     .setColor(embedColor)

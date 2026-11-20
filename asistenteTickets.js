@@ -45,6 +45,11 @@ const ticketSessionSchema = new mongoose.Schema({
     userId: { type: String, required: true },
     category: { type: String, default: 'general' },
     status: { type: String, default: 'open' },
+    assistantRepliesCount: { type: Number, default: 0 },
+    dialogueHistory: [{
+        role: String,
+        content: String
+    }],
     userMessages: [{
         content: String,
         timestamp: { type: Date, default: Date.now }
@@ -93,6 +98,7 @@ const STREAMERS_FILE = path.join(__dirname, 'streamers.json');
 let asistenteActivado = true;
 let canalAprendizajeId = '1571488286789079080'; // Canal oficial de aprendizaje
 const userMessageBuffers = new Map();
+const processingChannels = new Set(); // Evita respuestas duplicadas simultáneas en el mismo ticket
 
 // Helper para obtener el logo oficial
 function getLogoPath() {
@@ -265,30 +271,42 @@ function extractStreamUrls(text) {
 // Helper para comprobar si el usuario está pidiendo explícitamente hablar con un Staff humano
 function isUserAskingForStaff(text) {
     if (!text) return false;
-    const lower = text.toLowerCase();
+    const lower = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const staffKeywords = [
         'hablar con staff',
         'hablar con un staff',
+        'hablar con algun staff',
         'llamar staff',
         'llamar a un staff',
+        'llamar al staff',
         'quiero un staff',
+        'quiero hablar con un',
         'pasa un staff',
         'pasame un staff',
-        'pásame un staff',
+        'pasame con un staff',
         'avisa a un staff',
         'avisen a un staff',
+        'avisa al staff',
         'necesito un staff',
         'necesito hablar con staff',
         'puedo hablar con un staff',
         'que venga un staff',
-        'avisa al staff',
-        'llamar al staff',
         'atencion de un staff',
-        'atención de un staff',
         'que me atienda un staff',
+        'puede atenderme un staff',
+        'atenderme un staff',
+        'atiendame un staff',
         'que me atienda alguien',
+        'un admin',
+        'un administrador',
+        'un moderador',
         'persona real',
-        'humano'
+        'humano',
+        'no eres un staff',
+        'bot no entiende',
+        'bot no comprende',
+        'bot de inteligencia',
+        'eres un bot'
     ];
     return staffKeywords.some(kw => lower.includes(kw));
 }
@@ -370,14 +388,32 @@ async function isUserConfirmingResolved(text, lastAssistantMessage = '') {
     return false;
 }
 
-// Carga en memoria del texto oficial de la normativa
+// Carga en memoria del texto oficial de la normativa general e ilegales
 let normativaCompletaLocal = '';
-try {
-    const normPath = path.join(__dirname, 'normativa_vallecas_completa.txt');
-    if (fs.existsSync(normPath)) {
-        normativaCompletaLocal = fs.readFileSync(normPath, 'utf8');
+async function loadNormativaEnMemoria() {
+    try {
+        if (mongoose.models.NormativaDoc) {
+            const docGen = await mongoose.models.NormativaDoc.findOne({ key: 'normativa_general_2026' });
+            if (docGen && docGen.content) normativaCompletaLocal += docGen.content + '\n\n';
+            const docIleg = await mongoose.models.NormativaDoc.findOne({ key: 'normativa_ilegales_2026' });
+            if (docIleg && docIleg.content) normativaCompletaLocal += docIleg.content + '\n\n';
+        }
+    } catch (e) { }
+
+    if (!normativaCompletaLocal) {
+        try {
+            const normPath = path.join(__dirname, 'normativa_vallecas_completa.txt');
+            if (fs.existsSync(normPath)) {
+                normativaCompletaLocal += fs.readFileSync(normPath, 'utf8') + '\n\n';
+            }
+            const ilegalesPath = path.join(__dirname, 'normativa_ilegales.txt');
+            if (fs.existsSync(ilegalesPath)) {
+                normativaCompletaLocal += fs.readFileSync(ilegalesPath, 'utf8');
+            }
+        } catch (e) { }
     }
-} catch (e) { }
+}
+loadNormativaEnMemoria();
 async function summarizeReasonWithAI(category, text) {
     if (!text || !text.trim()) return 'No especificado por el usuario';
 
@@ -610,7 +646,7 @@ function hasUserProvidedEvidence(messages = []) {
     return false;
 }
 
-// Generador de respuestas dinámicas e inteligentes con Groq AI (Llama/GPT)
+// Generador de respuestas breves de recopilación de información para el Staff (Groq AI)
 async function generateAIResponse(category, session, currentMessage, userTag) {
     const groqKey = process.env.GROQ_API_KEY;
     if (!groqKey) return null;
@@ -618,52 +654,41 @@ async function generateAIResponse(category, session, currentMessage, userTag) {
     try {
         const userMessages = session.userMessages || [];
         const userProvidedEvidence = hasUserProvidedEvidence([...userMessages, { content: currentMessage }]);
+        const repliesSoFar = session.assistantRepliesCount || 0;
 
         const categoryPrompts = {
-            donaciones: 'Eres del equipo de atención de Donaciones de VALLECAS RP (servidor de FiveM). Habla cordial, natural y directo como un compañero humano por Discord (máximo 2 frases). Si preguntan por coches VIP, casas/MLOs, packs o dinero IC, explícales con claridad y confirma si prefieren abonarlo por Bizum o PayPal.',
-            apelacion: 'Eres un moderador de VALLECAS RP. Habla como un compañero del Staff por chat: respetuoso, humano y directo (máximo 2 frases cortas). ' +
+            donaciones: 'Eres el Asistente de Recepción de Tickets de Donaciones de VALLECAS RP. Tu ÚNICA función es recopilar los datos clave para el Staff (qué artículo/pack/coche/casa busca y si pagará por Bizum o PayPal). Si ya te ha dicho lo que quiere, confirma que queda anotado e indícale que pulse el botón "Hablar con un Staff" de abajo para que el encargado le atienda.',
+            apelacion: 'Eres el Asistente de Recepción de Apelaciones de VALLECAS RP. Tu ÚNICA función es recopilar datos para el expediente del Staff (motivo de la sanción/ban y si tiene alguna captura o clip). ' +
                 (userProvidedEvidence
-                    ? 'El usuario ya pasó clip o captura: dile que queda registrada su prueba para que la Administración revise su sanción.'
-                    : 'Pregúntale con naturalidad si tiene algún clip (Medal, YouTube...) o captura de lo ocurrido para adjuntarla a la apelación.'),
-            streamer: 'Eres del equipo de VALLECAS RP. Habla cordial y directo (máximo 2 frases). Pídele que te pase el link de su canal de Twitch, Kick o TikTok para revisarle las estadísticas.',
-            soporte: 'Eres un compañero de Soporte de VALLECAS RP (servidor español de FiveM). Tu función es atender y resolver dudas del usuario (normativa, comandos, garajes, coches, inventarios, llaves, negocios, bugs, etc.). Sé directo, cercano, educado y resolutivo (máximo 2 o 3 frases). Si es una duda o consulta, respóndela claramente y termina preguntándole con naturalidad si tiene alguna otra duda o le ha quedado todo claro.'
+                    ? 'El usuario ya aportó captura o prueba: confirma que queda registrada para el Staff e indícale que pulse el botón "Hablar con un Staff" de abajo.'
+                    : 'REGLA CRÍTICA: Si el usuario dice que NO tiene clip/pruebas, que no sabe el motivo o que está en espera de SS, ACÉPTALO inmediatamente sin insistir ni pedir pruebas de nuevo; dile que queda anotado tal cual y que pulse el botón "Hablar con un Staff" de abajo para que la Administración revise su caso.'),
+            streamer: 'Eres el Asistente de Recepción de Creadores de Contenido de VALLECAS RP. Tu ÚNICA función es recoger el enlace de su canal (Twitch, Kick o TikTok). Si ya lo pasó, confirma que queda registrado e indícale que pulse "Hablar con un Staff" para que revisen su solicitud.',
+            soporte: 'Eres el Asistente de Recepción de Tickets de Soporte de VALLECAS RP. Tu función principal es recopilar la información del problema para el Staff (qué ocurre y si tiene captura) y solo responder dudas muy simples de normativa si es una pregunta directa. Si es un bug, sanción, espera de SS, devolución, fallo de cuenta o algo que requiera intervención humana, NO intentes resolverlo tú: confirma que has tomado nota de los detalles e indícale que pulse el botón "Hablar con un Staff" de abajo.'
         };
 
         const systemPrompt = (categoryPrompts[category] || categoryPrompts.soporte) +
-            '\n\nREGLAS DE ORO OBLIGATORIAS:\n' +
-            '1. TONO 100% HUMANO Y CORDIAL: Habla como un Staff real español en Discord. PROHIBIDO terminantemente sonar a robot de atención al cliente (PROHIBIDO decir frases como "Lamento tu frustración", "Siento mucho los inconvenientes", "Comprendo tu dolor", "Entiendo que esto pueda molestarte", etc.). Sé natural, educado y al grano.\n' +
-            '2. INTUICIÓN DE PREGUNTAS (LOS USUARIOS RARA VEZ USAN "?"): En Discord los usuarios casi nunca ponen signos de interrogación y a veces escriben en tono afirmativo o informal (ej: "si otra duda, hacer pg en un arbusto es pg", "matar en garaje es rdm", "se puede robar coches de poli", "tirar de f8 es sancionable", "entonces me como la sancion"). DEBES INTUIR Y ENTENDER SIEMPRE QUE ESTÁ HACIENDO UNA PREGUNTA sobre la normativa de FiveM. Los usuarios NO deciden las normativas ni pueden afirmar cómo son las reglas; tú eres el Staff conocedor de las normas de Vallecas RP. Explícale con claridad y firmeza si eso es infracción o no según la normativa oficial.\n' +
-            '3. PRECISIÓN TOTAL Y SENTIDO COMÚN: NUNCA inventes que las sanciones se anulan solas ni prometas cosas irreales. Si alguien comete una infracción (ej: tirar de F8 en rol), la sanción se mantiene y debe cumplirla a menos que un Staff lo revise con pruebas o clips que justifiquen una caída real. Usa la normativa oficial del servidor y la base de conocimientos.\n' +
-            '4. RESOLUCIÓN DIRECTA: Si el usuario plantea una duda o situación sobre normativa, comandos, negocios, garajes o bugs (ej: caché, F8 quit, F8 reconnect, badulaques gratis), respóndele directamente con la explicación exacta y termínale preguntando: "¿Te queda alguna otra duda o está todo claro?".\n' +
-            '5. NUNCA pidas la ID de FiveM.\n' +
-            '6. LONGITUD: Máximo 2 o 3 frases directas y útiles. Cero textos gigantes.\n' +
-            '7. Si el usuario te indica que ya no tiene más dudas o que todo está claro, deséale buen rol de forma agradable.';
+            '\n\nREGLAS ESTRICTAS OBLIGATORIAS:\n' +
+            '1. NUNCA te hagas pasar por un Staff humano ni digas "ya te atiendo sin bots". Eres un asistente virtual que recopila información para el equipo de Staff.\n' +
+            '2. PROHIBIDO REPETIR PREGUNTAS: Lee el historial de la conversación. Si ya preguntaste por pruebas/clips o el usuario ya dijo que no tiene o que no sabe qué pasó, JAMÁS vuelvas a pedirlo.\n' +
+            '3. NO INTENTES RESOLVER EL TICKET POR TU CUENTA: Nunca digas "el ban se mantiene", nunca cierres el caso ni des veredictos. Tu trabajo es dejar todo anotado y remitir al botón "Hablar con un Staff".\n' +
+            '4. BREVEDAD: Máximo 2 frases cortas, naturales, educadas y en español de España.\n' +
+            '5. NUNCA pidas la ID de FiveM si ya la dio o si no hace falta.\n' +
+            (repliesSoFar >= 1 ? '6. YA HAS HECHO UNA PREGUNTA ANTES: En esta respuesta NO hagas más preguntas. Confirma que tienes toda la información registrada e indícale que pulse el botón "Hablar con un Staff" aquí abajo.' : '');
 
-        if (!session.dialogueHistory) session.dialogueHistory = [];
-        const conversationHistory = session.dialogueHistory.slice(-8);
+        if (!Array.isArray(session.dialogueHistory)) session.dialogueHistory = [];
+        const conversationHistory = session.dialogueHistory.slice(-6).map(m => ({ role: m.role, content: m.content }));
         conversationHistory.push({ role: 'user', content: currentMessage });
 
-        // Recuperar conocimientos oficiales y fragmentos relevantes de la normativa
+        // Solo inyectar conocimientos/normativa si es categoría soporte (para dudas rápidas)
         let knowledgeContext = '';
-        try {
-            const allKnowledge = await TicketKnowledge.find({}).sort({ createdAt: -1 }).limit(20);
-            if (allKnowledge && allKnowledge.length > 0) {
-                knowledgeContext += '\nBASE DE CONOCIMIENTOS OFICIALES DE VALLECAS RP:\n' +
-                    allKnowledge.map(k => `• ${k.response}`).join('\n') + '\n';
-            }
-        } catch (e) { }
-
-        // Búsqueda contextual de la normativa
-        if (normativaCompletaLocal) {
-            const currentLower = currentMessage.toLowerCase();
-            const relevantLines = normativaCompletaLocal.split('\n').filter(line => {
-                const words = currentLower.split(/\s+/).filter(w => w.length > 3);
-                return words.some(w => line.toLowerCase().includes(w));
-            });
-            if (relevantLines.length > 0) {
-                knowledgeContext += '\nFRAGMENTOS RELEVANTES DE LA NORMATIVA DE VALLECAS RP:\n' +
-                    relevantLines.slice(0, 15).join('\n') + '\n';
-            }
+        if (category === 'soporte') {
+            try {
+                const allKnowledge = await TicketKnowledge.find({}).sort({ createdAt: -1 }).limit(15);
+                if (allKnowledge && allKnowledge.length > 0) {
+                    knowledgeContext += '\nBASE DE CONOCIMIENTOS OFICIALES DE VALLECAS RP:\n' +
+                        allKnowledge.map(k => `• ${k.response}`).join('\n') + '\n';
+                }
+            } catch (e) { }
         }
 
         const finalSystemPrompt = systemPrompt + knowledgeContext;
@@ -680,8 +705,8 @@ async function generateAIResponse(category, session, currentMessage, userTag) {
                     { role: 'system', content: finalSystemPrompt },
                     ...conversationHistory
                 ],
-                max_tokens: 160,
-                temperature: 0.5
+                max_tokens: 140,
+                temperature: 0.3
             })
         });
 
@@ -689,11 +714,11 @@ async function generateAIResponse(category, session, currentMessage, userTag) {
             const data = await res.json();
             const reply = data.choices?.[0]?.message?.content?.trim();
             if (reply && reply.length > 5) {
-                // Registrar tanto lo que dijo el usuario como la respuesta del bot para mantener el hilo de la conversación
-                if (!session.dialogueHistory) session.dialogueHistory = [];
                 session.dialogueHistory.push({ role: 'user', content: currentMessage });
                 session.dialogueHistory.push({ role: 'assistant', content: reply });
-                if (session.dialogueHistory.length > 10) session.dialogueHistory = session.dialogueHistory.slice(-10);
+                if (session.dialogueHistory.length > 8) {
+                    session.dialogueHistory = session.dialogueHistory.slice(-8);
+                }
                 return reply;
             }
         } else {
@@ -747,146 +772,125 @@ async function checkIfAssistantGaveSolution(asistenteReply, userMsg) {
 async function handleUserConversation(channel, user, category, combinedText, session) {
     const guild = channel.guild;
 
-    // Número de intervenciones del usuario en este ticket
+    // Si el ticket ya fue resumido para el Staff o solucionado, el asistente NO interviene más
+    if (session.status === 'summarized' || session.status === 'solved') {
+        return;
+    }
+
     const userTurnCount = (session.userMessages || []).length;
+    const repliesSoFar = session.assistantRepliesCount || 0;
     const allUserWords = (session.userMessages || []).map(m => m.content).join(' ').toLowerCase();
-    const isOnlyGreeting = /^(buenas|hola|buenas tardes|buenas noches|buenos dias|hey|ey|ola|buenas bro|buenas staff|buenas noches staff)[\s.!?,]*$/i.test(allUserWords.trim());
-    
-    // Si el usuario pide explícitamente un Staff
-    const userWantsStaff = isUserAskingForStaff(combinedText) || isUserAskingForStaff(allUserWords);
+    const isOnlyGreeting = /^(buenas|hola|buenas tardes|buenas noches|buenos dias|hey|ey|ola|buenas bro|buenas staff|buenas noches staff)[\s.!?,]*$/i.test(combinedText.trim());
 
-    // Definición segura de botones para cualquier punto de la función
-    const actionRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`btn_problema_solucionado_${user.id}`)
-            .setLabel('✅ Problema Solucionado')
-            .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-            .setCustomId(`btn_solicitar_staff_${user.id}`)
-            .setLabel('🙋‍♂️ Hablar con un Staff')
-            .setStyle(ButtonStyle.Primary)
-    );
+    // Si el usuario pide explícitamente un Staff -> generar resumen y llamar al Staff directamente
+    const userWantsStaff = isUserAskingForStaff(combinedText);
 
-    // 1. Comprobar si el usuario pide explícitamente hablar con un staff
+    // Botones disponibles: en soporte mostramos ambos; en apelación/donaciones/streamer siempre el botón de Llamar al Staff
+    const actionRow = category === 'soporte'
+        ? new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`btn_solicitar_staff_${user.id}`)
+                .setLabel('🙋‍♂️ Hablar con un Staff')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId(`btn_problema_solucionado_${user.id}`)
+                .setLabel('✅ Problema Solucionado')
+                .setStyle(ButtonStyle.Success)
+        )
+        : new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`btn_solicitar_staff_${user.id}`)
+                .setLabel('🙋‍♂️ Llamar al Staff (Enviar Resumen)')
+                .setStyle(ButtonStyle.Primary)
+        );
+
+    // 1. Si el usuario pide explícitamente hablar con un Staff -> avisar al Staff de inmediato y silenciar el asistente
     if (userWantsStaff) {
-        const replyMsg = `¡Entendido <@${user.id}>! Puedes pulsar **Hablar con un Staff** para avisar al equipo y que te atiendan personalmente.`;
-        const { embed: staffEmbed, files: staffFiles } = buildBaseEmbed(guild, null, replyMsg, 0x3498db);
-        await channel.send({ embeds: [staffEmbed], files: staffFiles, components: [actionRow] }).catch(() => {});
+        session.status = 'summarized';
+        if (typeof session.save === 'function') await session.save().catch(() => {});
+        await sendStaffSummary(channel, session, false);
         return;
     }
 
-    // 2. Comprobar si el usuario confirma que ya no tiene dudas o que el problema quedó solucionado
-    // (Ej: "vale, gracias", "perfecto", "no, ninguna", "todo claro", "gracias ya está", etc.)
-    const lastBotMsg = (session.userMessages && session.userMessages.length > 1)
-        ? (session.userMessages[session.userMessages.length - 2]?.content || '')
-        : '';
-    const isResolvedByText = await isUserConfirmingResolved(combinedText, lastBotMsg);
-    if (isResolvedByText && userTurnCount >= 1) {
-        const replyMsg = `¡Perfecto <@${user.id}>! Me alegro de que haya quedado todo aclarado. 😊\n\n` +
-                         `Para dejar constancia en el ticket y proceder, por favor utiliza los botones de aquí abajo:\n\n` +
-                         `• Pulsa **Problema Solucionado** si no necesitas nada más y el Staff lo revisará para proceder al cierre.\n` +
-                         `• O pulsa **Hablar con un Staff** si prefieres que un moderador revise tu caso personalmente.`;
+    // 2. En soporte, comprobar si el usuario confirma que ya quedó todo resuelto
+    if (category === 'soporte' && userTurnCount >= 1 && !isOnlyGreeting) {
+        const lastBotMsg = (session.dialogueHistory && session.dialogueHistory.length > 0)
+            ? (session.dialogueHistory[session.dialogueHistory.length - 1]?.content || '')
+            : '';
+        const isResolvedByText = await isUserConfirmingResolved(combinedText, lastBotMsg);
+        if (isResolvedByText) {
+            const replyMsg = `¡Perfecto <@${user.id}>! Me alegro de que haya quedado todo claro. 😊\n\n` +
+                             `Pulsa **✅ Problema Solucionado** si no necesitas nada más, o **🙋‍♂️ Hablar con un Staff** si prefieres que un miembro del equipo lo revise.`;
 
-        const { embed: resEmbed, files: resFiles } = buildBaseEmbed(guild, null, replyMsg, 0x2ecc71);
-        await channel.send({ embeds: [resEmbed], files: resFiles, components: [actionRow] }).catch(() => {});
+            const { embed: resEmbed, files: resFiles } = buildBaseEmbed(guild, null, replyMsg, 0x2ecc71);
+            await channel.send({ embeds: [resEmbed], files: resFiles, components: [actionRow] }).catch(() => {});
+            session.assistantRepliesCount = repliesSoFar + 1;
+            if (typeof session.save === 'function') await session.save().catch(() => {});
+            return;
+        }
+    }
+
+    // 3. LÍMITE DE INTERVENCIONES: El asistente SOLO recopila info (máximo 2 respuestas).
+    // Si ya respondió 2 veces, NO sigue haciendo preguntas ni bucleando: ofrece el botón para llamar al Staff.
+    if (repliesSoFar >= 2) {
+        const readyMsg = `¡Perfecto <@${user.id}>! Ya tengo toda la información anotada para el equipo de Staff.\n\n` +
+                         `👇 Pulsa el botón **Hablar con un Staff** de aquí abajo para enviarles el resumen de tu caso y que te atiendan enseguida.`;
+        const { embed, files } = buildBaseEmbed(guild, null, readyMsg, 0xD900FF);
+        await channel.send({ embeds: [embed], files, components: [actionRow] }).catch(() => {});
+        session.assistantRepliesCount = repliesSoFar + 1;
+        if (typeof session.save === 'function') await session.save().catch(() => {});
         return;
     }
 
-    // 3. Conversación fluida con IA (Responder dudas, explicar normativa, mecánicas...)
-    // Durante la conversación NORMAL, NO se muestran botones para que el diálogo sea natural y fluido
+    // 4. Si el usuario solo dijo "hola" / saludo sin dar datos -> pedir info SIN botones todavía
+    if (isOnlyGreeting && userTurnCount === 1) {
+        const greetMap = {
+            apelacion: `¡Buenas <@${user.id}>! Cuéntame por favor el motivo de tu sanción/baneo y si tienes alguna captura o clip para dejárselo anotado al Staff.`,
+            donaciones: `¡Buenas <@${user.id}>! Dime qué te gustaría consultar o adquirir (Coche VIP, Pack, Casa/MLO, Dinero IC...) y si prefieres **Bizum** o **PayPal** para pasárselo al encargado.`,
+            streamer: `¡Buenas <@${user.id}>! Pásame el enlace de tu canal de **Twitch, Kick o TikTok** para dejárselo registrado al Staff.`,
+            soporte: `¡Buenas <@${user.id}>! Cuéntame con detalle qué problema o duda tienes (y adjunta captura si puedes) para dejárselo preparado al Staff.`
+        };
+        const { embed, files } = buildBaseEmbed(guild, null, greetMap[category] || greetMap.soporte, 0xD900FF);
+        await channel.send({ embeds: [embed], files, components: [] }).catch(() => {});
+        session.assistantRepliesCount = repliesSoFar + 1;
+        if (typeof session.save === 'function') await session.save().catch(() => {});
+        return;
+    }
+
+    // Determinar si ya tenemos información suficiente para mostrar los botones de llamar al Staff:
+    // - Ya respondió antes el asistente (repliesSoFar >= 1), O
+    // - El usuario ya dio bastante detalle (ej. rellenó formulario / mensaje >= 45 caracteres), O
+    // - Adjuntó una imagen/captura o enlace (ej. link de Twitch/Kick/TikTok/Medal)
+    const hasEnoughInfo =
+        repliesSoFar >= 1 ||
+        combinedText.trim().length >= 45 ||
+        hasUserProvidedEvidence(session.userMessages || []) ||
+        (session.extractedData?.streamLinks && session.extractedData.streamLinks.length > 0);
+
+    // 5. Respuesta breve de recopilación con IA
+    // Si aún falta info (mensaje corto sin detalles en turno 1), pregunta sin botones; en cuanto hay info suficiente, muestra los botones
     const aiReply = await generateAIResponse(category, session, combinedText, user.tag);
     if (aiReply) {
         const { embed, files } = buildBaseEmbed(
             guild,
             null,
             aiReply,
-            category === 'donaciones' ? 0x9b59b6 : (category === 'apelacion' ? 0xe67e22 : 0x3498db)
+            0xD900FF
         );
-        // Sin botones mientras el usuario sigue preguntando
-        await channel.send({ embeds: [embed], files, components: [] }).catch(() => { });
+        await channel.send({ embeds: [embed], files, components: hasEnoughInfo ? [actionRow] : [] }).catch(() => { });
+        session.assistantRepliesCount = repliesSoFar + 1;
+        if (typeof session.save === 'function') await session.save().catch(() => {});
         return;
     }
 
-    // Variables de respaldo para respuestas predeterminadas en caso de fallo de IA
-    const shouldShowButtons = false;
-    const componentsToSend = [];
-
-    // 1. Apelación de Baneo
-    if (category === 'apelacion') {
-        const extraNote = shouldShowButtons
-            ? `\n\n*(Pulsa abajo en cuanto quieras enviar el aviso formal al Staff con tu expediente).*`
-            : '';
-
-        const desc = isOnlyGreeting
-            ? `¡Buenas <@${user.id}>! Te damos la bienvenida a tu ticket de apelación.\n\n` +
-              `Aún no nos has indicado el motivo por el cual fuiste sancionado o qué te ocurrió dentro de la ciudad. Por favor, **cuéntanos detalladamente tu situación** para que podamos ayudarte a gestionarlo con la Administración.`
-            : `¡Buenas <@${user.id}>! Hemos recibido tu solicitud para revisar tu sanción.\n\n` +
-              `Para que la Administración pueda estudiar tu caso con total claridad:\n\n` +
-              `⚖️ **| Motivo detectado:**\n` +
-              `> Desconexión de rol (F8 / Combat Logging) o sanción administrativa ❗\n\n` +
-              `📹 **| Pruebas o clips disponibles:**\n` +
-              `> Si tienes clip de Medal, YouTube o captura que respalde tu versión, compártela en este chat ❗\n\n` +
-              `📝 **| Declaración final:**\n` +
-              `> ¿Deseas añadir algún detalle más antes de que el Staff tome la decisión? ❗${extraNote}`;
-
-        const { embed, files } = buildBaseEmbed(
-            guild,
-            null,
-            desc,
-            0xe67e22
-        );
-        await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
-        return;
-    }
-
-    // 2. Donaciones: Saludo cordial y asesoramiento
-    if (category === 'donaciones') {
-        const desc = isOnlyGreeting
-            ? `¡Hola <@${user.id}>! Muchas gracias por ponerte en contacto con nosotros.\n\n` +
-              `Indícanos por favor **qué te gustaría consultar o adquirir** (Coches VIP, Casas/MLO, Packs o Dinero IC) y si prefieres abonarlo por **Bizum** o **PayPal** para orientarte enseguida.`
-            : `¡Hola <@${user.id}>! Muchas gracias por ponerte en contacto con nosotros.\n\n` +
-              `¿Cómo podemos ayudarte hoy? Si tienes en mente algún vehículo exclusivo, vivienda / MLO, dinero dentro de la ciudad o un pack VIP, indícanoslo y te informamos al momento de precios y disponibilidad.\n\n` +
-              `También puedes indicarnos si tienes preferencia por abonarlo mediante **Bizum** o **PayPal**.`;
-
-        const { embed, files } = buildBaseEmbed(
-            guild,
-            null,
-            desc,
-            0x9b59b6
-        );
-        await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
-        return;
-    }
-
-    // 3. Streamers / Creadores de contenido
-    if (category === 'streamer') {
-        const { embed, files } = buildBaseEmbed(
-            guild,
-            null,
-            `¡Hola <@${user.id}>! Qué tal, un placer saludarte.\n\n` +
-            `Nos alegra mucho que transmitas dentro de nuestra comunidad. Cuando puedas, compártenos tus enlaces de canal (**Twitch, Kick o TikTok**) para que podamos revisar tus directos y estadísticas.`,
-            0x9146ff
-        );
-        await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
-        return;
-    }
-
-    // 4. Soporte Técnico
-    if (category === 'soporte') {
-        const desc = isOnlyGreeting
-            ? `¡Buenas tardes <@${user.id}>! Un placer saludarte.\n\n` +
-              `Para que el equipo de soporte pueda ayudarte lo antes posible, **cuéntanos con el mayor detalle qué problema o duda estás experimentando** dentro del servidor.`
-            : `¡Buenas tardes <@${user.id}>! Gracias por avisarnos.\n\n` +
-              `Hemos tomado nota de lo que nos comentas. Para que los encargados de soporte puedan ayudarte mejor: ¿te ocurre desde algún reinicio en concreto o dispones de alguna captura del problema?`;
-
-        const { embed, files } = buildBaseEmbed(
-            guild,
-            null,
-            desc,
-            0x3498db
-        );
-        await channel.send({ embeds: [embed], files, components: componentsToSend }).catch(() => { });
-    }
+    // Respaldo si falla Groq AI: confirmar registro y mostrar botones si ya hay info suficiente
+    const fallbackDesc = hasEnoughInfo
+        ? `¡Perfecto <@${user.id}>! He dejado registrada tu información para el equipo de Staff.\n\n👇 Pulsa el botón de abajo cuando estés listo para avisar al Staff y enviarles el resumen de tu ticket.`
+        : `¡Buenas <@${user.id}>! Por favor, dame un poco más de detalle sobre tu caso (y captura si tienes) para dejárselo todo preparado al Staff.`;
+    const { embed, files } = buildBaseEmbed(guild, null, fallbackDesc, 0xD900FF);
+    await channel.send({ embeds: [embed], files, components: hasEnoughInfo ? [actionRow] : [] }).catch(() => { });
+    session.assistantRepliesCount = repliesSoFar + 1;
+    if (typeof session.save === 'function') await session.save().catch(() => {});
 }
 
 // Bienvenida cordial en tickets nuevos
@@ -1542,11 +1546,26 @@ module.exports = function initAsistenteTickets(client) {
                     userId: message.author.id,
                     category,
                     status: 'open',
+                    assistantRepliesCount: 0,
+                    dialogueHistory: [],
                     userMessages: []
                 });
             }
 
-            // Buffer anti-mensajes fragmentados (espera rápida de 1.2s para respuesta casi instantánea)
+            // Si ya se envió el resumen al Staff o el ticket se marcó como solucionado, el asistente guarda silencio absoluto
+            if (session.status === 'summarized' || session.status === 'solved') {
+                // Solo guardar silenciosamente capturas adicionales si el usuario sube una después
+                if (message.attachments && message.attachments.size > 0 && !session.extractedData?.attachmentUrl) {
+                    const firstAttach = message.attachments.first();
+                    if (firstAttach && firstAttach.url) {
+                        session.extractedData.attachmentUrl = firstAttach.url;
+                        await session.save().catch(() => {});
+                    }
+                }
+                return;
+            }
+
+            // Buffer anti-mensajes fragmentados (espera rápida de 3.5s para agrupar mensajes seguidos)
             if (!userMessageBuffers.has(channelId)) {
                 userMessageBuffers.set(channelId, { timeout: null, messages: [] });
             }
@@ -1566,42 +1585,58 @@ module.exports = function initAsistenteTickets(client) {
             if (buffer.timeout) clearTimeout(buffer.timeout);
 
             buffer.timeout = setTimeout(async () => {
-                // Indicador de "Escribiendo..." de Discord para que el usuario vea que el bot le atiende de inmediato
-                message.channel.sendTyping().catch(() => {});
+                // Evitar ejecuciones duplicadas simultáneas en el mismo ticket
+                if (processingChannels.has(channelId)) return;
+                processingChannels.add(channelId);
 
-                // Volver a comprobar que ningún staff haya escrito durante el buffer
-                const staffCheck = await hasStaffParticipated(message.channel);
-                if (staffCheck) {
+                try {
+                    // Recargar sesión fresca desde BD por si el usuario pulsó el botón durante el buffer
+                    const freshSession = await TicketSession.findOne({ channelId }) || session;
+                    if (freshSession.status === 'summarized' || freshSession.status === 'solved') {
+                        userMessageBuffers.delete(channelId);
+                        return;
+                    }
+
+                    // Volver a comprobar que ningún staff haya escrito durante el buffer
+                    const staffCheck = await hasStaffParticipated(message.channel, freshSession.userId);
+                    if (staffCheck) {
+                        userMessageBuffers.delete(channelId);
+                        return;
+                    }
+
+                    const combinedText = buffer.messages.join(' ');
+                    buffer.messages = [];
                     userMessageBuffers.delete(channelId);
-                    return;
+
+                    if (!combinedText.trim()) return;
+
+                    // Indicador de "Escribiendo..."
+                    message.channel.sendTyping().catch(() => {});
+
+                    const normalized = normalizeSlang(combinedText);
+                    const idFound = extractFiveMId(combinedText);
+                    const streamLinks = extractStreamUrls(combinedText);
+
+                    freshSession.userMessages.push({ content: combinedText, timestamp: new Date() });
+                    if (idFound && !freshSession.extractedData.idFiveM) freshSession.extractedData.idFiveM = idFound;
+                    if (streamLinks.length > 0) {
+                        freshSession.extractedData.streamLinks = [...new Set([...(freshSession.extractedData.streamLinks || []), ...streamLinks])];
+                    }
+
+                    if (normalized.includes('bizum')) freshSession.extractedData.paymentMethod = 'Bizum';
+                    if (normalized.includes('paypal')) freshSession.extractedData.paymentMethod = 'PayPal';
+                    if (normalized.includes('coche')) freshSession.extractedData.donationItem = 'Coche VIP';
+                    if (normalized.includes('casa') || normalized.includes('mlo')) freshSession.extractedData.donationItem = 'Casa / MLO';
+                    if (normalized.includes('pack')) freshSession.extractedData.donationItem = 'Pack VIP';
+                    if (normalized.includes('dinero')) freshSession.extractedData.donationItem = 'Dinero IC';
+
+                    await freshSession.save();
+
+                    // El asistente recopila info y muestra SIEMPRE el botón de "Hablar con un Staff"
+                    await handleUserConversation(message.channel, message.author, category, combinedText, freshSession);
+                } finally {
+                    processingChannels.delete(channelId);
                 }
-
-                const combinedText = buffer.messages.join(' ');
-                buffer.messages = [];
-                userMessageBuffers.delete(channelId);
-
-                const normalized = normalizeSlang(combinedText);
-                const idFound = extractFiveMId(combinedText);
-                const streamLinks = extractStreamUrls(combinedText);
-
-                session.userMessages.push({ content: combinedText, timestamp: new Date() });
-                if (idFound && !session.extractedData.idFiveM) session.extractedData.idFiveM = idFound;
-                if (streamLinks.length > 0) {
-                    session.extractedData.streamLinks = [...new Set([...session.extractedData.streamLinks, ...streamLinks])];
-                }
-
-                if (normalized.includes('bizum')) session.extractedData.paymentMethod = 'Bizum';
-                if (normalized.includes('paypal')) session.extractedData.paymentMethod = 'PayPal';
-                if (normalized.includes('coche')) session.extractedData.donationItem = 'Coche VIP';
-                if (normalized.includes('casa') || normalized.includes('mlo')) session.extractedData.donationItem = 'Casa / MLO';
-                if (normalized.includes('pack')) session.extractedData.donationItem = 'Pack VIP';
-                if (normalized.includes('dinero')) session.extractedData.donationItem = 'Dinero IC';
-
-                await session.save();
-
-                // 1. EL ASISTENTE HABLA CON EL USUARIO Y ANALIZA SU MENSAJE DE FORMA CONVERSACIONAL
-                // Adjuntando el botón "Hablar con un Staff"
-                await handleUserConversation(message.channel, message.author, category, combinedText, session);
             }, 3500);
 
         } catch (err) {
