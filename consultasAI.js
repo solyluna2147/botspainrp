@@ -164,14 +164,14 @@ function buildTokensPanelEmbed() {
         .setThumbnail(logoUrl)
         .setTitle('📊 CONSUMO Y LÍMITES DE IA (VALLECAS AI)')
         .setDescription(
-            `🤖 **Motor activo:** \`${activeModelCfg.label}\`\n` +
+            `🤖 **Motor activo:** \`${activeModelCfg.label}\`\n\n` +
             `🔄 **Cambio automático:** Activado *(si un núcleo se agota, salta al siguiente solo)*\n\n` +
             `📈 **TOTAL COMBINADO HOY (${tokenStats.date} UTC):**\n` +
             `${totalBar} \`${totalPct}%\`\n` +
             `> 🪙 **Gastados:** \`${totalUsed.toLocaleString('es-ES')}\` / \`${totalLimit.toLocaleString('es-ES')}\` tokens\n` +
             `> 🟢 **Disponibles:** \`${totalRemaining.toLocaleString('es-ES')}\` tokens\n` +
             `> 💬 **Consultas hoy:** \`${totalReqs}\` *(Última: \`+${(tokenStats.lastQueryTokens || 0).toLocaleString('es-ES')}\` tokens)*\n\n` +
-            `────────────────────────────\n` +
+            `────────────────────────────\n\n` +
             `${modelLines}`
         )
         .setFooter({
