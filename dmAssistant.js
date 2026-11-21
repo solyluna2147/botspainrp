@@ -33,7 +33,7 @@ function getConfiguredApiKeys() {
     if (process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim()) {
         keys.push(process.env.GROQ_API_KEY.trim());
     }
-    for (let i = 2; i <= 10; i++) {
+    for (let i = 2; i <= 25; i++) {
         const val = process.env[`GROQ_API_KEY_${i}`];
         if (val && val.trim()) keys.push(val.trim());
     }

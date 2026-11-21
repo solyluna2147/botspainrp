@@ -75,7 +75,7 @@ function getConfiguredApiKeys() {
     if (process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim()) {
         keys.push({ idx: 1, key: process.env.GROQ_API_KEY.trim(), label: 'Servidor 1 (Principal)' });
     }
-    for (let i = 2; i <= 10; i++) {
+    for (let i = 2; i <= 25; i++) {
         const val = process.env[`GROQ_API_KEY_${i}`];
         if (val && val.trim()) {
             keys.push({ idx: keys.length + 1, key: val.trim(), label: `Servidor ${keys.length + 1} (Respaldo)` });
@@ -184,17 +184,26 @@ function buildTokensPanelEmbed() {
         const rem = Math.max(0, perCycleLimit - cycleUsed);
         const pct = Math.min(100, Math.round((cycleUsed / perCycleLimit) * 100));
         const isCurrentCycle = activeCycleIdx === k;
+        const statusDot = cycleExhausted ? '🔴' : (isCurrentCycle ? '🟢' : '🔵');
         const statusBadge = cycleExhausted
             ? '🔴 `Agotado hoy`'
             : (isCurrentCycle ? '🟢 `Activo ahora`' : '🔵 `En reserva`');
         const bar = makeProgressBar(cycleUsed, perCycleLimit, 10);
         const label = k === 1 ? 'Núcleo IA 1 (Principal)' : `Núcleo IA ${k} (Respaldo ${k - 1})`;
 
-        nucleiLines.push(
-            `**${label}** — ${statusBadge}\n` +
-            `${bar} \`${pct}%\`\n` +
-            `> 🪙 Usados: \`${formatNum(cycleUsed)}\` / \`${formatNum(perCycleLimit)}\` • Quedan: \`${formatNum(rem)}\` • Consultas: \`${formatNum(cycleReqs)}\``
-        );
+        if (keyCount > 6) {
+            // Formato compacto elegante para muchos núcleos (ej. 13 núcleos = 7.800.000 tokens sin saturar el embed)
+            const tag = cycleExhausted ? '`Agotado`' : (isCurrentCycle ? '`Activo`' : '`Reserva`');
+            nucleiLines.push(
+                `> ${statusDot} **${label}** ${tag} — \`${formatNum(cycleUsed)}\` / \`${formatNum(perCycleLimit)}\` (\`${pct}%\`) • \`${formatNum(cycleReqs)}\` cons.`
+            );
+        } else {
+            nucleiLines.push(
+                `**${label}** — ${statusBadge}\n` +
+                `${bar} \`${pct}%\`\n` +
+                `> 🪙 Usados: \`${formatNum(cycleUsed)}\` / \`${formatNum(perCycleLimit)}\` • Quedan: \`${formatNum(rem)}\` • Consultas: \`${formatNum(cycleReqs)}\``
+            );
+        }
     }
 
     const totalRemaining = Math.max(0, totalLimit - totalUsed);
@@ -229,8 +238,8 @@ function buildTokensPanelEmbed() {
             `> 🟢 **Disponibles:** \`${formatNum(totalRemaining)}\` tokens\n` +
             `> 💬 **Consultas hoy:** \`${formatNum(totalReqs)}\` *(Última: \`+${formatNum(tokenStats.lastQueryTokens || 0)}\` tokens)*\n\n` +
             `────────────────────────────\n\n` +
-            `🧠 **NÚCLEOS IA (${keyCount} conectados):**\n\n` +
-            `${nucleiLines.join('\n\n')}\n\n` +
+            `🧠 **NÚCLEOS IA (${keyCount} conectados):**\n` +
+            `${nucleiLines.join(keyCount > 6 ? '\n' : '\n\n')}\n\n` +
             `────────────────────────────\n\n` +
             `⚙️ **SISTEMA Y CANALES ACTIVOS:**\n` +
             `> ⚡ **Servicio:** ${consultasActivas ? '🟢 `Activo y respondiendo`' : '🔴 `Pausado por Staff`'}\n` +
