@@ -565,7 +565,12 @@ const DEMO_SYSTEMS = {
             return {
                 content: `✨ **Panel real de Directos** — ¡Pulsa cualquier botón (Twitch, Kick o TikTok) para meter una URL de prueba y ver el anuncio real que genera el bot!`,
                 embeds: [panelEmbed],
-                components: [streamButtons]
+                components: [
+                    streamButtons,
+                    new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId('dm_demo_open_menu').setLabel('Volver al Menú').setStyle(ButtonStyle.Secondary).setEmoji('⬅️')
+                    )
+                ]
             };
         }
     },
@@ -606,7 +611,12 @@ const DEMO_SYSTEMS = {
                     .setCustomId('dm_demo_evento_quick')
                     .setLabel('Ver Ejemplo Ya Relleno')
                     .setStyle(ButtonStyle.Secondary)
-                    .setEmoji('⚡')
+                    .setEmoji('⚡'),
+                new ButtonBuilder()
+                    .setCustomId('dm_demo_open_menu')
+                    .setLabel('Menú')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setEmoji('⬅️')
             );
 
             return {
@@ -657,7 +667,12 @@ const DEMO_SYSTEMS = {
                     .setCustomId('dm_demo_val_top')
                     .setLabel('Ver Ranking Top Staff')
                     .setStyle(ButtonStyle.Primary)
-                    .setEmoji('🏆')
+                    .setEmoji('🏆'),
+                new ButtonBuilder()
+                    .setCustomId('dm_demo_open_menu')
+                    .setLabel('Menú')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setEmoji('⬅️')
             );
 
             return {
@@ -699,7 +714,12 @@ const DEMO_SYSTEMS = {
                     .setCustomId('dm_demo_sancion_modal')
                     .setLabel('🚨 Registrar Sanción')
                     .setStyle(ButtonStyle.Danger)
-                    .setEmoji('📝')
+                    .setEmoji('📝'),
+                new ButtonBuilder()
+                    .setCustomId('dm_demo_open_menu')
+                    .setLabel('Volver al Menú')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setEmoji('⬅️')
             );
 
             return {
@@ -747,7 +767,12 @@ const DEMO_SYSTEMS = {
                     .setCustomId('dm_demo_plantilla_open')
                     .setLabel('📋 Seleccionar Plantilla')
                     .setStyle(ButtonStyle.Secondary)
-                    .setEmoji('📂')
+                    .setEmoji('📂'),
+                new ButtonBuilder()
+                    .setCustomId('dm_demo_open_menu')
+                    .setLabel('Volver al Menú')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setEmoji('⬅️')
             );
 
             return {
@@ -849,7 +874,12 @@ const DEMO_SYSTEMS = {
                     .setCustomId('dm_demo_ticket_solve')
                     .setLabel('Problema Solucionado')
                     .setStyle(ButtonStyle.Success)
-                    .setEmoji('✅')
+                    .setEmoji('✅'),
+                new ButtonBuilder()
+                    .setCustomId('dm_demo_open_menu')
+                    .setLabel('Menú')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setEmoji('⬅️')
             );
 
             return {
@@ -1141,10 +1171,29 @@ const DEMO_SYSTEMS = {
 function buildOpenDemosButtonRow() {
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('dm_demo_open_menu')
+            .setCustomId('dm_demo_open_menu_new')
             .setLabel('🎮 Ver Pruebas / Demos en Vivo')
             .setStyle(ButtonStyle.Primary)
     );
+}
+
+// Helper estilo bot de Telegram: edita SIEMPRE el mismo mensaje limpiando texto/adjuntos previos
+async function updateDemoMessage(interaction, payload) {
+    const cleanPayload = {
+        content: payload.content !== undefined ? payload.content : '',
+        embeds: payload.embeds || [],
+        components: payload.components || [],
+        files: payload.files || [],
+        attachments: []
+    };
+    try {
+        if (typeof interaction.update === 'function') {
+            await interaction.update(cleanPayload);
+            return;
+        }
+    } catch (e) { }
+    // Respaldo seguro por si el tipo de interacción no soporta update()
+    await interaction.reply(cleanPayload).catch(() => {});
 }
 
 function buildDemoMenuPayload() {
@@ -1382,6 +1431,45 @@ async function queryDmAI(userId, userMessage) {
     return null;
 }
 
+function isAskingToClearChat(text) {
+    const clean = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    if (clean.length > 90) return false;
+    const clearPatterns = [
+        /^!(limpiar|borrar|clear|vaciar|limpiar-chat|borrar-chat|cleardm|limpiardm)(\s+.*)?$/,
+        /\b(borra|borrar|elimina|eliminar|limpia|limpiar|vacia|vaciar)\b.*\b(chat|dm|mensajes|conversacion|todo|historial)\b/,
+        /\b(puedes|podrias|quiero\s+que)\b.*\b(borrar|eliminar|limpiar|vaciar)\b.*\b(chat|dm|mensajes|conversacion|todo)\b/
+    ];
+    return clearPatterns.some(rx => rx.test(clean));
+}
+
+function buildClearChatConfirmPayload() {
+    const embed = new EmbedBuilder()
+        .setColor(0xE74C3C)
+        .setAuthor({ name: 'LIMPIEZA DE CHAT POR DM' })
+        .setTitle('🧹 ¿ESTÁS SEGURO DE BORRAR EL CHAT?')
+        .setDescription(
+            `Esta acción eliminará **todos los mensajes enviados por mí** en este chat privado y reiniciará la memoria de nuestra conversación.\n\n` +
+            `ℹ️ *Por privacidad de Discord, los bots solo pueden eliminar sus propios mensajes (los tuyos permanecerán intactos).*`
+        )
+        .setFooter({ text: 'Confirma abajo si deseas continuar' })
+        .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('dm_clear_confirm')
+            .setLabel('Sí, borrar todo')
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji('🗑️'),
+        new ButtonBuilder()
+            .setCustomId('dm_clear_cancel')
+            .setLabel('No, cancelar')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('❌')
+    );
+
+    return { embeds: [embed], components: [row] };
+}
+
 module.exports = function initDmAssistant(client) {
     console.log('💬 [DM ASSISTANT] Asistente informativo interactivo por Mensaje Directo activado.');
 
@@ -1410,6 +1498,12 @@ module.exports = function initDmAssistant(client) {
             dmCooldown.set(message.author.id, now);
 
             await message.channel.sendTyping().catch(() => {});
+
+            // 0. Si pide borrar/limpiar el chat por texto o comando (!limpiar / !borrar / "borra el chat") -> 0 tokens
+            if (isAskingToClearChat(text)) {
+                await message.reply(buildClearChatConfirmPayload()).catch(() => {});
+                return;
+            }
 
             // 1. Si pide ver pruebas/demos (de un sistema concreto o del menú general) -> 0 tokens
             if (isAskingForDemoMenu(text)) {
@@ -1471,30 +1565,95 @@ module.exports = function initDmAssistant(client) {
             // Blindaje absoluto: solo procesar interacciones dentro de DM (sin guild)
             if (interaction.guildId) return;
 
-            // A) Botón: abrir el menú selector de todos los demos
-            if (interaction.isButton() && interaction.customId === 'dm_demo_open_menu') {
+            // 0) Confirmación / Cancelación de limpieza de chat DM
+            if (interaction.isButton() && interaction.customId === 'dm_clear_cancel') {
+                const cancelEmbed = new EmbedBuilder()
+                    .setColor(0x95A5A6)
+                    .setTitle('❌ Limpieza cancelada')
+                    .setDescription('No se ha eliminado ningún mensaje del chat.');
+                await interaction.update({ content: '', embeds: [cancelEmbed], components: [] }).catch(() => {});
+                setTimeout(() => {
+                    interaction.message?.delete().catch(() => {});
+                }, 5000);
+                return;
+            }
+
+            if (interaction.isButton() && interaction.customId === 'dm_clear_confirm') {
+                const workingEmbed = new EmbedBuilder()
+                    .setColor(0xF1C40F)
+                    .setTitle('🧹 Limpiando el chat...')
+                    .setDescription('Eliminando todos mis mensajes de este DM, espera unos segundos...');
+                await interaction.update({ content: '', embeds: [workingEmbed], components: [] }).catch(() => {});
+
+                let deletedCount = 0;
+                const channel = interaction.channel || await interaction.user.createDM().catch(() => null);
+                if (channel) {
+                    let beforeId = undefined;
+                    for (let batch = 0; batch < 4; batch++) {
+                        const fetched = await channel.messages.fetch({ limit: 100, before: beforeId }).catch(() => null);
+                        if (!fetched || fetched.size === 0) break;
+
+                        const botMsgs = fetched.filter(m => m.author.id === client.user.id && m.id !== interaction.message?.id);
+                        for (const msg of botMsgs.values()) {
+                            try {
+                                await msg.delete();
+                                deletedCount++;
+                            } catch (e) { }
+                        }
+
+                        beforeId = fetched.last()?.id;
+                        if (fetched.size < 100) break;
+                    }
+                }
+
+                // Reiniciar también la memoria de conversación IA de este usuario en DM
+                dmHistories.delete(interaction.user.id);
+
+                const doneEmbed = new EmbedBuilder()
+                    .setColor(0x2ECC71)
+                    .setTitle('✨ ¡Chat limpiado correctamente!')
+                    .setDescription(
+                        `Se han eliminado **${deletedCount}** mensaje(s) míos y se ha reiniciado nuestra conversación.\n` +
+                        `*(Este aviso desaparecerá automáticamente en 5 segundos).*`
+                    );
+                await interaction.message?.edit({ content: '', embeds: [doneEmbed], components: [] }).catch(() => {});
+                setTimeout(() => {
+                    interaction.message?.delete().catch(() => {});
+                }, 5000);
+                return;
+            }
+
+            // A0) Botón desde respuesta IA / Catálogo: abre el panel de Demos sin borrar la respuesta de la IA
+            if (interaction.isButton() && interaction.customId === 'dm_demo_open_menu_new') {
                 const menuPayload = buildDemoMenuPayload();
                 await interaction.reply(menuPayload).catch(() => {});
                 return;
             }
 
-            // B) Menú desplegable: elegir un sistema -> mostrar explicación + botón "👁️ Ver Prueba"
+            // A) Botón dentro de la Zona de Pruebas: EDITA el mismo mensaje al menú principal (estilo Telegram)
+            if (interaction.isButton() && interaction.customId === 'dm_demo_open_menu') {
+                const menuPayload = buildDemoMenuPayload();
+                await updateDemoMessage(interaction, menuPayload);
+                return;
+            }
+
+            // B) Menú desplegable: elegir un sistema -> EDITA el mismo mensaje con explicación + botón "👁️ Ver Prueba"
             if (interaction.isStringSelectMenu() && interaction.customId === 'dm_demo_select') {
                 const selectedKey = interaction.values?.[0];
                 const explainPayload = buildDemoExplainPayload(selectedKey);
                 if (!explainPayload) return;
-                await interaction.reply(explainPayload).catch(() => {});
+                await updateDemoMessage(interaction, explainPayload);
                 return;
             }
 
-            // C) Botón "👁️ Ver Prueba": abrir el panel/diseño real del sistema
+            // C) Botón "👁️ Ver Prueba": EDITA el mismo mensaje al panel/diseño real del sistema
             if (interaction.isButton() && interaction.customId.startsWith('dm_demo_run_')) {
                 const sysKey = interaction.customId.replace('dm_demo_run_', '');
                 const sys = DEMO_SYSTEMS[sysKey];
                 if (!sys) return;
 
                 const demoPayload = sys.buildDemo(interaction.user);
-                await interaction.reply(demoPayload).catch(() => {});
+                await updateDemoMessage(interaction, demoPayload);
                 return;
             }
 
@@ -1542,7 +1701,7 @@ module.exports = function initDmAssistant(client) {
                     streamUrl,
                     streamTitle
                 });
-                await interaction.reply(payload).catch(() => {});
+                await updateDemoMessage(interaction, payload);
                 return;
             }
 
@@ -1592,7 +1751,7 @@ module.exports = function initDmAssistant(client) {
             }
 
             if (interaction.isButton() && interaction.customId === 'dm_demo_evento_quick') {
-                await interaction.reply(buildDemoEventoCard({})).catch(() => {});
+                await updateDemoMessage(interaction, buildDemoEventoCard({}));
                 return;
             }
 
@@ -1603,7 +1762,7 @@ module.exports = function initDmAssistant(client) {
                     lugarPremio: interaction.fields.getTextInputValue('demo_ev_lugar'),
                     detalles: interaction.fields.getTextInputValue('demo_ev_detalles')
                 });
-                await interaction.reply(payload).catch(() => {});
+                await updateDemoMessage(interaction, payload);
                 return;
             }
 
@@ -1652,7 +1811,7 @@ module.exports = function initDmAssistant(client) {
                     rating: interaction.fields.getTextInputValue('demo_val_rating'),
                     comment: interaction.fields.getTextInputValue('demo_val_comment')
                 });
-                await interaction.reply(payload).catch(() => {});
+                await updateDemoMessage(interaction, payload);
                 return;
             }
 
@@ -1664,12 +1823,17 @@ module.exports = function initDmAssistant(client) {
                         .setStyle(ButtonStyle.Secondary)
                         .setEmoji('📝'),
                     new ButtonBuilder()
+                        .setCustomId('dm_demo_run_valoraciones')
+                        .setLabel('Volver al Panel')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('⬅️'),
+                    new ButtonBuilder()
                         .setCustomId('dm_demo_open_menu')
-                        .setLabel('Probar otro sistema')
+                        .setLabel('Menú de Pruebas')
                         .setStyle(ButtonStyle.Primary)
                         .setEmoji('🎮')
                 );
-                await interaction.reply({ embeds: [buildDemoTopStaffEmbed()], components: [navRow] }).catch(() => {});
+                await updateDemoMessage(interaction, { embeds: [buildDemoTopStaffEmbed()], components: [navRow] });
                 return;
             }
 
@@ -1718,7 +1882,7 @@ module.exports = function initDmAssistant(client) {
                     punishment: interaction.fields.getTextInputValue('demo_san_punishment'),
                     reason: interaction.fields.getTextInputValue('demo_san_reason')
                 });
-                await interaction.reply(payload).catch(() => {});
+                await updateDemoMessage(interaction, payload);
                 return;
             }
 
@@ -1734,10 +1898,23 @@ module.exports = function initDmAssistant(client) {
                             emoji: p.emoji
                         }))
                     );
-                await interaction.reply({
+                const backRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_run_plantillas')
+                        .setLabel('Volver al Panel')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('⬅️'),
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_open_menu')
+                        .setLabel('Menú de Pruebas')
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji('🎮')
+                );
+                await updateDemoMessage(interaction, {
                     content: '📂 **Selecciona la plantilla oficial que quieres previsualizar:**',
-                    components: [new ActionRowBuilder().addComponents(menu)]
-                }).catch(() => {});
+                    embeds: [],
+                    components: [new ActionRowBuilder().addComponents(menu), backRow]
+                });
                 return;
             }
 
@@ -1757,20 +1934,43 @@ module.exports = function initDmAssistant(client) {
                     .setTimestamp();
                 const navRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
+                        .setCustomId('dm_demo_plantilla_open')
+                        .setLabel('Elegir otra plantilla')
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji('📂'),
+                    new ButtonBuilder()
                         .setCustomId('dm_demo_open_menu')
-                        .setLabel('Probar otro sistema')
+                        .setLabel('Menú de Pruebas')
                         .setStyle(ButtonStyle.Secondary)
                         .setEmoji('🎮')
                 );
-                await interaction.reply({ embeds: [embed], components: [navRow] }).catch(() => {});
+                await updateDemoMessage(interaction, { embeds: [embed], components: [navRow] });
                 return;
             }
 
-            // I) CONSULTAS IA: Botón cerrar/borrar real
+            // I) CONSULTAS IA: Botón cerrar/borrar simulado en el mismo mensaje
             if (interaction.isButton() && interaction.customId === 'dm_demo_consulta_close') {
-                await interaction.message.delete().catch(async () => {
-                    await interaction.reply({ content: '🗑️ *En el servidor, al pulsar este botón se eliminan al instante tanto la pregunta como la respuesta para mantener el canal limpio.*' }).catch(() => {});
-                });
+                const closedEmbed = new EmbedBuilder()
+                    .setColor(0x2ECC71)
+                    .setAuthor({ name: 'CONSULTAS DE LA NORMATIVA | TU SERVIDOR RP' })
+                    .setTitle('🗑️ CONSULTA CERRADA Y LIMPIADA')
+                    .setDescription(
+                        `En tu servidor, al pulsar **🗑️ Cerrar / Borrar**, el bot elimina al instante tanto la pregunta del usuario como la respuesta para mantener el canal impecable *(dejando copia permanente en tu canal privado de logs)*.`
+                    )
+                    .setTimestamp();
+                const navRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_run_consultas')
+                        .setLabel('Ver Consulta otra vez')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('⬅️'),
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_open_menu')
+                        .setLabel('Menú de Pruebas')
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji('🎮')
+                );
+                await updateDemoMessage(interaction, { embeds: [closedEmbed], components: [navRow] });
                 return;
             }
 
@@ -1793,12 +1993,17 @@ module.exports = function initDmAssistant(client) {
                     .setTimestamp();
                 const navRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
-                        .setCustomId('dm_demo_open_menu')
-                        .setLabel('Probar otro sistema')
+                        .setCustomId('dm_demo_run_tickets')
+                        .setLabel('Volver al Ticket')
                         .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('⬅️'),
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_open_menu')
+                        .setLabel('Menú de Pruebas')
+                        .setStyle(ButtonStyle.Primary)
                         .setEmoji('🎮')
                 );
-                await interaction.reply({ content: `🔔 \`(Tag Staff)\` — *Resumen generado automáticamente:*`, embeds: [summaryEmbed], components: [navRow] }).catch(() => {});
+                await updateDemoMessage(interaction, { content: `🔔 \`(Tag Staff)\` — *Resumen generado automáticamente:*`, embeds: [summaryEmbed], components: [navRow] });
                 return;
             }
 
@@ -1809,7 +2014,19 @@ module.exports = function initDmAssistant(client) {
                     .setTitle('✅ PROBLEMA SOLUCIONADO')
                     .setDescription(`¡Genial <@${interaction.user.id}>! Me alegro de haber podido ayudarte. El asistente queda en silencio y el ticket listo para cerrarse.`)
                     .setTimestamp();
-                await interaction.reply({ embeds: [solvedEmbed] }).catch(() => {});
+                const navRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_run_tickets')
+                        .setLabel('Volver al Ticket')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('⬅️'),
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_open_menu')
+                        .setLabel('Menú de Pruebas')
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji('🎮')
+                );
+                await updateDemoMessage(interaction, { embeds: [solvedEmbed], components: [navRow] });
                 return;
             }
 
@@ -1830,7 +2047,24 @@ module.exports = function initDmAssistant(client) {
                     )
                     .setFooter({ text: 'TU SERVIDOR RP • Sistema de Whitelist' })
                     .setTimestamp();
-                await interaction.reply({ content: `# ❌ Whitelist Denegada — <@${interaction.user.id}>`, embeds: [deniedEmbed] }).catch(() => {});
+                const navRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_run_whitelist')
+                        .setLabel('Ver Aprobada')
+                        .setStyle(ButtonStyle.Success)
+                        .setEmoji('🎉'),
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_wl_antiia')
+                        .setLabel('Ver Informe Anti-IA')
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji('🧠'),
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_open_menu')
+                        .setLabel('Menú')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('🎮')
+                );
+                await updateDemoMessage(interaction, { content: `# ❌ Whitelist Denegada — <@${interaction.user.id}>`, embeds: [deniedEmbed], components: [navRow] });
                 return;
             }
 
@@ -1850,7 +2084,24 @@ module.exports = function initDmAssistant(client) {
                     )
                     .setFooter({ text: 'TU SERVIDOR RP • Filtro Anti-IA Multicapa' })
                     .setTimestamp();
-                await interaction.reply({ embeds: [antiIaEmbed] }).catch(() => {});
+                const navRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_run_whitelist')
+                        .setLabel('Ver Aprobada')
+                        .setStyle(ButtonStyle.Success)
+                        .setEmoji('🎉'),
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_wl_denegada')
+                        .setLabel('Ver Denegada')
+                        .setStyle(ButtonStyle.Danger)
+                        .setEmoji('🚫'),
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_open_menu')
+                        .setLabel('Menú')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('🎮')
+                );
+                await updateDemoMessage(interaction, { embeds: [antiIaEmbed], components: [navRow] });
                 return;
             }
 
@@ -1869,7 +2120,24 @@ module.exports = function initDmAssistant(client) {
                     )
                     .setFooter({ text: 'TU SERVIDOR RP • Monitor de Tickets en Tiempo Real' })
                     .setTimestamp();
-                await interaction.reply({ embeds: [tkDash] }).catch(() => {});
+                const navRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_run_dashboards')
+                        .setLabel('Servicios')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('🖥️'),
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_dash_ia')
+                        .setLabel('Monitor IA')
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji('⚡'),
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_open_menu')
+                        .setLabel('Menú')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('🎮')
+                );
+                await updateDemoMessage(interaction, { embeds: [tkDash], components: [navRow] });
                 return;
             }
 
@@ -1886,7 +2154,24 @@ module.exports = function initDmAssistant(client) {
                     )
                     .setFooter({ text: 'TU SERVIDOR RP • Monitorización de Inteligencia Artificial' })
                     .setTimestamp();
-                await interaction.reply({ embeds: [iaDash] }).catch(() => {});
+                const navRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_run_dashboards')
+                        .setLabel('Servicios')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('🖥️'),
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_dash_tickets')
+                        .setLabel('Monitor Tickets')
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji('🎫'),
+                    new ButtonBuilder()
+                        .setCustomId('dm_demo_open_menu')
+                        .setLabel('Menú')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('🎮')
+                );
+                await updateDemoMessage(interaction, { embeds: [iaDash], components: [navRow] });
                 return;
             }
         } catch (err) {
