@@ -10420,6 +10420,14 @@ async function startBot() {
     } catch (dashErr) {
         console.error('⚠️ [DASHBOARDS ERROR]:', dashErr.message);
     }
+
+    // Sistema independiente de Asistente Informativo Interactivo por DM
+    try {
+        const initDmAssistant = require('./dmAssistant');
+        initDmAssistant(client);
+    } catch (dmErr) {
+        console.error('⚠️ [DM ASSISTANT ERROR]:', dmErr.message);
+    }
 }
 
 startBot();
