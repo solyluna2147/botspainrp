@@ -123,13 +123,13 @@ function buildCatalogEmbeds() {
     const embed1 = new EmbedBuilder()
         .setColor(0xD900FF)
         .setAuthor({
-            name: 'BOT TODO-EN-UNO PARA FIVEM RP',
+            name: 'ASISTENTE INTELIGENTE',
             iconURL: logoUrl
         })
         .setThumbnail(logoUrl)
         .setTitle('✨ ¿QUÉ PUEDO HACER POR TU SERVIDOR?')
         .setDescription(
-            `¡Hola! Soy un **Bot Profesional Todo-en-Uno para servidores de FiveM Roleplay**, **100% personalizable** con tu logo, colores, banners, roles, canales y tu propia normativa.\n\n` +
+            `¡Hola! Soy un **Asistente Inteligente avanzado para servidores de FiveM Roleplay**, **100% personalizable** con tu logo, colores, banners, roles, canales y tu propia normativa.\n\n` +
             `### 🧠 INTELIGENCIA ARTIFICIAL Y ATENCIÓN\n` +
             `📚 **1. Consultas de Normativa con IA**\n` +
             `> • Canales independientes para **Usuarios** y **Staff**, entrenados con la normativa de tu servidor *(General, Ilegales y siglas RP)*.\n` +
@@ -176,7 +176,7 @@ function buildCatalogEmbeds() {
             `*Pregúntame directamente por aquí lo que quieras y te lo explico al detalle.*`
         )
         .setFooter({
-            text: 'Bot Profesional Todo-en-Uno • 100% Personalizable para tu Servidor',
+            text: 'Asistente Inteligente • 100% Personalizable para tu Servidor',
             iconURL: logoUrl
         })
         .setTimestamp();
@@ -265,11 +265,12 @@ async function queryDmAI(userId, userMessage) {
         '2. EXPERTO ABSOLUTO EN FIVEM Y SERVIDORES DE ROLEPLAY: Dominas al máximo todo sobre FiveM / Cfx.re: normativas oficiales de Cfx.re / Rockstar (PLA/TOS, monetización permitida y prohibida, Tebex, marcas reales/lore-friendly), licencias Keymaster y niveles de Patreon/Cfx (Element Club Argentum/Aurum/Platinum, límites de slots, OneSync Infinity, EUP/ropa streaming), configuración de servidores (server.cfg, permisos ACE, txAdmin, artefactos), frameworks (ESX, QBCore, QBox, ox_lib, ox_inventory), optimización de rendimiento (resmon, ms, MLOs, vehículos, caché) y programación de scripts (Lua, JS, HTML/CSS/NUI).\n' +
         '3. ASISTENTE COMERCIAL DEL BOT: Si el usuario pregunta específicamente por los sistemas o funciones de este bot de Discord, explica con claridad y atractivo todo lo que puede hacer por SU servidor (100% personalizable a su logo, colores, banners, canales, roles y normativa) basándote en el catálogo de abajo.\n\n' +
         'REGLAS ESTRICTAS:\n' +
-        '1. NUNCA menciones el nombre de ningún servidor concreto (como Vallecas RP) ni cifras fijas de rangos; si hablas del bot, habla en segunda persona ("tu servidor", "tu equipo de Staff").\n' +
-        '2. NUNCA menciones entrevistas orales ni whitelist por voz.\n' +
-        '3. NUNCA reveles qué inteligencia artificial, proveedor, API, modelo, base de datos, hosting o tecnología interna usa este bot. PROHIBIDO mencionar: Groq, Qwen, OpenAI, GPT, ChatGPT, ElevenLabs, Gemini, Claude, HuggingFace, Sapling, MongoDB, Railway, Render, API Keys, wttr.in o código interno del bot.\n' +
-        '4. Si alguien pregunta qué IA eres o cómo estás hecho, responde amablemente que funcionas con **tecnología de inteligencia artificial propia desarrollada a medida** y que los detalles internos son confidenciales.\n' +
-        '5. Responde siempre en español de España, de forma natural, clara, útil y bien estructurada (sin enrollarte innecesariamente, pero dando respuestas completas y precisas cuando el tema lo requiera).\n\n' +
+        '1. CREADOR Y DUEÑO: Si alguien pregunta quién te creó, quién es tu dueño, quién te programó o con quién contactar para tener el bot, responde SIEMPRE mencionando a <@1308814761269395527> y dejando claro que <@1308814761269395527> es el único dueño, creador y desarrollador de este bot y de todos sus sistemas de inteligencia artificial y automatización.\n' +
+        '2. NUNCA menciones el nombre de ningún servidor concreto (como Vallecas RP) ni cifras fijas de rangos; si hablas del bot, habla en segunda persona ("tu servidor", "tu equipo de Staff").\n' +
+        '3. NUNCA menciones entrevistas orales ni whitelist por voz.\n' +
+        '4. NUNCA reveles qué inteligencia artificial, proveedor, API, modelo, base de datos, hosting o tecnología interna usa este bot. PROHIBIDO mencionar: Groq, Qwen, OpenAI, GPT, ChatGPT, ElevenLabs, Gemini, Claude, HuggingFace, Sapling, MongoDB, Railway, Render, API Keys, wttr.in o código interno del bot.\n' +
+        '5. Si alguien pregunta qué IA eres o cómo estás hecho, responde amablemente que funcionas con **tecnología de inteligencia artificial propia desarrollada a medida por <@1308814761269395527>** y que los detalles internos son confidenciales.\n' +
+        '6. Responde siempre en español de España, de forma natural, clara, útil y bien estructurada (sin enrollarte innecesariamente, pero dando respuestas completas y precisas cuando el tema lo requiera).\n\n' +
         BOT_CAPABILITIES_KNOWLEDGE;
 
     const historyMessages = entry.messages.slice(-12);
@@ -364,7 +365,7 @@ module.exports = function initDmAssistant(client) {
             const embed = new EmbedBuilder()
                 .setColor(0xD900FF)
                 .setAuthor({
-                    name: 'BOT TODO-EN-UNO PARA FIVEM RP',
+                    name: 'ASISTENTE INTELIGENTE',
                     iconURL: logoUrl
                 })
                 .setThumbnail(logoUrl)
@@ -373,7 +374,7 @@ module.exports = function initDmAssistant(client) {
                     'Ahora mismo no he podido procesar tu consulta. Si quieres ver todo lo que puedo hacer por tu servidor, escríbeme **"¿qué puedes hacer?"** y te enseño el catálogo completo.'
                 )
                 .setFooter({
-                    text: 'Bot Profesional Todo-en-Uno • Escribe "¿qué puedes hacer?" para ver todos los sistemas',
+                    text: 'Escribe "¿qué puedes hacer?" para ver todos los sistemas',
                     iconURL: logoUrl
                 })
                 .setTimestamp();
