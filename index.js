@@ -9613,9 +9613,28 @@ client.on('interactionCreate', async (interaction) => {
 
         const row = new ActionRowBuilder().addComponents(selectMenu);
 
+        const logoPath = getLogoPath();
+        const hasLogo = fs.existsSync(logoPath);
+        const logoUrl = hasLogo ? 'attachment://logo.png' : client.user.displayAvatarURL();
+        const selectEmbed = new EmbedBuilder()
+            .setColor(0xD900FF)
+            .setAuthor({
+                name: 'SISTEMA DE VALORACIONES • VALLECAS RP',
+                iconURL: logoUrl
+            })
+            .setDescription(
+                `👤 **Selecciona en el menú de abajo al Staff que deseas valorar:**\n\n` +
+                `> 🛡️ Elige al miembro del equipo que te atendió y a continuación podrás puntuar su atención del **1 al 10** y dejar tu comentario.`
+            )
+            .setFooter({
+                text: 'VALLECAS RP • Solo tú puedes ver este menú',
+                iconURL: logoUrl
+            });
+
         await interaction.reply({
-            content: '👤 **Selecciona en el menú al Staff que deseas valorar:**',
+            embeds: [selectEmbed],
             components: [row],
+            files: hasLogo ? [new AttachmentBuilder(logoPath, { name: 'logo.png' })] : [],
             ephemeral: true
         }).catch(() => { });
 
@@ -10434,25 +10453,70 @@ async function startBot() {
             getBotConfig: () => botConfig,
             updateBotConfig: (k, v) => updateConfig(k, v),
             publishPanel: async (panelType, channel) => {
+                const buildFiles = (bannerCandidates = []) => {
+                    const files = [];
+                    const lp = getLogoPath();
+                    if (fs.existsSync(lp)) files.push(new AttachmentBuilder(lp, { name: 'logo.png' }));
+                    for (const name of bannerCandidates) {
+                        const bp = path.join(__dirname, 'assets', name);
+                        if (fs.existsSync(bp)) {
+                            files.push(new AttachmentBuilder(bp, { name }));
+                            break;
+                        }
+                    }
+                    return files;
+                };
+
                 if (panelType === 'streamers') {
-                    await channel.send({ embeds: [buildStreamPanelEmbed()], components: [buildStreamPanelRow()] });
-                    return `Panel de Directos publicado en #${channel.name}`;
+                    const files = buildFiles(['panel_directos.png']);
+                    await channel.send({ embeds: [buildStreamPanelEmbed()], components: [buildStreamPanelRow()], files });
+                    return `Panel de Directos publicado con banner en #${channel.name}`;
                 }
                 if (panelType === 'eventos') {
-                    await channel.send({ embeds: [buildEventosPanelEmbed()], components: [buildEventosPanelRow()] });
-                    return `Panel de Eventos publicado en #${channel.name}`;
+                    const files = buildFiles(['panel_eventos.png']);
+                    await channel.send({ embeds: [buildEventosPanelEmbed()], components: [buildEventosPanelRow()], files });
+                    return `Panel de Eventos publicado con banner en #${channel.name}`;
                 }
                 if (panelType === 'valoraciones') {
-                    await channel.send({ embeds: [buildStaffRatingPanelEmbed()], components: [buildStaffRatingPanelRow()] });
-                    return `Panel de Valoraciones publicado en #${channel.name}`;
+                    const files = buildFiles(['panel_valoracion.png']);
+                    await channel.send({ embeds: [buildStaffRatingPanelEmbed()], components: [buildStaffRatingPanelRow()], files });
+                    return `Panel de Valoraciones publicado con banner en #${channel.name}`;
                 }
                 if (panelType === 'sanciones') {
-                    await channel.send({ embeds: [buildSancionesPanelEmbed()], components: [buildSancionesPanelRow()] });
-                    return `Panel de Sanciones publicado en #${channel.name}`;
+                    const files = buildFiles(['panel_sanciones.png']);
+                    await channel.send({ embeds: [buildSancionesPanelEmbed()], components: [buildSancionesPanelRow()], files });
+                    return `Panel de Sanciones publicado con banner en #${channel.name}`;
                 }
                 if (panelType === 'plantillas') {
-                    await channel.send({ embeds: [buildPlantillasPanelEmbed()], components: [buildPlantillasPanelRow()] });
-                    return `Panel de Plantillas publicado en #${channel.name}`;
+                    const files = buildFiles(['panel_postulaciones.png']);
+                    await channel.send({ embeds: [buildPlantillasPanelEmbed()], components: [buildPlantillasPanelRow()], files });
+                    return `Panel de Plantillas publicado con banner en #${channel.name}`;
+                }
+                if (panelType === 'consultas') {
+                    const bannerNames = ['banner_consultas.png', 'consultas.png', 'panel_consultas.png'];
+                    const files = buildFiles(bannerNames);
+                    const foundBanner = bannerNames.find(n => fs.existsSync(path.join(__dirname, 'assets', n)));
+                    const hasLogo = fs.existsSync(getLogoPath());
+                    const logoUrl = hasLogo ? 'attachment://logo.png' : client.user.displayAvatarURL();
+                    const embed = new EmbedBuilder()
+                        .setColor(0xD900FF)
+                        .setAuthor({ name: 'CONSULTAS DE LA NORMATIVA | VALLECAS RP', iconURL: logoUrl })
+                        .setThumbnail(logoUrl)
+                        .setTitle('📚 ¿TIENES ALGUNA DUDA SOBRE LA NORMATIVA?')
+                        .setDescription(
+                            `¡Bienvenido al canal oficial de **Consultas Inteligentes**!\n\n` +
+                            `💬 **¿Cómo funciona?**\n` +
+                            `> • Simplemente **escribe tu duda directamente en este canal** hablando de forma normal *(sin comandos)*.\n` +
+                            `> • Nuestra Inteligencia Artificial revisará al instante la **Normativa General**, la **Normativa de Ilegales** y todas las actualizaciones del servidor para darte una respuesta exacta.\n\n` +
+                            `⚡ **Consejos rápidos:**\n` +
+                            `> • Puedes preguntar por siglas RP (\`RK\`, \`MG\`, \`PG\`, \`PK\`, \`CK\`, \`VDM\`...), atracos, bandas, zonas seguras o sanciones.\n` +
+                            `> • Tu pregunta y la respuesta se limpiarán automáticamente a los **90 segundos** *(o al pulsar el botón 🗑️ Cerrar / Borrar)* para mantener el canal siempre impecable.`
+                        )
+                        .setFooter({ text: 'VALLECAS RP • Sistema Inteligente de Normativa 24/7', iconURL: logoUrl })
+                        .setTimestamp();
+                    if (foundBanner) embed.setImage(`attachment://${foundBanner}`);
+                    await channel.send({ embeds: [embed], files });
+                    return `Panel de Consultas publicado con banner en #${channel.name}`;
                 }
                 return `Panel "${panelType}" listo para #${channel.name}`;
             }
