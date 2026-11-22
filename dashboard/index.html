@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VYRE AI — Panel de Control Exclusivo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #05050a;
+      --bg-elev: rgba(14, 14, 24, 0.72);
+      --card: rgba(17, 17, 30, 0.62);
+      --card-hover: rgba(24, 24, 42, 0.78);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-glow: rgba(217, 0, 255, 0.45);
+      --accent: #d900ff;
+      --accent-2: #00f0ff;
+      --accent-3: #7c3aed;
+      --success: #00ff88;
+      --warning: #ffb800;
+      --danger: #ff3b5c;
+      --text: #f4f6ff;
+      --muted: #949cb8;
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ===== FONDO ANIMADO AURORA + GRID + SPOTLIGHT ===== */
+    .bg-scene {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .bg-grid {
+      position: absolute;
+      inset: -40px;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse 80% 70% at 50% 35%, #000 35%, transparent 100%);
+      animation: gridDrift 28s linear infinite;
+    }
+    @keyframes gridDrift {
+      0% { transform: translateY(0); }
+      100% { transform: translateY(48px); }
+    }
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(110px);
+      opacity: 0.34;
+      will-change: transform;
+    }
+    .orb-1 {
+      width: 560px; height: 560px;
+      background: radial-gradient(circle, var(--accent), transparent 70%);
+      top: -160px; left: -120px;
+      animation: floatOrb1 18s ease-in-out infinite alternate;
+    }
+    .orb-2 {
+      width: 520px; height: 520px;
+      background: radial-gradient(circle, var(--accent-2), transparent 70%);
+      bottom: -180px; right: -120px;
+      opacity: 0.22;
+      animation: floatOrb2 22s ease-in-out infinite alternate;
+    }
+    .orb-3 {
+      width: 420px; height: 420px;
+      background: radial-gradient(circle, var(--accent-3), transparent 70%);
+      top: 42%; left: 45%;
+      opacity: 0.2;
+      animation: floatOrb3 24s ease-in-out infinite alternate;
+    }
+    @keyframes floatOrb1 {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(110px, 80px) scale(1.16); }
+    }
+    @keyframes floatOrb2 {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(-120px, -90px) scale(1.18); }
+    }
+    @keyframes floatOrb3 {
+      0% { transform: translate(-50%, -50%) scale(0.95); }
+      100% { transform: translate(-30%, -65%) scale(1.12); }
+    }
+    .mouse-glow {
+      position: fixed;
+      width: 520px; height: 520px;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 1;
+      background: radial-gradient(circle, rgba(217, 0, 255, 0.12), rgba(0, 240, 255, 0.05) 45%, transparent 70%);
+      transform: translate(-50%, -50%);
+      transition: left 0.12s ease-out, top 0.12s ease-out;
+    }
+
+    /* ===== UTILIDADES GLASS & BOTONES ===== */
+    .app-root { position: relative; z-index: 2; min-height: 100vh; }
+
+    .glass {
+      background: var(--card);
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+    }
+    .glass-hover:hover {
+      border-color: var(--border-glow);
+      background: var(--card-hover);
+      transform: translateY(-3px);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 28px rgba(217, 0, 255, 0.16);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      padding: 11px 20px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      font-weight: 600;
+      font-size: 0.92rem;
+      cursor: pointer;
+      text-decoration: none;
+      color: #fff;
+      transition: all 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+      position: relative;
+      overflow: hidden;
+      font-family: inherit;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #7c3aed);
+      box-shadow: 0 8px 26px rgba(217, 0, 255, 0.38);
+    }
+    .btn-primary:hover {
+      box-shadow: 0 12px 34px rgba(217, 0, 255, 0.58);
+      transform: translateY(-2px);
+    }
+    .btn-discord {
+      background: linear-gradient(135deg, #5865F2, #7c3aed);
+      box-shadow: 0 10px 30px rgba(88, 101, 242, 0.4);
+      padding: 14px 28px;
+      font-size: 1rem;
+    }
+    .btn-discord:hover {
+      box-shadow: 0 14px 38px rgba(88, 101, 242, 0.6);
+      transform: translateY(-2px);
+    }
+    .btn-ghost {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.11);
+      color: var(--text);
+    }
+    .btn-ghost:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.22);
+    }
+    .btn-cyan {
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.16), rgba(217, 0, 255, 0.16));
+      border-color: rgba(0, 240, 255, 0.35);
+      color: #e8fcff;
+    }
+    .btn-cyan:hover {
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.28), rgba(217, 0, 255, 0.28));
+      box-shadow: 0 0 24px rgba(0, 240, 255, 0.25);
+    }
+    .btn-sm { padding: 8px 14px; font-size: 0.83rem; border-radius: 10px; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 11px;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .badge-live {
+      background: rgba(0, 255, 136, 0.12);
+      color: var(--success);
+      border: 1px solid rgba(0, 255, 136, 0.28);
+    }
+    .badge-purple {
+      background: rgba(217, 0, 255, 0.14);
+      color: #f3a6ff;
+      border: 1px solid rgba(217, 0, 255, 0.32);
+    }
+    .badge-cyan {
+      background: rgba(0, 240, 255, 0.12);
+      color: var(--accent-2);
+      border: 1px solid rgba(0, 240, 255, 0.28);
+    }
+    .pulse-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 10px var(--success);
+      animation: pulse 1.8s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.35); opacity: 0.55; }
+    }
+
+    /* ===== PANTALLA 1: LANDING / LOGIN ===== */
+    .landing {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 20px;
+      text-align: center;
+      animation: fadeUp 0.6s ease both;
+    }
+    .landing-pill {
+      margin-bottom: 22px;
+      background: rgba(217, 0, 255, 0.12);
+      border: 1px solid rgba(217, 0, 255, 0.34);
+      padding: 8px 16px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.84rem;
+      color: #f2c4ff;
+      box-shadow: 0 0 28px rgba(217, 0, 255, 0.18);
+    }
+    .landing h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(2.4rem, 5.5vw, 4.4rem);
+      line-height: 1.06;
+      letter-spacing: -0.03em;
+      max-width: 820px;
+      margin-bottom: 18px;
+    }
+    .gradient-text {
+      background: linear-gradient(90deg, #ffffff 0%, #f0a6ff 38%, var(--accent) 68%, var(--accent-2) 100%);
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: shimmer 6s linear infinite;
+    }
+    @keyframes shimmer {
+      0% { background-position: 0% center; }
+      100% { background-position: 200% center; }
+    }
+    .landing p.sub {
+      max-width: 620px;
+      color: var(--muted);
+      font-size: 1.06rem;
+      line-height: 1.6;
+      margin-bottom: 30px;
+    }
+    .landing-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      justify-content: center;
+      margin-bottom: 42px;
+    }
+    .landing-stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(140px, 1fr));
+      gap: 14px;
+      max-width: 780px;
+      width: 100%;
+    }
+    .stat-mini {
+      padding: 18px 16px;
+      text-align: center;
+    }
+    .stat-mini .val {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.55rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+    .stat-mini .lbl {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    /* ===== PANTALLA 2: SELECTOR DE SERVIDOR ===== */
+    .server-view {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 36px 22px 60px;
+      animation: fadeUp 0.45s ease both;
+    }
+    .topbar-simple {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 34px;
+      flex-wrap: wrap;
+    }
+    .brand-mark {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+    .brand-icon {
+      width: 40px; height: 40px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      display: grid;
+      place-items: center;
+      font-size: 1.15rem;
+      box-shadow: 0 0 24px rgba(217, 0, 255, 0.45);
+    }
+    .user-chip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 14px 6px 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+    }
+    .user-chip img, .avatar-fallback {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: linear-gradient(135deg, var(--accent), #5865F2);
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 0.8rem;
+    }
+    .servers-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 18px;
+      margin-top: 24px;
+    }
+    .server-card {
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      position: relative;
+      overflow: hidden;
+    }
+    .server-card::before {
+      content: '';
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+    .server-card:hover::before { opacity: 1; }
+    .server-head {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .server-icon {
+      width: 56px; height: 56px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, rgba(217, 0, 255, 0.25), rgba(0, 240, 255, 0.2));
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      display: grid;
+      place-items: center;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 1.2rem;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .server-icon img { width: 100%; height: 100%; object-fit: cover; }
+    .server-meta h3 { font-size: 1.05rem; margin-bottom: 4px; }
+    .server-meta p { font-size: 0.83rem; color: var(--muted); }
+
+    /* ===== PANTALLA 3: DASHBOARD PRINCIPAL ===== */
+    .dash-shell {
+      display: grid;
+      grid-template-columns: 274px 1fr;
+      min-height: 100vh;
+    }
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 20px 16px;
+      background: rgba(8, 8, 16, 0.82);
+      backdrop-filter: blur(26px);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+    .guild-switcher {
+      padding: 12px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .guild-switcher:hover {
+      border-color: var(--border-glow);
+      background: rgba(217, 0, 255, 0.08);
+    }
+    .nav-group-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #6b7394;
+      padding: 8px 12px 4px;
+      font-weight: 700;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 11px 13px;
+      border-radius: 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+      user-select: none;
+    }
+    .nav-item:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .nav-item.active {
+      color: #fff;
+      background: linear-gradient(135deg, rgba(217, 0, 255, 0.22), rgba(0, 240, 255, 0.08));
+      border-color: rgba(217, 0, 255, 0.38);
+      box-shadow: 0 6px 20px rgba(217, 0, 255, 0.16);
+    }
+    .nav-item .ico { font-size: 1.05rem; width: 22px; text-align: center; }
+
+    .main-area {
+      padding: 26px 34px 90px;
+      max-width: 1280px;
+      width: 100%;
+    }
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 26px;
+      flex-wrap: wrap;
+    }
+    .page-header h2 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.8rem;
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+    .page-header p { color: var(--muted); font-size: 0.94rem; }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .kpi-card {
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi-card .kpi-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .kpi-card .kpi-num {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.9rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .kpi-card .kpi-sub { font-size: 0.8rem; color: var(--muted); }
+
+    .section-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 18px;
+    }
+    .panel-card {
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .panel-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .panel-card-head h3 {
+      font-size: 1.02rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ===== FORMULARIOS, SELECTORES Y TOGGLES ===== */
+    .field { display: flex; flex-direction: column; gap: 7px; }
+    .field label {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #c5cbe3;
+      display: flex;
+      justify-content: space-between;
+    }
+    .field select, .field input[type="text"], .field input[type="number"] {
+      width: 100%;
+      padding: 11px 13px;
+      border-radius: 11px;
+      background: rgba(7, 7, 15, 0.78);
+      border: 1px solid rgba(255, 255, 255, 0.11);
+      color: #fff;
+      font-size: 0.9rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .field select:focus, .field input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(217, 0, 255, 0.18);
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .toggle-row .t-info strong { display: block; font-size: 0.9rem; margin-bottom: 2px; }
+    .toggle-row .t-info span { font-size: 0.79rem; color: var(--muted); }
+
+    .switch {
+      position: relative;
+      width: 48px; height: 26px;
+      flex-shrink: 0;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      inset: 0;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      transition: 0.25s;
+    }
+    .slider::before {
+      content: '';
+      position: absolute;
+      width: 20px; height: 20px;
+      left: 3px; top: 3px;
+      border-radius: 50%;
+      background: #fff;
+      transition: 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .switch input:checked + .slider {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 0 16px rgba(217, 0, 255, 0.45);
+    }
+    .switch input:checked + .slider::before { transform: translateX(22px); }
+
+    .progress-bar {
+      width: 100%; height: 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--success), var(--accent-2));
+      box-shadow: 0 0 14px rgba(0, 255, 136, 0.5);
+      transition: width 0.6s ease;
+    }
+
+    /* ===== BARRA FLOTANTE DE GUARDADO ===== */
+    .save-bar {
+      position: fixed;
+      bottom: 22px;
+      left: 50%;
+      transform: translateX(-50%) translateY(120px);
+      z-index: 40;
+      background: rgba(14, 14, 26, 0.92);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(217, 0, 255, 0.5);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(217, 0, 255, 0.25);
+      border-radius: 16px;
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .save-bar.visible { transform: translateX(-50%) translateY(0); }
+
+    /* ===== PREVIEW EMBED DISCORD ===== */
+    .discord-embed-preview {
+      background: #1e1f22;
+      border-left: 4px solid var(--accent);
+      border-radius: 8px;
+      padding: 16px 18px;
+      font-size: 0.88rem;
+      line-height: 1.5;
+    }
+    .discord-embed-preview .emb-author {
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: #dbdee1;
+      letter-spacing: 0.03em;
+      margin-bottom: 6px;
+    }
+    .discord-embed-preview .emb-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+    .discord-embed-preview .emb-footer {
+      margin-top: 12px;
+      font-size: 0.74rem;
+      color: #949ba4;
+    }
+
+    /* ===== TOASTS ===== */
+    .toast-wrap {
+      position: fixed;
+      top: 22px; right: 22px;
+      z-index: 60;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      padding: 13px 18px;
+      border-radius: 12px;
+      background: rgba(15, 16, 28, 0.94);
+      border: 1px solid rgba(0, 255, 136, 0.4);
+      color: #fff;
+      font-size: 0.88rem;
+      font-weight: 500;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+      animation: slideInRight 0.3s ease both;
+    }
+    .toast.err { border-color: rgba(255, 59, 92, 0.55); }
+
+    .tab-pane { animation: fadeUp 0.32s ease both; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideInRight {
+      from { opacity: 0; transform: translateX(30px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 900px) {
+      .dash-shell { grid-template-columns: 1fr; }
+      .sidebar { position: relative; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+      .main-area { padding: 20px 16px 90px; }
+      .landing-stats { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-scene">
+    <div class="bg-grid"></div>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+  <div class="mouse-glow" id="mouseGlow"></div>
+  <div class="toast-wrap" id="toastWrap"></div>
+
+  <div class="app-root">
+    <!-- ==================== 1. LANDING / LOGIN ==================== -->
+    <section id="viewLanding" class="landing">
+      <div class="landing-pill">
+        <span class="pulse-dot"></span>
+        <span>Panel Web de Nueva Generación • 100% En Tiempo Real</span>
+      </div>
+      <h1>Controla todo tu servidor RP desde un <span class="gradient-text">Panel de Élite</span></h1>
+      <p class="sub">
+        Configura Inteligencia Artificial de Normativa, Tickets automáticos, Locución por voz, Streamers, Eventos, Sanciones, Valoraciones, Whitelist y marca propia en segundos — sin tocar código.
+      </p>
+      <div class="landing-actions">
+        <a href="/auth/login" id="btnDiscordLogin" class="btn btn-discord">
+          <span>⚡</span> Iniciar sesión con Discord
+        </a>
+        <button id="btnDemoLogin" class="btn btn-cyan">
+          <span>✨</span> Entrar en Vista Previa Interactiva
+        </button>
+        <a id="btnInviteTop" href="#" target="_blank" class="btn btn-ghost">
+          <span>➕</span> Invitar Bot
+        </a>
+      </div>
+      <div class="landing-stats">
+        <div class="glass stat-mini">
+          <div class="val" id="stStatus">ONLINE</div>
+          <div class="lbl">Estado Global</div>
+        </div>
+        <div class="glass stat-mini">
+          <div class="val" id="stPing">-- ms</div>
+          <div class="lbl">Latencia</div>
+        </div>
+        <div class="glass stat-mini">
+          <div class="val" id="stTokens">7.8M</div>
+          <div class="lbl">Tokens IA / Día</div>
+        </div>
+        <div class="glass stat-mini">
+          <div class="val" id="stGuilds">--</div>
+          <div class="lbl">Servidores</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 2. SELECTOR DE SERVIDOR ==================== -->
+    <section id="viewServers" class="server-view hidden">
+      <div class="topbar-simple">
+        <div class="brand-mark">
+          <div class="brand-icon">⚡</div>
+          <span>VYRE <span style="color:var(--accent)">PANEL</span></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div class="user-chip" id="userChipServers"></div>
+          <button class="btn btn-ghost btn-sm" onclick="logout()">Cerrar sesión</button>
+        </div>
+      </div>
+
+      <div class="page-header">
+        <div>
+          <h2>Selecciona tu Servidor</h2>
+          <p>Elige un servidor de Discord donde tengas permisos de Administrador para abrir su centro de control.</p>
+        </div>
+        <span class="badge badge-purple" id="demoModeBadge" style="display:none;">✨ Modo Vista Previa Activo</span>
+      </div>
+
+      <div class="servers-grid" id="serversGrid"></div>
+    </section>
+
+    <!-- ==================== 3. DASHBOARD PRINCIPAL ==================== -->
+    <section id="viewDashboard" class="dash-shell hidden">
+      <aside class="sidebar">
+        <div class="brand-mark" style="padding: 4px 6px;">
+          <div class="brand-icon">⚡</div>
+          <span>VYRE <span style="color:var(--accent)">CORE</span></span>
+        </div>
+
+        <div class="guild-switcher" onclick="showServerSelector()" title="Cambiar de servidor">
+          <div class="server-icon" style="width:40px;height:40px;border-radius:11px;font-size:0.9rem;" id="sbGuildIcon">SV</div>
+          <div style="min-width:0;flex:1;">
+            <div style="font-weight:700;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" id="sbGuildName">Servidor</div>
+            <div style="font-size:0.74rem;color:var(--muted);" id="sbGuildMembers">Cambiar servidor ⇄</div>
+          </div>
+        </div>
+
+        <nav style="display:flex;flex-direction:column;gap:4px;flex:1;">
+          <div class="nav-group-title">Principal</div>
+          <div class="nav-item active" data-tab="overview"><span class="ico">📊</span> Centro de Control</div>
+          <div class="nav-item" data-tab="branding"><span class="ico">🎨</span> Marca y Diseño</div>
+
+          <div class="nav-group-title">Inteligencia y Soporte</div>
+          <div class="nav-item" data-tab="ai"><span class="ico">🧠</span> Consultas IA</div>
+          <div class="nav-item" data-tab="tickets"><span class="ico">🎫</span> Asistente Tickets</div>
+          <div class="nav-item" data-tab="locucion"><span class="ico">🎙️</span> Locución por Voz</div>
+
+          <div class="nav-group-title">Comunidad y Moderación</div>
+          <div class="nav-item" data-tab="streamers"><span class="ico">🟣</span> Streamers y Directos</div>
+          <div class="nav-item" data-tab="eventos"><span class="ico">🎉</span> Eventos y Sanciones</div>
+          <div class="nav-item" data-tab="valoraciones"><span class="ico">⭐</span> Valoraciones y Staff</div>
+          <div class="nav-item" data-tab="whitelist"><span class="ico">📋</span> Whitelist y FiveM</div>
+        </nav>
+
+        <div style="padding-top:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px;">
+          <div class="user-chip" id="userChipDash"></div>
+          <button class="btn btn-ghost btn-sm" style="width:100%;" onclick="logout()">🚪 Cerrar sesión</button>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <div id="tabContent"></div>
+      </main>
+    </section>
+  </div>
+
+  <!-- Barra flotante de guardar cambios -->
+  <div class="save-bar" id="saveBar">
+    <span style="font-size:0.9rem;font-weight:600;">⚡ Tienes cambios sin guardar</span>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="discardChanges()">Descartar</button>
+      <button class="btn btn-primary btn-sm" onclick="saveConfig()">💾 Guardar Cambios</button>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      status: null,
+      me: null,
+      guildId: null,
+      meta: null,
+      config: {},
+      originalConfig: {},
+      activeTab: 'overview',
+      dirty: false
+    };
+
+    // Mouse spotlight suave
+    const glow = document.getElementById('mouseGlow');
+    window.addEventListener('mousemove', (e) => {
+      glow.style.left = e.clientX + 'px';
+      glow.style.top = e.clientY + 'px';
+    });
+
+    function toast(msg, isErr = false) {
+      const wrap = document.getElementById('toastWrap');
+      const el = document.createElement('div');
+      el.className = 'toast' + (isErr ? ' err' : '');
+      el.textContent = msg;
+      wrap.appendChild(el);
+      setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3400);
+    }
+
+    function formatTokens(n) {
+      if (!n) return '0';
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+      return n.toLocaleString('es-ES');
+    }
+
+    function setDirty(flag) {
+      state.dirty = flag;
+      document.getElementById('saveBar').classList.toggle('visible', flag);
+    }
+
+    function updateField(key, val) {
+      state.config[key] = val;
+      if (key === 'BRAND_COLOR') {
+        document.documentElement.style.setProperty('--accent', val);
+        const prev = document.getElementById('liveEmbedPreview');
+        if (prev) prev.style.borderLeftColor = val;
+      }
+      if (key === 'BRAND_NAME') {
+        const el = document.getElementById('liveBrandTitle');
+        if (el) el.textContent = `PANEL OFICIAL | ${val || 'TU SERVIDOR RP'}`;
+      }
+      setDirty(true);
+    }
+
+    function discardChanges() {
+      state.config = JSON.parse(JSON.stringify(state.originalConfig));
+      setDirty(false);
+      renderTab();
+      toast('Cambios descartados');
+    }
+
+    async function saveConfig() {
+      try {
+        const res = await fetch(`/api/guild/${state.guildId}/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: state.config })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error guardando');
+        state.originalConfig = JSON.parse(JSON.stringify(state.config));
+        setDirty(false);
+        toast('✅ Configuración guardada y aplicada en vivo');
+      } catch (e) {
+        toast('❌ ' + e.message, true);
+      }
+    }
+
+    async function publishPanel(panelType, channelKey) {
+      const channelId = state.config[channelKey];
+      if (!channelId) {
+        toast('⚠️ Selecciona primero un canal para publicar este panel', true);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/guild/${state.guildId}/publish-panel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ panelType, channelId })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'No se pudo publicar');
+        toast('🚀 ' + (data.message || 'Panel publicado en Discord'));
+      } catch (e) {
+        toast('❌ ' + e.message, true);
+      }
+    }
+
+    function channelSelect(key, label, list = 'textChannels') {
+      const items = (state.meta && state.meta[list]) || [];
+      const cur = state.config[key] || '';
+      const opts = [`<option value="">— Sin configurar —</option>`]
+        .concat(items.map(c => `<option value="${c.id}" ${c.id === cur ? 'selected' : ''}>${list === 'voiceChannels' ? '🔊 ' : '#'}${c.name}</option>`))
+        .join('');
+      return `
+        <div class="field">
+          <label><span>${label}</span></label>
+          <select onchange="updateField('${key}', this.value)">${opts}</select>
+        </div>
+      `;
+    }
+
+    function roleSelect(key, label) {
+      const items = (state.meta && state.meta.roles) || [];
+      const cur = state.config[key] || '';
+      const opts = [`<option value="">— Sin rol asignado —</option>`]
+        .concat(items.map(r => `<option value="${r.id}" ${r.id === cur ? 'selected' : ''}>@${r.name}</option>`))
+        .join('');
+      return `
+        <div class="field">
+          <label><span>${label}</span></label>
+          <select onchange="updateField('${key}', this.value)">${opts}</select>
+        </div>
+      `;
+    }
+
+    function toggleField(key, title, desc) {
+      const checked = Boolean(state.config[key]);
+      return `
+        <div class="toggle-row">
+          <div class="t-info">
+            <strong>${title}</strong>
+            <span>${desc}</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" ${checked ? 'checked' : ''} onchange="updateField('${key}', this.checked)" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      `;
+    }
+
+    function renderTab() {
+      const c = state.config;
+      const st = state.status || {};
+      const container = document.getElementById('tabContent');
+
+      if (state.activeTab === 'overview') {
+        container.innerHTML = `
+          <div class="tab-pane">
+            <div class="page-header">
+              <div>
+                <h2>📊 Centro de Control en Vivo</h2>
+                <p>Resumen en tiempo real de <strong>${state.meta?.guild?.name || 'tu servidor'}</strong> y accesos rápidos de despliegue.</p>
+              </div>
+              <span class="badge badge-live"><span class="pulse-dot"></span> Todos los sistemas operativos</span>
+            </div>
+
+            <div class="kpi-grid">
+              <div class="glass glass-hover kpi-card">
+                <div class="kpi-top"><span>Latencia Bot</span><span>📡</span></div>
+                <div class="kpi-num">${st.ping || 18} ms</div>
+                <div class="kpi-sub">Conexión estable 24/7</div>
+              </div>
+              <div class="glass glass-hover kpi-card">
+                <div class="kpi-top"><span>Miembros</span><span>👥</span></div>
+                <div class="kpi-num">${(state.meta?.guild?.memberCount || 0).toLocaleString('es-ES')}</div>
+                <div class="kpi-sub">Ciudadanos en este servidor</div>
+              </div>
+              <div class="glass glass-hover kpi-card">
+                <div class="kpi-top"><span>Capacidad IA</span><span>⚡</span></div>
+                <div class="kpi-num">${formatTokens(st.aiDailyTokens || 7800000)}</div>
+                <div class="kpi-sub">${st.aiKeysCount || 13} núcleos activos en respaldo</div>
+              </div>
+              <div class="glass glass-hover kpi-card">
+                <div class="kpi-top"><span>Módulos Activos</span><span>🧩</span></div>
+                <div class="kpi-num">12 / 12</div>
+                <div class="kpi-sub">100% personalizables</div>
+              </div>
+            </div>
+
+            <div class="section-grid">
+              <div class="glass panel-card">
+                <div class="panel-card-head">
+                  <h3>🚀 Publicación Rápida de Paneles</h3>
+                  <span class="badge badge-cyan">1 Clic</span>
+                </div>
+                <p style="font-size:0.86rem;color:var(--muted);">Envía cualquier panel oficial directamente a su canal configurado en Discord sin escribir comandos.</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                  <button class="btn btn-ghost btn-sm" onclick="publishPanel('consultas','CHANNEL_CONSULTAS_USERS_ID')">🧠 Panel Consultas</button>
+                  <button class="btn btn-ghost btn-sm" onclick="publishPanel('streamers','CHANNEL_STREAM_PANEL_ID')">🟣 Panel Directos</button>
+                  <button class="btn btn-ghost btn-sm" onclick="publishPanel('eventos','CHANNEL_EVENTOS_PANEL_ID')">🎉 Panel Eventos</button>
+                  <button class="btn btn-ghost btn-sm" onclick="publishPanel('valoraciones','CHANNEL_VALORACION_PANEL_ID')">⭐ Panel Valoración</button>
+                  <button class="btn btn-ghost btn-sm" onclick="publishPanel('sanciones','CHANNEL_SANCIONES_PANEL_ID')">⚖️ Panel Sanciones</button>
+                  <button class="btn btn-ghost btn-sm" onclick="publishPanel('plantillas','CHANNEL_TICKETS_ID')">📑 Panel Plantillas</button>
+                </div>
+              </div>
+
+              <div class="glass panel-card">
+                <div class="panel-card-head">
+                  <h3>⚡ Salud Multi-Núcleo de IA</h3>
+                  <span class="badge badge-live">Óptimo</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
+                  <span>Capacidad diaria disponible</span>
+                  <strong style="color:var(--success);">98.4%</strong>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" style="width:98.4%;"></div></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px;">
+                  ${toggleField('AI_ENABLED', 'Consultas IA', 'Respuestas automáticas')}
+                  ${toggleField('TICKETS_AI_ENABLED', 'Tickets IA', 'Triaje previo al Staff')}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      if (state.activeTab === 'branding') {
+        const brandName = c.BRAND_NAME || 'TU SERVIDOR RP';
+        const brandColor = c.BRAND_COLOR || '#D900FF';
+        container.innerHTML = `
+          <div class="tab-pane">
+            <div class="page-header">
+              <div>
+                <h2>🎨 Personalización de Marca (White-Label)</h2>
+                <p>Adapta el nombre, color neón y prefijo del bot a la identidad exacta de tu servidor.</p>
+              </div>
+            </div>
+            <div class="section-grid">
+              <div class="glass panel-card">
+                <div class="panel-card-head"><h3>✨ Identidad Visual</h3></div>
+                <div class="field">
+                  <label>Nombre Oficial del Servidor</label>
+                  <input type="text" value="${brandName}" oninput="updateField('BRAND_NAME', this.value)" placeholder="Ej: TU SERVIDOR RP" />
+                </div>
+                <div class="field">
+                  <label>Color Principal de Embeds (HEX)</label>
+                  <div style="display:flex;gap:10px;align-items:center;">
+                    <input type="color" value="${brandColor}" oninput="updateField('BRAND_COLOR', this.value)" style="width:54px;height:42px;border:none;border-radius:10px;background:none;cursor:pointer;" />
+                    <input type="text" value="${brandColor}" oninput="updateField('BRAND_COLOR', this.value)" style="font-family:'JetBrains Mono',monospace;" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Prefijo de Comandos</label>
+                  <input type="text" value="${c.PREFIX || '!'}" oninput="updateField('PREFIX', this.value)" />
+                </div>
+              </div>
+
+              <div class="glass panel-card">
+                <div class="panel-card-head"><h3>👁️ Vista Previa en Vivo (Discord)</h3></div>
+                <div class="discord-embed-preview" id="liveEmbedPreview" style="border-left-color:${brandColor};">
+                  <div class="emb-author" id="liveBrandTitle">PANEL OFICIAL | ${brandName}</div>
+                  <div class="emb-title">✨ Bienvenido al Sistema Inteligente</div>
+                  <div style="color:#dbdee1;">Todos los paneles, bienvenidas, eventos, valoraciones y consultas adoptarán automáticamente tu marca y color oficial.</div>
+                  <div class="emb-footer">${brandName} • Sistema Automatizado 24/7</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      if (state.activeTab === 'ai') {
+        container.innerHTML = `
+          <div class="tab-pane">
+            <div class="page-header">
+              <div>
+                <h2>🧠 Consultas de Normativa con IA</h2>
+                <p>Configura los canales de Staff, Usuarios y el registro privado de Logs.</p>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="publishPanel('consultas','CHANNEL_CONSULTAS_USERS_ID')">🚀 Publicar Panel de Consultas</button>
+            </div>
+            <div class="section-grid">
+              <div class="glass panel-card">
+                <div class="panel-card-head"><h3>📡 Canales de Consultas</h3></div>
+                ${channelSelect('CHANNEL_CONSULTAS_STAFF_ID', '🛡️ Canal Consultas Staff')}
+                ${channelSelect('CHANNEL_CONSULTAS_USERS_ID', '👥 Canal Consultas Usuarios')}
+                ${channelSelect('CHANNEL_CONSULTAS_LOGS_ID', '📜 Canal Privado de Logs (0 tokens)')}
+              </div>
+              <div class="glass panel-card">
+                <div class="panel-card-head"><h3>⚙️ Comportamiento Inteligente</h3></div>
+                ${toggleField('AI_ENABLED', 'Activar Consultas IA 24/7', 'Responde hablando normalmente sin comandos')}
+                <div class="field">
+                  <label><span>Auto-limpieza de mensajes (segundos)</span><span>${c.AI_AUTOCLEAN_SECONDS || 90}s</span></label>
+                  <input type="number" min="30" max="600" value="${c.AI_AUTOCLEAN_SECONDS || 90}" oninput="updateField('AI_AUTOCLEAN_SECONDS', Number(this.value))" />
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      if (state.activeTab === 'tickets') {
+        container.innerHTML = `
+          <div class="tab-pane">
+            <div class="page-header">
+              <div>
+                <h2>🎫 Asistente Virtual de Tickets</h2>
+                <p>Triaje inteligente previo al Staff con resumen estructurado y silencio automático.</p>
+              </div>
+            </div>
+            <div class="section-grid">
+              <div class="glass panel-card">
+                <div class="panel-card-head"><h3>🤖 Configuración del Asistente</h3></div>
+                ${toggleField('TICKETS_AI_ENABLED', 'Activar Asistente en Tickets', 'Recopila motivo y pruebas antes de llamar al Staff')}
+                ${channelSelect('CHANNEL_TICKETS_ID', '🎫 Canal Principal de Tickets')}
+                ${roleSelect('ROLE_STAFF_ID', '🛡️ Rol de Staff a mencionar en resúmenes')}
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      if (state.activeTab === 'locucion') {
+        container.innerHTML = `
+          <div class="tab-pane">
+            <div class="page-header">
+              <div>
+                <h2>🎙️ Locución y Soporte por Voz</h2>
+                <p>Bienvenida automática por voz en espera y avisos escalados a tus salas de Staff.</p>
+              </div>
+            </div>
+            <div class="section-grid">
+              <div class="glass panel-card">
+                <div class="panel-card-head"><h3>🔊 Canales de Voz</h3></div>
+                ${toggleField('LOCUCION_ENABLED', 'Sistema de Locución Activo', 'Detecta usuarios en espera y avisa al Staff por voz')}
+                ${channelSelect('VOICE_ESPERA_ID', '⏳ Canal de Espera de Soporte', 'voiceChannels')}
+                ${channelSelect('VOICE_CHARLA_ID', '💬 Sala de Charla Staff', 'voiceChannels')}
+                <div class="field">
+                  <label>Intervalo entre avisos (segundos)</label>
+                  <input type="number" min="15" max="180" value="${c.LOCUCION_INTERVAL_SEC || 30}" oninput="updateField('LOCUCION_INTERVAL_SEC', Number(this.value))" />
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      if (state.activeTab === 'streamers') {
+        container.innerHTML = `
+          <div class="tab-pane">
+            <div class="page-header">
+              <div>
+                <h2>🟣 Streamers y Directos en Vivo</h2>
+                <p>Panel interactivo y alertas personalizadas para Twitch, Kick y TikTok LIVE.</p>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="publishPanel('streamers','CHANNEL_STREAM_PANEL_ID')">🚀 Publicar Panel de Directos</button>
+            </div>
+            <div class="section-grid">
+              <div class="glass panel-card">
+                <div class="panel-card-head"><h3>📺 Canales y Rol</h3></div>
+                ${channelSelect('CHANNEL_STREAM_PANEL_ID', '🎛️ Canal del Panel de Botones')}
+                ${channelSelect('CHANNEL_STREAMERS_ID', '🔴 Canal de Publicación de Directos')}
+                ${roleSelect('ROLE_STREAMER_ID', '🟣 Rol Oficial de Streamer')}
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      if (state.activeTab === 'eventos') {
+        container.innerHTML = `
+          <div class="tab-pane">
+            <div class="page-header">
+              <div>
+                <h2>🎉 Eventos Oficiales y Sanciones</h2>
+                <p>Paneles interactivos con formularios inteligentes y publicación automatizada.</p>
+              </div>
+            </div>
+            <div class="section-grid">
+              <div class="glass panel-card">
+                <div class="panel-card-head">
+                  <h3>🎉 Sistema de Eventos</h3>
+                  <button class="btn btn-ghost btn-sm" onclick="publishPanel('eventos','CHANNEL_EVENTOS_PANEL_ID')">Publicar Panel</button>
+                </div>
+                ${channelSelect('CHANNEL_EVENTOS_PANEL_ID', '🎛️ Canal Panel Staff de Eventos')}
+                ${channelSelect('CHANNEL_EVENTOS_ID', '🔥 Canal Oficial de Eventos #1')}
+                ${channelSelect('CHANNEL_EVENTOS_2_ID', '📢 Canal Oficial de Eventos #2')}
+              </div>
+
+              <div class="glass panel-card">
+                <div class="panel-card-head">
+                  <h3>⚖️ Sistema de Sanciones</h3>
+                  <button class="btn btn-ghost btn-sm" onclick="publishPanel('sanciones','CHANNEL_SANCIONES_PANEL_ID')">Publicar Panel</button>
+                </div>
+                ${channelSelect('CHANNEL_SANCIONES_PANEL_ID', '🚨 Canal Panel de Registro')}
+                ${channelSelect('CHANNEL_SANCIONES_ID', '📂 Canal de Actas y Expedientes')}
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      if (state.activeTab === 'valoraciones') {
+        container.innerHTML = `
+          <div class="tab-pane">
+            <div class="page-header">
+              <div>
+                <h2>⭐ Valoraciones, Top Staff y Ascensos</h2>
+                <p>Calificación ciudadana en tiempo real y detección automática de ascensos y descensos.</p>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="publishPanel('valoraciones','CHANNEL_VALORACION_PANEL_ID')">🚀 Publicar Panel Valoraciones</button>
+            </div>
+            <div class="section-grid">
+              <div class="glass panel-card">
+                <div class="panel-card-head"><h3>⭐ Valoraciones y Top Staff</h3></div>
+                ${channelSelect('CHANNEL_VALORACION_PANEL_ID', '🎛️ Canal del Panel y Ranking Top')}
+                ${channelSelect('CHANNEL_VALORACIONES_ID', '🏆 Canal de Publicación de Reseñas')}
+                ${toggleField('ASCENSOS_ENABLED', 'Ascensos y Descensos Automáticos', 'Detecta cambios de rango Staff y publica anuncios agrupados')}
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      if (state.activeTab === 'whitelist') {
+        container.innerHTML = `
+          <div class="tab-pane">
+            <div class="page-header">
+              <div>
+                <h2>📋 Whitelist, Bienvenidas y FiveM</h2>
+                <p>Auditoría Anti-IA, anuncios Aprobada/Denegada, bienvenidas con banner y estado FiveM.</p>
+              </div>
+            </div>
+            <div class="section-grid">
+              <div class="glass panel-card">
+                <div class="panel-card-head"><h3>📋 Whitelist y Anti-IA</h3></div>
+                ${toggleField('ANTI_IA_WL_ENABLED', 'Auditoría Anti-IA Multicapa', 'Analiza solicitudes para detectar textos generados')}
+                ${channelSelect('CHANNEL_SOLICITUDES_ID', '📝 Canal de Solicitudes')}
+                ${channelSelect('CHANNEL_APROBADOS_ID', '✅ Canal Whitelist Aprobadas')}
+                ${channelSelect('CHANNEL_DENEGADOS_ID', '❌ Canal Whitelist Denegadas')}
+              </div>
+              <div class="glass panel-card">
+                <div class="panel-card-head"><h3>👋 Bienvenidas y FiveM</h3></div>
+                ${channelSelect('CHANNEL_BIENVENIDAS_ID', '👋 Canal de Bienvenidas')}
+                ${channelSelect('CHANNEL_NORMATIVAS_ID', '📖 Canal de Normativas')}
+                ${channelSelect('CHANNEL_GENERAL_ID', '💬 Canal General')}
+                <div class="field">
+                  <label>Código CFX de tu servidor FiveM</label>
+                  <input type="text" value="${c.FIVEM_CFX_CODE || ''}" oninput="updateField('FIVEM_CFX_CODE', this.value)" placeholder="Ej: abc123" />
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function renderUserChips() {
+      if (!state.me?.user) return;
+      const u = state.me.user;
+      const avatarHtml = u.avatarUrl
+        ? `<img src="${u.avatarUrl}" alt="avatar" />`
+        : `<div class="avatar-fallback">${(u.username || 'U')[0].toUpperCase()}</div>`;
+      const html = `${avatarHtml}<span style="font-size:0.86rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${u.global_name || u.username}</span>`;
+      document.getElementById('userChipServers').innerHTML = html;
+      document.getElementById('userChipDash').innerHTML = html;
+    }
+
+    function showView(id) {
+      ['viewLanding', 'viewServers', 'viewDashboard'].forEach(v => {
+        document.getElementById(v).classList.toggle('hidden', v !== id);
+      });
+    }
+
+    function showServerSelector() {
+      setDirty(false);
+      renderUserChips();
+      document.getElementById('demoModeBadge').style.display = state.me?.isDemo ? 'inline-flex' : 'none';
+
+      const grid = document.getElementById('serversGrid');
+      const guilds = state.me?.guilds || [];
+      if (guilds.length === 0) {
+        grid.innerHTML = `<div class="glass" style="padding:32px;grid-column:1/-1;text-align:center;color:var(--muted);">No se encontraron servidores con permisos de Administrador en tu cuenta.</div>`;
+      } else {
+        grid.innerHTML = guilds.map(g => `
+          <div class="glass glass-hover server-card">
+            <div class="server-head">
+              <div class="server-icon">${g.iconUrl ? `<img src="${g.iconUrl}" />` : g.initials}</div>
+              <div class="server-meta">
+                <h3>${g.name}</h3>
+                <p>${g.hasBot ? `👥 ${g.memberCount.toLocaleString('es-ES')} miembros` : 'Bot aún no instalado'}</p>
+              </div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;">
+              ${g.hasBot
+                ? `<span class="badge badge-live"><span class="pulse-dot"></span> Bot Activo</span>
+                   <button class="btn btn-primary btn-sm" onclick="openGuild('${g.id}')">⚙️ Configurar</button>`
+                : `<span class="badge badge-purple">Pendiente</span>
+                   <a class="btn btn-ghost btn-sm" href="${g.inviteUrl || '#'}" target="_blank">➕ Invitar Bot</a>`
+              }
+            </div>
+          </div>
+        `).join('');
+      }
+      showView('viewServers');
+    }
+
+    async function openGuild(guildId) {
+      state.guildId = guildId;
+      state.activeTab = 'overview';
+      try {
+        const [metaRes, cfgRes] = await Promise.all([
+          fetch(`/api/guild/${guildId}/meta`),
+          fetch(`/api/guild/${guildId}/config`)
+        ]);
+        state.meta = await metaRes.json();
+        const cfgData = await cfgRes.json();
+        state.config = cfgData.config || {};
+        state.originalConfig = JSON.parse(JSON.stringify(state.config));
+
+        if (state.config.BRAND_COLOR) {
+          document.documentElement.style.setProperty('--accent', state.config.BRAND_COLOR);
+        }
+
+        const g = state.meta.guild || {};
+        document.getElementById('sbGuildName').textContent = g.name || 'Servidor';
+        document.getElementById('sbGuildMembers').textContent = `${(g.memberCount || 0).toLocaleString('es-ES')} miembros • Cambiar ⇄`;
+        document.getElementById('sbGuildIcon').innerHTML = g.iconUrl
+          ? `<img src="${g.iconUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:11px;" />`
+          : (g.name || 'SV').slice(0, 2).toUpperCase();
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          el.classList.toggle('active', el.dataset.tab === 'overview');
+        });
+
+        setDirty(false);
+        showView('viewDashboard');
+        renderTab();
+      } catch (e) {
+        toast('❌ Error cargando el servidor', true);
+      }
+    }
+
+    async function logout() {
+      await fetch('/auth/logout', { method: 'POST' });
+      state.me = null;
+      setDirty(false);
+      showView('viewLanding');
+      toast('Sesión cerrada');
+    }
+
+    // Navegación sidebar
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+        item.classList.add('active');
+        state.activeTab = item.dataset.tab;
+        renderTab();
+      });
+    });
+
+    // Botón Modo Demo Interactivo
+    document.getElementById('btnDemoLogin').addEventListener('click', async () => {
+      await fetch('/api/demo-login', { method: 'POST' });
+      const meRes = await fetch('/api/me');
+      state.me = await meRes.json();
+      showServerSelector();
+      toast('✨ Modo Vista Previa activado');
+    });
+
+    // Inicialización al cargar
+    async function boot() {
+      try {
+        const [stRes, meRes] = await Promise.all([fetch('/api/status'), fetch('/api/me')]);
+        state.status = await stRes.json();
+        state.me = await meRes.json();
+
+        document.getElementById('stStatus').textContent = state.status.online ? 'ONLINE' : 'STANDBY';
+        document.getElementById('stPing').textContent = `${state.status.ping || 15} ms`;
+        document.getElementById('stTokens').textContent = formatTokens(state.status.aiDailyTokens || 7800000);
+        document.getElementById('stGuilds').textContent = state.status.guildsCount || 1;
+        if (state.status.inviteUrl) {
+          document.getElementById('btnInviteTop').href = state.status.inviteUrl;
+        }
+
+        const params = new URLSearchParams(location.search);
+        if (params.get('oauth_missing')) {
+          toast('ℹ️ Añade DISCORD_CLIENT_SECRET en Railway para OAuth2 real (o prueba la Vista Previa)', true);
+        }
+
+        if (state.me?.authenticated) {
+          showServerSelector();
+        } else {
+          showView('viewLanding');
+        }
+      } catch (e) {
+        showView('viewLanding');
+      }
+    }
+    boot();
+  </script>
+</body>
+</html>

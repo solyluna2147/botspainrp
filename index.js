@@ -84,9 +84,7 @@ const PORT = process.env.PORT || 3000;
 // Servir la carpeta assets como imágenes públicas vía URL directa (CDN Web Propio)
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
-app.get('/', (req, res) => {
-    res.status(200).send('🤖 Bot de Whitelist VALLECAS RP activo y funcionando 24/7 en Render.');
-});
+// La ruta raíz "/" y "/dashboard" son gestionadas por dashboardServer.js (Web Dashboard Prémium)
 
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'OK', uptime: process.uptime() });
@@ -10427,6 +10425,40 @@ async function startBot() {
         initDmAssistant(client);
     } catch (dmErr) {
         console.error('⚠️ [DM ASSISTANT ERROR]:', dmErr.message);
+    }
+
+    // Sistema independiente de Web Dashboard Prémium (OAuth2 + Selector de Servidores + Configuración en Vivo)
+    try {
+        const initDashboardServer = require('./dashboardServer');
+        initDashboardServer(app, client, {
+            getBotConfig: () => botConfig,
+            updateBotConfig: (k, v) => updateConfig(k, v),
+            publishPanel: async (panelType, channel) => {
+                if (panelType === 'streamers') {
+                    await channel.send({ embeds: [buildStreamPanelEmbed()], components: [buildStreamPanelRow()] });
+                    return `Panel de Directos publicado en #${channel.name}`;
+                }
+                if (panelType === 'eventos') {
+                    await channel.send({ embeds: [buildEventosPanelEmbed()], components: [buildEventosPanelRow()] });
+                    return `Panel de Eventos publicado en #${channel.name}`;
+                }
+                if (panelType === 'valoraciones') {
+                    await channel.send({ embeds: [buildStaffRatingPanelEmbed()], components: [buildStaffRatingPanelRow()] });
+                    return `Panel de Valoraciones publicado en #${channel.name}`;
+                }
+                if (panelType === 'sanciones') {
+                    await channel.send({ embeds: [buildSancionesPanelEmbed()], components: [buildSancionesPanelRow()] });
+                    return `Panel de Sanciones publicado en #${channel.name}`;
+                }
+                if (panelType === 'plantillas') {
+                    await channel.send({ embeds: [buildPlantillasPanelEmbed()], components: [buildPlantillasPanelRow()] });
+                    return `Panel de Plantillas publicado en #${channel.name}`;
+                }
+                return `Panel "${panelType}" listo para #${channel.name}`;
+            }
+        });
+    } catch (webErr) {
+        console.error('⚠️ [DASHBOARD WEB ERROR]:', webErr.message);
     }
 }
 
