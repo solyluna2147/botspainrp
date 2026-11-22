@@ -1,32 +1,30 @@
 // ==========================================
-// MÓDULO INDEPENDIENTE: WEB DASHBOARD PRÉMIUM (OAUTH2 + CONFIGURACIÓN EN VIVO)
+// MÓDULO INDEPENDIENTE: WEB DASHBOARD PRÉMIUM COMPLETO (OAUTH2 + DATOS EN VIVO)
 // ==========================================
-// Zero dependencias externas adicionales (usa express existente + Node crypto + fetch nativo).
-// Variables de entorno opcionales para OAuth2 real en Railway:
-//   DISCORD_CLIENT_ID     (si no se pone, se autodetecta de client.user.id)
-//   DISCORD_CLIENT_SECRET (secreto OAuth2 del Discord Developer Portal)
-//   DASHBOARD_URL         (ej: https://tu-app.up.railway.app — si no se pone, se autodetecta)
-//   DASHBOARD_SECRET      (secreto para firmar sesiones — si no se pone, se genera automático)
-
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
+const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 
 const GUILD_CONFIGS_FILE = path.join(__dirname, 'guild_configs.json');
 const SESSION_COOKIE = 'vyre_dash_session';
 const SESSION_SECRET = process.env.DASHBOARD_SECRET || crypto.createHash('sha256').update((process.env.DISCORD_TOKEN || 'dash_secret_key') + '_vyre_dash').digest('hex');
 
-// Sesiones en memoria: sessionId -> { user, guilds, isDemo, createdAt }
 const sessions = new Map();
 
-function readGuildConfigs() {
+function safeReadJson(filename, fallback) {
     try {
-        if (fs.existsSync(GUILD_CONFIGS_FILE)) {
-            return JSON.parse(fs.readFileSync(GUILD_CONFIGS_FILE, 'utf8'));
+        const p = path.join(__dirname, filename);
+        if (fs.existsSync(p)) {
+            return JSON.parse(fs.readFileSync(p, 'utf8'));
         }
     } catch (e) { }
-    return {};
+    return fallback;
+}
+
+function readGuildConfigs() {
+    return safeReadJson('guild_configs.json', {});
 }
 
 function saveGuildConfigs(allConfigs) {
@@ -81,36 +79,9 @@ function getConfiguredAiKeyCount() {
 
 function buildDemoGuilds() {
     return [
-        {
-            id: 'demo_guild_1',
-            name: 'TU SERVIDOR RP 🇪🇸',
-            iconUrl: null,
-            initials: 'TS',
-            hasBot: true,
-            memberCount: 1482,
-            onlineCount: 319,
-            isDemo: true
-        },
-        {
-            id: 'demo_guild_2',
-            name: 'MADRID CITY ROLEPLAY',
-            iconUrl: null,
-            initials: 'MC',
-            hasBot: true,
-            memberCount: 846,
-            onlineCount: 174,
-            isDemo: true
-        },
-        {
-            id: 'demo_guild_3',
-            name: 'COMUNIDAD FIVEM DEV',
-            iconUrl: null,
-            initials: 'CF',
-            hasBot: false,
-            memberCount: 215,
-            onlineCount: 48,
-            isDemo: true
-        }
+        { id: 'demo_guild_1', name: 'TU SERVIDOR RP 🇪🇸', iconUrl: null, initials: 'TS', hasBot: true, memberCount: 1482, isDemo: true },
+        { id: 'demo_guild_2', name: 'MADRID CITY ROLEPLAY', iconUrl: null, initials: 'MC', hasBot: true, memberCount: 846, isDemo: true },
+        { id: 'demo_guild_3', name: 'COMUNIDAD FIVEM DEV', iconUrl: null, initials: 'CF', hasBot: false, memberCount: 215, isDemo: true }
     ];
 }
 
@@ -148,63 +119,152 @@ function buildDemoMeta(guildId) {
             { id: 'vc_espera', name: '⏳┃Espera de Soporte' },
             { id: 'vc_soporte_1', name: '🛡️┃Sala Soporte 1' },
             { id: 'vc_soporte_2', name: '🛡️┃Sala Soporte 2' },
-            { id: 'vc_charla', name: '💬┃Sala de Charla Staff' },
-            { id: 'vc_afk', name: '💤┃AFK Staff' }
+            { id: 'vc_charla', name: '💬┃Sala de Charla Staff' }
         ],
         roles: [
             { id: 'role_admin', name: '⚡┃Administrador', color: '#D900FF' },
             { id: 'role_mod', name: '🔰┃Moderador', color: '#00F0FF' },
             { id: 'role_soporte', name: '🔎┃Soporte', color: '#2ECC71' },
-            { id: 'role_streamer', name: '🟣┃Streamer Oficial', color: '#9146FF' },
-            { id: 'role_ciudadano', name: '🏙️┃Ciudadano WL', color: '#F1C40F' }
+            { id: 'role_streamer', name: '🟣┃Streamer Oficial', color: '#9146FF' }
         ]
     };
+}
+
+function buildDemoFullData() {
+    return {
+        stats: {
+            ramMb: 112,
+            uptimeSeconds: 124560,
+            ping: 18,
+            textChannelsCount: 20,
+            voiceChannelsCount: 4,
+            rolesCount: 16,
+            onlineMembers: 318,
+            openTicketsCount: 3,
+            aiKeysCount: Math.max(getConfiguredAiKeyCount(), 13),
+            aiDailyTokens: Math.max(getConfiguredAiKeyCount(), 13) * 600000
+        },
+        topStaff: [
+            { id: '1', name: '(Tag Staff 1)', average: 9.9, totalRatings: 42 },
+            { id: '2', name: '(Tag Staff 2)', average: 9.6, totalRatings: 31 },
+            { id: '3', name: '(Tag Staff 3)', average: 9.4, totalRatings: 24 },
+            { id: '4', name: '(Tag Staff 4)', average: 9.1, totalRatings: 18 }
+        ],
+        recentRatings: [
+            { staffName: '(Tag Staff 1)', userName: '(Tag Usuario)', rating: 10, comment: 'Atención rapidísima y súper amable en soporte.', timestamp: new Date().toISOString() },
+            { staffName: '(Tag Staff 2)', userName: '(Tag Usuario)', rating: 9, comment: 'Resolvió mi ticket de apelación en 2 minutos.', timestamp: new Date().toISOString() }
+        ],
+        sanciones: [
+            { id: '4821', targetTag: '(Tag Usuario)', reporterTag: '(Tag Staff 1)', punishment: 'Ban temporal — 3 días', reason: 'Combat Logging (desconexión en rol activo).', timestamp: new Date().toISOString() },
+            { id: '4820', targetTag: '(Tag Usuario 2)', reporterTag: '(Tag Staff 2)', punishment: '1 Warn Oficial', reason: 'Incumplimiento de zona segura.', timestamp: new Date().toISOString() }
+        ],
+        eventos: [
+            { id: '901', title: 'GRAN TORNEO DE DRIFT NOCTURNO', hora: '22:30 (España)', lugar: 'Puerto Industrial', organiza: 'Administración', description: 'Premio de 250.000$ IC + vehículo exclusivo.', timestamp: new Date().toISOString() }
+        ],
+        streamers: [
+            { userId: '1', name: '(Tag Streamer 1)', twitchUrl: 'https://twitch.tv/ejemplo1', kickUrl: '', tiktokUrl: '', title: 'Rol serio en TU SERVIDOR RP 🔥' },
+            { userId: '2', name: '(Tag Streamer 2)', twitchUrl: '', kickUrl: 'https://kick.com/ejemplo2', tiktokUrl: '', title: 'Directo nocturno en la ciudad' }
+        ],
+        openTickets: [
+            { id: 't1', name: 'ticket-soporte-0412', category: 'Soporte General' },
+            { id: 't2', name: 'apelacion-ban-0192', category: 'Apelaciones' },
+            { id: 't3', name: 'donacion-vip-0084', category: 'Donaciones' }
+        ],
+        voiceActive: [
+            { channelName: '⏳┃Espera de Soporte', members: ['(Tag Usuario)'] },
+            { channelName: '🛡️┃Sala Soporte 1', members: ['(Tag Staff 1)', '(Tag Staff 2)'] }
+        ],
+        audios: [
+            { label: 'Aviso Staff 1 (Espera)', ok: true },
+            { label: 'Aviso Staff 2 (Recordatorio)', ok: true },
+            { label: 'Locución Usuarios (Bienvenida)', ok: true },
+            { label: 'Aviso 3 (Sanción Staff)', ok: true },
+            { label: 'Locución Sala de Charla', ok: true }
+        ],
+        plantillas: [
+            { key: 'negocio', nombre: 'Postulación Negocio', emoji: '💼' },
+            { key: 'mafia', nombre: 'Postulación Mafia', emoji: '💀' },
+            { key: 'banda', nombre: 'Postulación Banda', emoji: '🏴‍☠️' },
+            { key: 'staff', nombre: 'Postulación Staff', emoji: '🛡️' },
+            { key: 'streamer', nombre: 'Postulación Streamer', emoji: '🎥' }
+        ]
+    };
+}
+
+const SAFE_CONFIG_KEYS = [
+    'BRAND_NAME', 'BRAND_COLOR', 'PREFIX', 'FIVEM_CFX_CODE',
+    'AI_ENABLED', 'AI_AUTOCLEAN_SECONDS', 'TICKETS_AI_ENABLED',
+    'LOCUCION_ENABLED', 'LOCUCION_INTERVAL_SEC', 'ANTI_IA_WL_ENABLED', 'ASCENSOS_ENABLED',
+    'CHANNEL_CONSULTAS_STAFF_ID', 'CHANNEL_CONSULTAS_USERS_ID', 'CHANNEL_CONSULTAS_LOGS_ID',
+    'CHANNEL_STREAM_PANEL_ID', 'CHANNEL_STREAMERS_ID',
+    'CHANNEL_EVENTOS_PANEL_ID', 'CHANNEL_EVENTOS_ID', 'CHANNEL_EVENTOS_2_ID',
+    'CHANNEL_SANCIONES_PANEL_ID', 'CHANNEL_SANCIONES_ID',
+    'CHANNEL_VALORACION_PANEL_ID', 'CHANNEL_VALORACIONES_ID',
+    'CHANNEL_SOLICITUDES_ID', 'CHANNEL_APROBADOS_ID', 'CHANNEL_DENEGADOS_ID',
+    'CHANNEL_BIENVENIDAS_ID', 'CHANNEL_NORMATIVAS_ID', 'CHANNEL_GENERAL_ID', 'CHANNEL_TICKETS_ID',
+    'ROLE_STREAMER_ID', 'ROLE_STAFF_ID', 'VOICE_ESPERA_ID', 'VOICE_CHARLA_ID'
+];
+
+function pickSafeConfig(obj = {}) {
+    const out = {};
+    for (const k of SAFE_CONFIG_KEYS) {
+        if (obj[k] !== undefined) out[k] = obj[k];
+    }
+    return out;
+}
+
+function buildCookieHeader(req, value, maxAge = 86400) {
+    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+    return `${SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${isHttps ? '; Secure' : ''}`;
 }
 
 module.exports = function initDashboardServer(app, client, options = {}) {
     const getBotConfig = options.getBotConfig || (() => ({}));
     const updateBotConfig = options.updateBotConfig || (async () => {});
 
-    app.use(express.json({ limit: '2mb' }));
+    app.use(express.json({ limit: '1mb' }));
 
-    // Servir archivos estáticos del Dashboard
+    // Cabeceras de seguridad HTTP estrictas + anti-caché en /api
+    app.use((req, res, next) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-Frame-Options', 'DENY');
+        res.setHeader('Referrer-Policy', 'no-referrer');
+        res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+        if (req.path.startsWith('/api/') || req.path.startsWith('/auth/')) {
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+            res.setHeader('Pragma', 'no-cache');
+        }
+        next();
+    });
+
     const dashboardDir = path.join(__dirname, 'dashboard');
     app.use('/dashboard-static', express.static(dashboardDir));
 
-    // Ruta principal y /dashboard sirven el SPA prémium
     app.get(['/', '/dashboard'], (req, res) => {
         const indexPath = path.join(dashboardDir, 'index.html');
-        if (fs.existsSync(indexPath)) {
-            return res.sendFile(indexPath);
-        }
+        if (fs.existsSync(indexPath)) return res.sendFile(indexPath);
         return res.status(200).send('🚀 Dashboard activo.');
     });
 
-    // Estado global público del bot (para KPIs en vivo)
     app.get('/api/status', (req, res) => {
         const clientId = process.env.DISCORD_CLIENT_ID || client.user?.id || '';
-        const oauthEnabled = Boolean(clientId && process.env.DISCORD_CLIENT_SECRET);
         const totalMembers = client.guilds?.cache?.reduce((acc, g) => acc + (g.memberCount || 0), 0) || 0;
-        const aiKeys = getConfiguredAiKeyCount();
 
+        // Nunca exponer API keys, tokens, proveedores ni secretos al navegador
         res.json({
             online: Boolean(client.isReady && client.isReady()),
-            botName: client.user?.username || 'VYRE AI',
-            botAvatar: client.user?.displayAvatarURL?.({ size: 256 }) || null,
+            botName: client.user?.username || 'VYRE CORE',
             ping: Math.max(0, Math.round(client.ws?.ping || 0)),
             uptimeSeconds: Math.floor(process.uptime()),
             guildsCount: client.guilds?.cache?.size || 0,
             totalMembers,
-            aiKeysCount: aiKeys,
-            aiDailyTokens: aiKeys * 600000,
-            oauthEnabled,
+            aiStatus: 'Óptimo 24/7',
             inviteUrl: clientId
                 ? `https://discord.com/oauth2/authorize?client_id=${clientId}&permissions=8&scope=bot%20applications.commands`
                 : null
         });
     });
 
-    // Iniciar sesión en Modo Demo Interactivo (permite explorar todo el panel incluso sin OAuth2)
     app.post('/api/demo-login', (req, res) => {
         const sid = crypto.randomBytes(24).toString('hex');
         sessions.set(sid, {
@@ -218,17 +278,14 @@ module.exports = function initDashboardServer(app, client, options = {}) {
             },
             guilds: buildDemoGuilds()
         });
-        res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(signSessionId(sid))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
+        res.setHeader('Set-Cookie', buildCookieHeader(req, signSessionId(sid), 86400));
         res.json({ ok: true });
     });
 
-    // Discord OAuth2: Redirección de login
     app.get('/auth/login', (req, res) => {
         const clientId = process.env.DISCORD_CLIENT_ID || client.user?.id;
         const clientSecret = process.env.DISCORD_CLIENT_SECRET;
-        if (!clientId || !clientSecret) {
-            return res.redirect('/?oauth_missing=1');
-        }
+        if (!clientId || !clientSecret) return res.redirect('/?oauth_missing=1');
         const redirectUri = `${getBaseUrl(req)}/auth/callback`;
         const params = new URLSearchParams({
             client_id: clientId,
@@ -239,7 +296,6 @@ module.exports = function initDashboardServer(app, client, options = {}) {
         res.redirect(`https://discord.com/api/oauth2/authorize?${params.toString()}`);
     });
 
-    // Discord OAuth2: Callback
     app.get('/auth/callback', async (req, res) => {
         try {
             const code = req.query.code;
@@ -260,27 +316,19 @@ module.exports = function initDashboardServer(app, client, options = {}) {
                     redirect_uri: redirectUri
                 })
             });
-
-            if (!tokenRes.ok) {
-                return res.redirect('/?auth_error=token_failed');
-            }
+            if (!tokenRes.ok) return res.redirect('/?auth_error=token_failed');
 
             const tokenData = await tokenRes.json();
             const authHeader = { Authorization: `Bearer ${tokenData.access_token}` };
-
             const [userRes, guildsRes] = await Promise.all([
                 fetch('https://discord.com/api/users/@me', { headers: authHeader }),
                 fetch('https://discord.com/api/users/@me/guilds', { headers: authHeader })
             ]);
-
-            if (!userRes.ok || !guildsRes.ok) {
-                return res.redirect('/?auth_error=fetch_failed');
-            }
+            if (!userRes.ok || !guildsRes.ok) return res.redirect('/?auth_error=fetch_failed');
 
             const userData = await userRes.json();
             const rawGuilds = await guildsRes.json();
 
-            // Filtrar servidores donde el usuario tiene permiso de Administrador (0x8) o Gestionar Servidor (0x20)
             const manageable = (Array.isArray(rawGuilds) ? rawGuilds : []).filter(g => {
                 const perms = BigInt(g.permissions || '0');
                 return g.owner || (perms & 0x8n) === 0x8n || (perms & 0x20n) === 0x20n;
@@ -300,7 +348,6 @@ module.exports = function initDashboardServer(app, client, options = {}) {
                 };
             });
 
-            // Ordenar: primero servidores donde YA está el bot
             manageable.sort((a, b) => Number(b.hasBot) - Number(a.hasBot) || b.memberCount - a.memberCount);
 
             const avatarUrl = userData.avatar
@@ -320,7 +367,7 @@ module.exports = function initDashboardServer(app, client, options = {}) {
                 guilds: manageable
             });
 
-            res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(signSessionId(sid))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
+            res.setHeader('Set-Cookie', buildCookieHeader(req, signSessionId(sid), 86400));
             res.redirect('/dashboard');
         } catch (err) {
             console.error('⚠️ [DASHBOARD OAuth Error]:', err.message);
@@ -328,15 +375,13 @@ module.exports = function initDashboardServer(app, client, options = {}) {
         }
     });
 
-    // Cerrar sesión
     app.post('/auth/logout', (req, res) => {
         const sess = verifySessionCookie(req.headers.cookie);
         if (sess) sessions.delete(sess.sid);
-        res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+        res.setHeader('Set-Cookie', buildCookieHeader(req, '', 0));
         res.json({ ok: true });
     });
 
-    // Datos de sesión actual + servidores
     app.get('/api/me', (req, res) => {
         const sess = verifySessionCookie(req.headers.cookie);
         if (!sess) return res.json({ authenticated: false });
@@ -357,44 +402,32 @@ module.exports = function initDashboardServer(app, client, options = {}) {
             return { ...g, inviteUrl: clientId ? `https://discord.com/oauth2/authorize?client_id=${clientId}&permissions=8&scope=bot%20applications.commands` : '#' };
         });
 
-        res.json({
-            authenticated: true,
-            isDemo: Boolean(sess.isDemo),
-            user: sess.user,
-            guilds
-        });
+        res.json({ authenticated: true, isDemo: Boolean(sess.isDemo), user: sess.user, guilds });
     });
 
-    // Middleware de autorización para rutas de servidor
     function requireGuildAccess(req, res, next) {
         const sess = verifySessionCookie(req.headers.cookie);
         if (!sess) return res.status(401).json({ error: 'No autenticado' });
-        const guildId = req.params.id;
-        const allowed = (sess.guilds || []).some(g => g.id === guildId);
+        const allowed = (sess.guilds || []).some(g => g.id === req.params.id);
         if (!allowed) return res.status(403).json({ error: 'Sin permisos en este servidor' });
         req.dashSession = sess;
         next();
     }
 
-    // Metadatos en vivo de un servidor (canales de texto, voz y roles)
     app.get('/api/guild/:id/meta', requireGuildAccess, async (req, res) => {
         const guildId = req.params.id;
-        if (req.dashSession.isDemo) {
-            return res.json(buildDemoMeta(guildId));
-        }
+        if (req.dashSession.isDemo) return res.json(buildDemoMeta(guildId));
 
         const guild = client.guilds?.cache?.get(guildId);
-        if (!guild) {
-            return res.status(404).json({ error: 'El bot no está en este servidor.' });
-        }
+        if (!guild) return res.status(404).json({ error: 'El bot no está en este servidor.' });
 
         const textChannels = guild.channels.cache
-            .filter(c => c.type === 0 || c.type === 5) // GuildText / GuildAnnouncement
+            .filter(c => c.type === 0 || c.type === 5)
             .sort((a, b) => a.rawPosition - b.rawPosition)
             .map(c => ({ id: c.id, name: c.name }));
 
         const voiceChannels = guild.channels.cache
-            .filter(c => c.type === 2) // GuildVoice
+            .filter(c => c.type === 2)
             .sort((a, b) => a.rawPosition - b.rawPosition)
             .map(c => ({ id: c.id, name: c.name }));
 
@@ -416,7 +449,150 @@ module.exports = function initDashboardServer(app, client, options = {}) {
         });
     });
 
-    // Obtener configuración actual de un servidor
+    // ENDPOINT COMPLETO EN VIVO: devuelve TODOS los datos reales del bot (Top Staff, Sanciones, Eventos, Streamers, Tickets, Voz, Audios, Plantillas, IA)
+    app.get('/api/guild/:id/full-data', requireGuildAccess, async (req, res) => {
+        const guildId = req.params.id;
+        if (req.dashSession.isDemo) return res.json(buildDemoFullData());
+
+        const guild = client.guilds?.cache?.get(guildId);
+        if (!guild) return res.status(404).json({ error: 'Servidor no encontrado' });
+
+        // 1. Valoraciones y Top Staff reales
+        const valData = safeReadJson('valoraciones.json', { ratings: [], staffs: {} });
+        const ratings = Array.isArray(valData.ratings) ? valData.ratings : [];
+        const staffMap = new Map();
+        for (const r of ratings) {
+            const sid = r.staffId || r.staffTag || 'unknown';
+            if (!staffMap.has(sid)) {
+                const mem = guild.members.cache.get(r.staffId);
+                staffMap.set(sid, {
+                    id: sid,
+                    name: mem?.displayName || mem?.user?.username || r.staffTag || `Staff ${sid.slice(-4)}`,
+                    sum: 0,
+                    count: 0
+                });
+            }
+            const entry = staffMap.get(sid);
+            entry.sum += Number(r.rating) || 0;
+            entry.count++;
+        }
+        const topStaff = Array.from(staffMap.values())
+            .map(s => ({ id: s.id, name: s.name, average: Number((s.sum / s.count).toFixed(1)), totalRatings: s.count }))
+            .sort((a, b) => b.average - a.average || b.totalRatings - a.totalRatings)
+            .slice(0, 20);
+
+        const recentRatings = [...ratings].reverse().slice(0, 20).map(r => {
+            const sm = guild.members.cache.get(r.staffId);
+            const um = guild.members.cache.get(r.userId);
+            return {
+                staffName: sm?.displayName || r.staffTag || 'Staff',
+                userName: um?.displayName || r.userTag || 'Usuario',
+                rating: Number(r.rating) || 0,
+                comment: r.comment || 'Sin comentario',
+                timestamp: r.timestamp || null
+            };
+        });
+
+        // 2. Sanciones reales
+        const rawSanciones = safeReadJson('sanciones.json', []);
+        const sanciones = (Array.isArray(rawSanciones) ? [...rawSanciones].reverse().slice(0, 40) : []).map(s => ({
+            id: s.id || '----',
+            targetTag: s.targetTag || s.targetId || 'Usuario',
+            reporterTag: s.reporterTag || s.reporterId || 'Staff',
+            punishment: s.punishment || 'Sanción',
+            reason: s.reason || 'Sin motivo especificado',
+            timestamp: s.timestamp || null
+        }));
+
+        // 3. Eventos reales
+        const rawEventos = safeReadJson('eventos.json', []);
+        const eventos = (Array.isArray(rawEventos) ? [...rawEventos].reverse().slice(0, 20) : []).map(e => ({
+            id: e.id || '---',
+            title: e.title || 'Evento Oficial',
+            hora: e.hora || '',
+            lugar: e.lugar || '',
+            organiza: e.organiza || e.reporterTag || 'Staff',
+            description: (e.description || '').slice(0, 220),
+            timestamp: e.timestamp || null
+        }));
+
+        // 4. Streamers reales
+        const rawStreamers = safeReadJson('streamers.json', {});
+        const streamers = Object.entries(rawStreamers).map(([uid, d]) => {
+            const mem = guild.members.cache.get(uid);
+            return {
+                userId: uid,
+                name: mem?.displayName || mem?.user?.username || d.name || `Streamer ${uid.slice(-4)}`,
+                twitchUrl: d.twitchUrl || (d.url && d.url.includes('twitch') ? d.url : ''),
+                kickUrl: d.kickUrl || (d.url && d.url.includes('kick') ? d.url : ''),
+                tiktokUrl: d.tiktokUrl || (d.url && d.url.includes('tiktok') ? d.url : ''),
+                title: d.twitchTitle || d.kickTitle || d.tiktokTitle || d.title || 'Directo oficial'
+            };
+        });
+
+        // 5. Tickets abiertos detectados en tiempo real
+        const openTickets = guild.channels.cache
+            .filter(c => c.type === 0 && /ticket|soporte|apelaci[oó]n|donaci[oó]n|creador|reporte|postulaci[oó]n/i.test(c.name) && !/panel|log|cerrad|transcript/i.test(c.name))
+            .map(c => ({
+                id: c.id,
+                name: c.name,
+                category: c.parent?.name || 'Tickets'
+            }))
+            .slice(0, 30);
+
+        // 6. Salas de voz con gente conectada en tiempo real
+        const voiceActive = guild.channels.cache
+            .filter(c => c.type === 2 && c.members && c.members.size > 0)
+            .map(c => ({
+                channelName: c.name,
+                members: c.members.map(m => m.displayName || m.user.username)
+            }));
+
+        // 7. Audios de locución en disco
+        const audioFiles = [
+            { file: 'aviso_staff.mp3', label: 'Aviso Staff 1 (Espera)' },
+            { file: 'aviso_staff_2.mp3', label: 'Aviso Staff 2 (Recordatorio)' },
+            { file: 'locucion_usuarios.mp3', label: 'Locución Usuarios (Bienvenida)' },
+            { file: 'aviso_sancion_staff.mp3', label: 'Aviso 3 (Sanción Staff)' },
+            { file: 'locucion_charla.mp3', label: 'Locución Sala de Charla' }
+        ];
+        const audios = audioFiles.map(a => ({
+            label: a.label,
+            ok: fs.existsSync(path.join(__dirname, 'assets', a.file)) || fs.existsSync(path.join(__dirname, a.file))
+        }));
+
+        // 8. Plantillas
+        const rawPlantillas = safeReadJson('plantillas.json', { plantillas: {} });
+        const plantillas = Object.entries(rawPlantillas.plantillas || {})
+            .filter(([k]) => !/oral/i.test(k))
+            .map(([k, v]) => ({ key: k, nombre: v.nombre || k, emoji: v.emoji || '📋' }));
+
+        const onlineMembers = guild.members.cache.filter(m => m.presence && m.presence.status !== 'offline').size;
+
+        res.json({
+            stats: {
+                ramMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+                uptimeSeconds: Math.floor(process.uptime()),
+                ping: Math.max(0, Math.round(client.ws?.ping || 0)),
+                textChannelsCount: guild.channels.cache.filter(c => c.type === 0 || c.type === 5).size,
+                voiceChannelsCount: guild.channels.cache.filter(c => c.type === 2).size,
+                rolesCount: guild.roles.cache.size,
+                onlineMembers,
+                openTicketsCount: openTickets.length,
+                aiStatus: 'Multi-Núcleo Activo'
+            },
+            topStaff,
+            recentRatings,
+            sanciones,
+            eventos,
+            streamers,
+            openTickets,
+            voiceActive,
+            audios,
+            plantillas
+        });
+    });
+
     app.get('/api/guild/:id/config', requireGuildAccess, (req, res) => {
         const guildId = req.params.id;
         const all = readGuildConfigs();
@@ -466,23 +642,20 @@ module.exports = function initDashboardServer(app, client, options = {}) {
             LOCUCION_INTERVAL_SEC: 30,
             ANTI_IA_WL_ENABLED: true,
             ASCENSOS_ENABLED: true,
-            ...getBotConfig()
+            ...pickSafeConfig(getBotConfig())
         };
 
-        const merged = { ...base, ...(all[guildId] || {}) };
-        res.json({ config: merged });
+        res.json({ config: pickSafeConfig({ ...base, ...(all[guildId] || {}) }) });
     });
 
-    // Guardar configuración de un servidor en vivo
     app.post('/api/guild/:id/config', requireGuildAccess, async (req, res) => {
         try {
             const guildId = req.params.id;
-            const incoming = req.body?.config || {};
+            const incoming = pickSafeConfig(req.body?.config || {});
             const all = readGuildConfigs();
             all[guildId] = { ...(all[guildId] || {}), ...incoming, updatedAt: new Date().toISOString() };
             saveGuildConfigs(all);
 
-            // Si no es demo, sincronizar también las claves compatibles con botConfig en vivo
             if (!req.dashSession.isDemo) {
                 const syncKeys = [
                     'CHANNEL_CONSULTAS_STAFF_ID', 'CHANNEL_CONSULTAS_USERS_ID', 'CHANNEL_CONSULTAS_LOGS_ID',
@@ -500,45 +673,78 @@ module.exports = function initDashboardServer(app, client, options = {}) {
                     }
                 }
             }
-
             res.json({ ok: true, savedAt: all[guildId].updatedAt });
         } catch (err) {
             res.status(500).json({ error: err.message });
         }
     });
 
-    // Publicar un panel directamente en un canal desde el Dashboard Web
     app.post('/api/guild/:id/publish-panel', requireGuildAccess, async (req, res) => {
         const { panelType, channelId } = req.body || {};
-        if (!panelType || !channelId) {
-            return res.status(400).json({ error: 'Falta panelType o channelId.' });
-        }
+        if (!panelType || !channelId) return res.status(400).json({ error: 'Falta panelType o channelId.' });
 
         if (req.dashSession.isDemo) {
-            return res.json({
-                ok: true,
-                demo: true,
-                message: `Panel "${panelType}" enviado con éxito (simulación en Modo Demo).`
-            });
+            return res.json({ ok: true, demo: true, message: `Panel "${panelType}" enviado con éxito (Modo Demo).` });
         }
 
         try {
             const guild = client.guilds?.cache?.get(req.params.id);
             const channel = guild?.channels?.cache?.get(channelId);
-            if (!channel || !channel.isTextBased()) {
-                return res.status(404).json({ error: 'Canal no encontrado en el servidor.' });
-            }
+            if (!channel || !channel.isTextBased()) return res.status(404).json({ error: 'Canal no encontrado.' });
 
             if (typeof options.publishPanel === 'function') {
                 const result = await options.publishPanel(panelType, channel);
                 return res.json({ ok: true, message: result || `Panel "${panelType}" publicado en #${channel.name}.` });
             }
-
-            res.json({ ok: true, message: `Solicitud registrada para #${channel.name}.` });
+            res.json({ ok: true, message: `Solicitud enviada a #${channel.name}.` });
         } catch (err) {
             res.status(500).json({ error: err.message });
         }
     });
 
-    console.log('🌐 [DASHBOARD WEB] Panel de control web prémium inicializado en / y /dashboard');
+    // Enviar anuncio personalizado con Embed prémium directamente desde la Web
+    app.post('/api/guild/:id/announce', requireGuildAccess, async (req, res) => {
+        const { channelId, title, message, color, pingEveryone } = req.body || {};
+        if (!channelId || !message) return res.status(400).json({ error: 'Selecciona canal y escribe el mensaje.' });
+
+        if (req.dashSession.isDemo) {
+            return res.json({ ok: true, message: 'Anuncio enviado correctamente (simulación Modo Demo).' });
+        }
+
+        try {
+            const guild = client.guilds?.cache?.get(req.params.id);
+            const channel = guild?.channels?.cache?.get(channelId);
+            if (!channel || !channel.isTextBased()) return res.status(404).json({ error: 'Canal no encontrado.' });
+
+            const logoPath = path.join(__dirname, 'assets', 'logo.png');
+            const files = [];
+            let logoUrl = client.user.displayAvatarURL();
+            if (fs.existsSync(logoPath)) {
+                files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+                logoUrl = 'attachment://logo.png';
+            }
+
+            const hexColor = /^#[0-9a-f]{6}$/i.test(color || '') ? parseInt(color.slice(1), 16) : 0xD900FF;
+            const embed = new EmbedBuilder()
+                .setColor(hexColor)
+                .setAuthor({ name: `ANUNCIO OFICIAL | ${guild.name.toUpperCase()}`, iconURL: logoUrl })
+                .setThumbnail(logoUrl)
+                .setTitle(title ? `📢 ${title}` : '📢 COMUNICADO OFICIAL')
+                .setDescription(message)
+                .setFooter({ text: `${guild.name} • Enviado desde el Panel Web`, iconURL: logoUrl })
+                .setTimestamp();
+
+            await channel.send({
+                content: pingEveryone ? '@everyone' : undefined,
+                embeds: [embed],
+                files
+            });
+
+            res.json({ ok: true, message: `Anuncio publicado en #${channel.name}` });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    console.log('🌐 [DASHBOARD WEB] Panel de control web prémium completo inicializado en / y /dashboard');
 };
