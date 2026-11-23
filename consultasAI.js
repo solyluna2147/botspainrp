@@ -10,6 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
+const guildManager = require('./guildManager');
 const {
     EmbedBuilder,
     AttachmentBuilder,
@@ -23,6 +24,7 @@ const {
 // MODELOS DE MONGODB (COMPARTIDOS)
 // ==========================================
 const ticketKnowledgeSchema = new mongoose.Schema({
+    guildId: { type: String, default: null, index: true },
     category: { type: String, required: true },
     keywords: [{ type: String }],
     questionPattern: { type: String, required: true },
@@ -59,7 +61,67 @@ const CANAL_APRENDIZAJE_ID = '1571488286789079080';
 const ROLE_STAFF_ID = '1538191116610838691';
 
 let consultasActivas = true;
-let memoriaNormativaPages = []; // Caché en memoria RAM de las 16 páginas completas
+let memoriaNormativaPages = []; // Caché en memoria RAM de Vallecas RP (servidor principal)
+const guildNormativaCache = new Map(); // guildId -> string[] (caché aislada por servidor)
+
+function splitNormativaIntoSections(rawText) {
+    if (!rawText || typeof rawText !== 'string') return [];
+    const clean = rawText.replace(/\r\n/g, '\n').trim();
+    if (!clean) return [];
+    // Dividir por encabezados numerados, líneas divisorias o bloques de ~1800 chars
+    const byBlocks = clean.split(/(?:\n_{4,}\n|\n-{4,}\n|\n(?=(?:#{1,3}\s|[0-9]+\.\s+[A-ZÁÉÍÓÚÑ])))/g).map(s => s.trim()).filter(s => s.length > 25);
+    if (byBlocks.length >= 2) return byBlocks;
+    const chunks = [];
+    for (let i = 0; i < clean.length; i += 1800) {
+        chunks.push(clean.slice(i, i + 1800));
+    }
+    return chunks;
+}
+
+async function getGuildNormativaPages(guildId) {
+    if (!guildId || guildManager.isPrimaryGuild(guildId)) {
+        return memoriaNormativaPages;
+    }
+    const keyId = String(guildId);
+    if (guildNormativaCache.has(keyId)) {
+        return guildNormativaCache.get(keyId);
+    }
+
+    const pages = [];
+    try {
+        // 1. Cargar desde la DB dedicada de ESTE servidor (ej: vilacityrp_db -> normativadocs)
+        const GuildNormativaModel = guildManager.getGuildModel(keyId, 'NormativaDoc', normativaDocSchema);
+        const docs = await GuildNormativaModel.find({
+            key: { $in: ['normativa_general', 'normativa_ilegales', `guild_${keyId}_general`, `guild_${keyId}_ilegales`, `guild_${keyId}_normativa`] }
+        }).lean();
+        for (const d of docs) {
+            if (Array.isArray(d.pages) && d.pages.length > 0) {
+                pages.push(...d.pages.map(p => p.text).filter(Boolean));
+            } else if (d.content) {
+                pages.push(...splitNormativaIntoSections(d.content));
+            }
+        }
+    } catch (e) { }
+
+    // 2. Respaldo desde archivos .txt dentro de la carpeta assets/<NombreDelServidor>/
+    if (pages.length === 0) {
+        try {
+            const cfg = guildManager.getGuildConfig(keyId);
+            const dir = guildManager.findGuildAssetsDir(keyId, cfg);
+            if (dir && fs.existsSync(dir)) {
+                for (const fname of ['normativa.txt', 'normativa_general.txt', 'normativa_ilegales.txt']) {
+                    const fp = path.join(dir, fname);
+                    if (fs.existsSync(fp)) {
+                        pages.push(...splitNormativaIntoSections(fs.readFileSync(fp, 'utf8')));
+                    }
+                }
+            }
+        } catch (e) { }
+    }
+
+    guildNormativaCache.set(keyId, pages);
+    return pages;
+}
 
 // ==========================================
 // POOL DE MODELOS GROQ CON RESPALDO AUTOMÁTICO (600K TOKENS/DÍA GRATIS)
@@ -468,22 +530,26 @@ function countTermMatches(text, term) {
 }
 
 // Helper para buscar las páginas y secciones más relevantes de la normativa según la pregunta
-function getRelevantNormativaSnippets(question) {
-    if (!memoriaNormativaPages || memoriaNormativaPages.length === 0) {
-        memoriaNormativaPages = [];
-        const localTxt = path.join(__dirname, 'normativa_vallecas_completa.txt');
-        if (fs.existsSync(localTxt)) {
-            const fullContent = fs.readFileSync(localTxt, 'utf8');
-            memoriaNormativaPages.push(...fullContent.split(/(?=VALLECAS RP\s*\n\|\s*NORMATIVA GENERAL OFICIAL)/i).map(p => p.trim()));
+function getRelevantNormativaSnippets(question, customPages = null) {
+    let pagesSource = customPages;
+    if (!pagesSource) {
+        if (!memoriaNormativaPages || memoriaNormativaPages.length === 0) {
+            memoriaNormativaPages = [];
+            const localTxt = path.join(__dirname, 'normativa_vallecas_completa.txt');
+            if (fs.existsSync(localTxt)) {
+                const fullContent = fs.readFileSync(localTxt, 'utf8');
+                memoriaNormativaPages.push(...fullContent.split(/(?=VALLECAS RP\s*\n\|\s*NORMATIVA GENERAL OFICIAL)/i).map(p => p.trim()));
+            }
+            const ilegalesTxt = path.join(__dirname, 'normativa_ilegales.txt');
+            if (fs.existsSync(ilegalesTxt)) {
+                const ilegalesContent = fs.readFileSync(ilegalesTxt, 'utf8');
+                const ilegalesSections = ilegalesContent.split(/_{5,}|\n\n(?=[0-9]+\.\s+[A-ZÁÉÍÓÚÑ\s]+)/).map(s => s.trim()).filter(Boolean);
+                memoriaNormativaPages.push(...ilegalesSections);
+            }
         }
-        const ilegalesTxt = path.join(__dirname, 'normativa_ilegales.txt');
-        if (fs.existsSync(ilegalesTxt)) {
-            const ilegalesContent = fs.readFileSync(ilegalesTxt, 'utf8');
-            const ilegalesSections = ilegalesContent.split(/_{5,}|\n\n(?=[0-9]+\.\s+[A-ZÁÉÍÓÚÑ\s]+)/).map(s => s.trim()).filter(Boolean);
-            memoriaNormativaPages.push(...ilegalesSections);
-        }
+        pagesSource = memoriaNormativaPages;
     }
-    if (!memoriaNormativaPages || memoriaNormativaPages.length === 0) return '';
+    if (!pagesSource || pagesSource.length === 0) return '';
 
     try {
         const stopWords = new Set([
@@ -513,7 +579,7 @@ function getRelevantNormativaSnippets(question) {
         }
 
         // Puntuación de relevancia por página
-        const scored = memoriaNormativaPages.map(page => {
+        const scored = pagesSource.map(page => {
             const pageLower = page.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
             let score = 0;
 
@@ -564,12 +630,16 @@ function getRelevantNormativaSnippets(question) {
 /**
  * Consulta la IA de Groq inyectando toda la base de conocimientos aprendida
  */
-async function queryGroqAI(userQuestion, isUserMode = false, client = null) {
+async function queryGroqAI(userQuestion, isUserMode = false, client = null, guildId = null) {
     const apiKeys = getConfiguredApiKeys();
     if (apiKeys.length === 0) return null;
 
+    const isPrimary = !guildId || guildManager.isPrimaryGuild(guildId);
+    const gVis = guildManager.resolveGuildVisuals(guildId);
+    const serverName = gVis.name || 'VALLECAS RP';
+
     const qLower = userQuestion.toLowerCase();
-    if (qLower.includes('anubis')) {
+    if (isPrimary && qLower.includes('anubis')) {
         const bromasAnubis = [
             'Creo que eso no es posible... De hecho, es más fácil que Siria deje las guerras a que consigas hablar con Anubis. Sigue soñando, compañero. 😂',
             '¿Hablar con Anubis? Tienes más probabilidades de tener una cena privada con el Papa en el Vaticano que de verle contestar al Discord. Búscate a otro Staff, crack. 💀',
@@ -583,13 +653,20 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null) {
     }
 
     try {
-        // 1. Fragmentos directos del texto original del PDF de la normativa
-        const exactNormativaText = getRelevantNormativaSnippets(userQuestion);
+        // 1. Fragmentos directos de la normativa EXCLUSIVA de este servidor
+        const serverPages = await getGuildNormativaPages(guildId);
+        const exactNormativaText = getRelevantNormativaSnippets(userQuestion, serverPages);
 
-        // 2. Conocimientos específicos en MongoDB (máxima precisión: hasta 10 notas relevantes + últimas directrices)
+        // 2. Conocimientos específicos en MongoDB desde la DB dedicada de este servidor
         let knowledgeContext = '';
         try {
-            const allKnowledge = await TicketKnowledge.find({}).sort({ createdAt: -1 }).limit(40);
+            const KnowledgeModel = isPrimary
+                ? TicketKnowledge
+                : guildManager.getGuildModel(guildId, 'TicketKnowledge', ticketKnowledgeSchema);
+            const knowledgeFilter = isPrimary
+                ? { $or: [{ guildId: null }, { guildId: '' }, { guildId: { $exists: false } }] }
+                : {};
+            const allKnowledge = await KnowledgeModel.find(knowledgeFilter).sort({ createdAt: -1 }).limit(40);
             if (allKnowledge && allKnowledge.length > 0) {
                 const qNorm = userQuestion.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
                 const qTerms = qNorm.split(/[^a-z0-9]+/i).filter(w => SHORT_RP_TERMS.has(w) || w.length >= 3);
@@ -605,18 +682,22 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null) {
                     : [...relevantKnowledge, ...allKnowledge.filter(k => !relevantKnowledge.includes(k)).slice(0, 4 - relevantKnowledge.length)];
 
                 if (finalNotes.length > 0) {
-                    knowledgeContext = '\nNOTAS Y DIRECTRICES EXTRA DEL SERVIDOR:\n' +
+                    knowledgeContext = `\nNOTAS Y DIRECTRICES EXTRA DE ${serverName}:\n` +
                         finalNotes.map(k => `• ${k.response}`).join('\n').slice(0, 1500) + '\n';
                 }
             }
         } catch (e) { }
 
+        const customConciencia = gVis.config?.AI_CONCIENCIA
+            ? `\nCONCIENCIA Y PERSONALIDAD PROPIA DE ${serverName}:\n${gVis.config.AI_CONCIENCIA}\n`
+            : '';
+
         const roleLine = isUserMode
-            ? 'Eres la IA Oficial de VALLECAS RP (FiveM) para usuarios. Responde en español de España de forma exacta, clara, cercana y bien estructurada (citas de artículos, cifras exactas de dinero/policías/tiempos y excepciones si existen).'
-            : 'Eres la IA Asesora Oficial de VALLECAS RP (FiveM) para el Staff. Responde en español de España de forma ultra precisa, directa y completa (cita artículos exactos, cifras, tiempos, sanciones aplicables y excepciones).';
+            ? `Eres la IA Oficial de ${serverName} (FiveM) para usuarios. Responde en español de España de forma exacta, clara, cercana y bien estructurada (citas de artículos, cifras exactas de dinero/policías/tiempos y excepciones si existen).`
+            : `Eres la IA Asesora Oficial de ${serverName} (FiveM) para el Staff. Responde en español de España de forma ultra precisa, directa y completa (cita artículos exactos, cifras, tiempos, sanciones aplicables y excepciones).`;
 
         const systemPrompt =
-            `${roleLine}\n` +
+            `${roleLine}${customConciencia}\n` +
             `Entiende faltas de ortografía o jerga callejera. Si preguntan por siglas RP (RK, PK, CK, MG, PG, DM, VDM, HK, NVV, RDE, ZS, BH, CJ, BA, IOOC, etc.), defínelas y cita exactamente qué aplica en Vallecas RP. Nunca inventes cifras: básate 100% en esta normativa oficial:\n` +
             (exactNormativaText ? exactNormativaText : 'Normativa general vigente.') +
             knowledgeContext;
@@ -722,18 +803,35 @@ function initConsultasAI(client) {
         }
     };
 
-    // Envía un registro limpio de cada consulta al canal de logs (0 tokens consumidos)
+    function getChannelsForGuild(guildId) {
+        if (!guildId || guildManager.isPrimaryGuild(guildId)) {
+            return {
+                staffId: CANAL_CONSULTAS_ID,
+                usersId: CANAL_CONSULTAS_USERS_ID,
+                logsId: CANAL_CONSULTAS_LOGS_ID
+            };
+        }
+        const cfg = guildManager.getGuildConfig(guildId);
+        return {
+            staffId: cfg.CHANNEL_CONSULTAS_STAFF_ID || '',
+            usersId: cfg.CHANNEL_CONSULTAS_USERS_ID || '',
+            logsId: cfg.CHANNEL_CONSULTAS_LOGS_ID || ''
+        };
+    }
+
+    // Envía un registro limpio de cada consulta al canal de logs del servidor correspondiente (0 tokens consumidos)
     async function sendConsultaLog({ message, questionText, aiAnswer, isStaffChannel, isPrivateAiCommand }) {
-        if (!CANAL_CONSULTAS_LOGS_ID) return;
+        const gChannels = getChannelsForGuild(message.guild?.id);
+        if (!gChannels.logsId) return;
         try {
-            const logCh = client.channels.cache.get(CANAL_CONSULTAS_LOGS_ID) || await client.channels.fetch(CANAL_CONSULTAS_LOGS_ID).catch(() => null);
+            const logCh = client.channels.cache.get(gChannels.logsId) || await client.channels.fetch(gChannels.logsId).catch(() => null);
             if (!logCh || !logCh.isTextBased()) return;
 
             const activeIdx = tokenStats.activeKeyIdx || 1;
             const lastToks = tokenStats.lastQueryTokens || 0;
             const userAvatar = message.author.displayAvatarURL({ size: 128 });
             const origenTxt = isStaffChannel ? '🛡️ Consultas Staff' : '👥 Consultas Usuarios';
-            const modoTxt = isPrivateAiCommand ? '🔒 Privado (`!ai`)' : '💬 En canal';
+            const gVis = guildManager.resolveGuildVisuals(message.guild?.id);
 
             const safeQuestion = questionText.length > 900 ? questionText.slice(0, 897) + '...' : questionText;
             const safeAnswer = (aiAnswer || 'Sin respuesta (error temporal)').length > 1800
@@ -741,7 +839,7 @@ function initConsultasAI(client) {
                 : (aiAnswer || 'Sin respuesta (error temporal)');
 
             const logEmbed = new EmbedBuilder()
-                .setColor(0xD900FF)
+                .setColor(gVis.color)
                 .setAuthor({
                     name: `LOG DE CONSULTA IA | ${message.author.username}`,
                     iconURL: userAvatar
@@ -756,7 +854,7 @@ function initConsultasAI(client) {
                     `💡 **Respuesta del bot:**\n` +
                     `> ${safeAnswer.replace(/\n/g, '\n> ')}`
                 )
-                .setFooter({ text: 'VALLECAS RP • Registro Automático de Consultas IA' })
+                .setFooter({ text: `${gVis.name} • Registro Automático de Consultas IA` })
                 .setTimestamp();
 
             await logCh.send({ embeds: [logEmbed] }).catch(() => {});
@@ -828,18 +926,40 @@ function initConsultasAI(client) {
                 if (!isStaff) return;
                 await message.delete().catch(() => {});
 
-                const isTargetStaff = (message.channel.id === CANAL_CONSULTAS_ID);
-                const embed = buildPanelConsultasEmbed(isTargetStaff);
-                const files = [];
-                const logoAtt = getLogoAttachment();
-                const bannerAtt = getBannerAttachment();
-                if (logoAtt) files.push(logoAtt);
-                if (bannerAtt) files.push(bannerAtt);
+                const gId = message.guild?.id;
+                const gChannels = getChannelsForGuild(gId);
+                const isTargetStaff = (gChannels.staffId && message.channel.id === gChannels.staffId);
 
-                await message.channel.send({
-                    embeds: [embed],
-                    files
-                }).catch(e => console.error('Error enviando panel consultas:', e));
+                if (guildManager.isPrimaryGuild(gId)) {
+                    const embed = buildPanelConsultasEmbed(isTargetStaff);
+                    const files = [];
+                    const logoAtt = getLogoAttachment();
+                    const bannerAtt = getBannerAttachment();
+                    if (logoAtt) files.push(logoAtt);
+                    if (bannerAtt) files.push(bannerAtt);
+
+                    await message.channel.send({ embeds: [embed], files }).catch(e => console.error('Error enviando panel consultas:', e));
+                } else {
+                    const v = guildManager.resolveGuildVisuals(gId, 'consultas');
+                    const embed = new EmbedBuilder()
+                        .setColor(v.color)
+                        .setAuthor({ name: `CONSULTAS DE LA NORMATIVA | ${v.name}`, iconURL: v.logoUrl })
+                        .setThumbnail(v.logoUrl)
+                        .setTitle('📚 ¿TIENES ALGUNA DUDA SOBRE LA NORMATIVA?')
+                        .setDescription(
+                            `¡Bienvenido al canal oficial de **Consultas Inteligentes** de **${v.name}**!\n\n` +
+                            `💬 **¿Cómo funciona?**\n` +
+                            `> • Simplemente **escribe tu duda directamente en este canal** hablando de forma normal *(sin comandos)*.\n` +
+                            `> • Nuestra Inteligencia Artificial revisará al instante la normativa del servidor para darte una respuesta exacta.\n\n` +
+                            `⚡ **Consejos rápidos:**\n` +
+                            `> • Puedes preguntar por siglas RP (\`RK\`, \`MG\`, \`PG\`, \`PK\`, \`CK\`, \`VDM\`...), atracos, bandas, zonas seguras o sanciones.\n` +
+                            `> • Tu pregunta y la respuesta se limpiarán automáticamente a los **90 segundos** *(o al pulsar el botón 🗑️ Cerrar / Borrar)*.`
+                        )
+                        .setFooter({ text: `${v.name} • Sistema Inteligente de Normativa 24/7`, iconURL: v.logoUrl })
+                        .setTimestamp();
+                    if (v.bannerUrl) embed.setImage(v.bannerUrl);
+                    await message.channel.send({ embeds: [embed], files: v.files }).catch(e => console.error('Error enviando panel consultas:', e));
+                }
                 return;
             }
 
@@ -924,10 +1044,97 @@ function initConsultasAI(client) {
             }
 
             // ==========================================
-            // ATENCIÓN DE CONSULTAS EN LOS CANALES (STAFF Y USUARIOS)
+            // COMANDOS MULTI-SERVIDOR DE NORMATIVA Y CONCIENCIA IA (AISLADOS POR SERVIDOR)
             // ==========================================
-            const isStaffChannel = (message.channel.id === CANAL_CONSULTAS_ID);
-            const isUsersChannel = (CANAL_CONSULTAS_USERS_ID && message.channel.id === CANAL_CONSULTAS_USERS_ID);
+            // 1. !subirnormativa [general|ilegales] (adjuntando archivo .txt o pegando el texto)
+            if (contentLower.startsWith('!subirnormativa') || contentLower.startsWith('!setnormativa')) {
+                if (!isStaff) return;
+                const gId = message.guild?.id;
+                if (!gId) return;
+                const parts = message.content.trim().split(/\s+/);
+                const tipoArg = (parts[1] || 'general').toLowerCase();
+                const isIlegales = ['ilegales', 'ilegal', 'bandas', 'mafias'].includes(tipoArg);
+                const docKey = guildManager.isPrimaryGuild(gId)
+                    ? (isIlegales ? 'normativa_ilegales_2026' : 'normativa_general_2026')
+                    : `guild_${gId}_${isIlegales ? 'ilegales' : 'general'}`;
+
+                let rawText = '';
+                const att = message.attachments.first();
+                if (att && att.url) {
+                    try {
+                        const r = await fetch(att.url);
+                        if (r.ok) rawText = await r.text();
+                    } catch (e) { }
+                } else {
+                    rawText = parts.slice(isIlegales || tipoArg === 'general' ? 2 : 1).join(' ').trim();
+                }
+
+                if (!rawText || rawText.length < 30) {
+                    return message.reply('❌ **Uso:** escribe `!subirnormativa general` o `!subirnormativa ilegales` **adjuntando un archivo `.txt`** con la normativa de este servidor (o pegando el texto).');
+                }
+
+                const sections = splitNormativaIntoSections(rawText);
+                const TargetNormativaModel = guildManager.isPrimaryGuild(gId)
+                    ? NormativaDoc
+                    : guildManager.getGuildModel(gId, 'NormativaDoc', normativaDocSchema);
+                const targetKey = guildManager.isPrimaryGuild(gId)
+                    ? docKey
+                    : (isIlegales ? 'normativa_ilegales' : 'normativa_general');
+                await TargetNormativaModel.findOneAndUpdate(
+                    { key: targetKey },
+                    { key: targetKey, content: rawText, pages: sections.map((t, idx) => ({ pageNumber: idx + 1, text: t })), updatedAt: new Date() },
+                    { upsert: true }
+                );
+
+                // Recargar caché en RAM solo para este servidor
+                if (guildManager.isPrimaryGuild(gId)) {
+                    await loadConfig();
+                } else {
+                    guildNormativaCache.delete(String(gId));
+                    await getGuildNormativaPages(gId);
+                }
+
+                const dbLabel = guildManager.getGuildDbName(gId) || 'spainrp_db';
+                return message.reply(`✅ **Normativa \`${isIlegales ? 'Ilegales' : 'General'}\` guardada en la DB \`${dbLabel}\`** (\`${sections.length}\` secciones cargadas en la IA al instante).`);
+            }
+
+            // 2. !aprender <regla o dato> (guarda conocimiento exclusivo en la DB de este servidor)
+            if (contentLower.startsWith('!aprender ')) {
+                if (!isStaff) return;
+                const gId = message.guild?.id;
+                const nota = message.content.slice(10).trim();
+                if (nota.length < 5) return message.reply('❌ **Uso:** `!aprender <regla o dato que quieres que la IA recuerde en este servidor>`');
+                const TargetKnowledgeModel = guildManager.isPrimaryGuild(gId)
+                    ? TicketKnowledge
+                    : guildManager.getGuildModel(gId, 'TicketKnowledge', ticketKnowledgeSchema);
+                await TargetKnowledgeModel.create({
+                    guildId: guildManager.isPrimaryGuild(gId) ? null : String(gId),
+                    category: 'normativa_extra',
+                    keywords: [],
+                    questionPattern: nota.slice(0, 120),
+                    response: nota,
+                    addedBy: message.author.username
+                });
+                const dbLabel = guildManager.getGuildDbName(gId) || 'spainrp_db';
+                return message.reply(`🧠 **Aprendido en la DB \`${dbLabel}\`:**\n> ${nota}`);
+            }
+
+            // 3. !setconciencia <personalidad / instrucciones propias de la IA en este servidor>
+            if (contentLower.startsWith('!setconciencia ')) {
+                if (!isStaff) return;
+                const gId = message.guild?.id;
+                const conciencia = message.content.slice(15).trim();
+                if (conciencia.length < 5) return message.reply('❌ **Uso:** `!setconciencia <tono, reglas de comportamiento o identidad de la IA en este servidor>`');
+                await guildManager.setGuildConfigKey(gId, 'AI_CONCIENCIA', conciencia);
+                return message.reply(`✨ **Conciencia/personalidad de la IA actualizada solo para este servidor:**\n> ${conciencia}`);
+            }
+
+            // ==========================================
+            // ATENCIÓN DE CONSULTAS EN LOS CANALES (STAFF Y USUARIOS — MULTI-SERVIDOR)
+            // ==========================================
+            const gChannels = getChannelsForGuild(message.guild?.id);
+            const isStaffChannel = Boolean(gChannels.staffId && message.channel.id === gChannels.staffId);
+            const isUsersChannel = Boolean(gChannels.usersId && message.channel.id === gChannels.usersId);
 
             if (isStaffChannel || isUsersChannel) {
                 // En el canal de Staff, solo permitimos al Staff
@@ -956,20 +1163,22 @@ function initConsultasAI(client) {
                 // Indicador visual de que la IA está procesando la consulta
                 await message.channel.sendTyping().catch(() => {});
 
-                // Consultar la IA adaptando el rol según si es canal de usuarios o canal de staff (con respaldo automático y actualización del panel de tokens)
-                const aiAnswer = await queryGroqAI(questionText, isUsersChannel, client);
+                // Consultar la IA adaptando el rol y la normativa EXCLUSIVA de este servidor
+                const gId = message.guild?.id;
+                const aiAnswer = await queryGroqAI(questionText, isUsersChannel, client, gId);
 
-                // Registrar en el canal de logs (0 tokens consumidos)
+                // Registrar en el canal de logs de este servidor (0 tokens consumidos)
                 sendConsultaLog({ message, questionText, aiAnswer, isStaffChannel, isPrivateAiCommand });
 
-                const logoAttachment = getLogoAttachment();
-                const iconUrl = logoAttachment ? 'attachment://logo.png' : (message.guild.iconURL() || undefined);
+                const gVis = guildManager.resolveGuildVisuals(gId);
+                const iconUrl = gVis.logoUrl;
+                const replyFiles = gVis.files;
 
-                // Diseño limpio y profesional adaptado al contexto
+                // Diseño limpio y profesional adaptado a la marca y color de ESTE servidor
                 const authorTitle = isStaffChannel
-                    ? 'ASESORÍA DE STAFF | VALLECAS RP'
-                    : 'CONSULTAS DE LA NORMATIVA | VALLECAS RP';
-                const embedColor = 0xD900FF; // Morado Magenta VALLECAS RP
+                    ? `ASESORÍA DE STAFF | ${gVis.name}`
+                    : `CONSULTAS DE LA NORMATIVA | ${gVis.name}`;
+                const embedColor = gVis.color;
 
                 const embed = new EmbedBuilder()
                     .setColor(embedColor)
@@ -989,7 +1198,7 @@ function initConsultasAI(client) {
                     )
                     .setThumbnail(iconUrl)
                     .setFooter({
-                        text: 'VALLECAS RP • Base de Datos Oficial',
+                        text: `${gVis.name} • Base de Datos Oficial`,
                         iconURL: iconUrl
                     })
                     .setTimestamp();
@@ -1005,7 +1214,7 @@ function initConsultasAI(client) {
                         // Enviamos la respuesta por privado (MD) al usuario
                         await message.author.send({
                             embeds: [embed],
-                            files: logoAttachment ? [logoAttachment] : []
+                            files: replyFiles
                         });
                     } catch (dmErr) {
                         // Si tiene los MD cerrados, avisar temporalmente
@@ -1029,7 +1238,7 @@ function initConsultasAI(client) {
 
                 const responseMsg = await message.reply({
                     embeds: [embed],
-                    files: logoAttachment ? [logoAttachment] : [],
+                    files: replyFiles,
                     components: [row]
                 }).catch(() => null);
 

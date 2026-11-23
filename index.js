@@ -364,9 +364,18 @@ function loadDynamicConfig() {
     return defaults;
 }
 
+const guildManager = require('./guildManager');
+
 let botConfig = loadDynamicConfig();
 
-async function updateConfig(key, value) {
+async function updateConfig(key, value, guildId = null) {
+    // Si se ejecuta desde un servidor distinto al principal (Vallecas RP),
+    // guardar EXCLUSIVAMENTE en el perfil aislado de ese servidor (MongoDB + guild_configs.json)
+    if (guildId && !guildManager.isPrimaryGuild(guildId)) {
+        await guildManager.setGuildConfigKey(guildId, key, value);
+        return;
+    }
+
     if (botConfig[key] === value) return;
     botConfig[key] = value;
     try {
@@ -1290,25 +1299,25 @@ async function updateChannelStatusPanel() {
 
 
 // Función para construir el Embed del Panel de Streamers (con Logo y Banner oficial)
-function buildStreamPanelEmbed() {
-    const logoPath = getLogoPath();
-    const imgPanelPath = path.join(__dirname, 'assets', 'panel_directos.png');
+function buildStreamPanelEmbed(guildId = null) {
+    const v = guildManager.resolveGuildVisuals(guildId, 'directos');
+    const cfg = v.config;
 
-    const canalStreamers = `<#${botConfig.CHANNEL_STREAMERS_ID || '1517530849032016006'}>`;
-    const canalTickets = `<#${botConfig.CHANNEL_TICKETS_ID || '1517530849334136844'}>`;
-    const canalGeneral = `<#${botConfig.CHANNEL_GENERAL_ID || '1517530849032016002'}>`;
+    const canalStreamers = cfg.CHANNEL_STREAMERS_ID ? `<#${cfg.CHANNEL_STREAMERS_ID}>` : '`#directos`';
+    const canalTickets = cfg.CHANNEL_TICKETS_ID ? `<#${cfg.CHANNEL_TICKETS_ID}>` : '`#tickets`';
+    const canalGeneral = cfg.CHANNEL_GENERAL_ID ? `<#${cfg.CHANNEL_GENERAL_ID}>` : '`#general`';
 
     const embed = new EmbedBuilder()
-        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
+        .setColor(v.color)
         .setAuthor({
-            name: 'SISTEMA DE CREADORES | VALLECAS RP 🇪🇸',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            name: `SISTEMA DE CREADORES | ${v.name} 🇪🇸`,
+            iconURL: v.logoUrl
         })
-        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setThumbnail(v.logoUrl)
         .setTitle('🟣 ¡PANEL DE NOTIFICACIÓN DE DIRECTOS!')
         .setDescription(
             `\u200B\n` +
-            `✨ ¡Bienvenido al **Panel Oficial de Creadores y Streamers** de **VALLECAS RP** 🇪🇸!\n\n` +
+            `✨ ¡Bienvenido al **Panel Oficial de Creadores y Streamers** de **${v.name}** 🇪🇸!\n\n` +
             `Si eres Creador de Contenido oficial del servidor, puedes avisar a toda la comunidad cuando comiences directo en **Twitch, Kick o TikTok** con un solo clic.\n\n` +
             `📢 **| ¿Cómo publicar tu directo?**\n` +
             `> Haz clic en el botón de tu plataforma:\n` +
@@ -1318,21 +1327,21 @@ function buildStreamPanelEmbed() {
             `📍 **| Canal de publicación oficial:**\n` +
             `> ${canalStreamers} ❗\n\n` +
             `⚠️ **| Normativas de los Streamers:**\n` +
-            `> • Debes estar transmitiendo contenido dentro de **VALLECAS RP** 🇪🇸.\n\n` +
+            `> • Debes estar transmitiendo contenido dentro de **${v.name}** 🇪🇸.\n\n` +
             `📁 **| ¿Quieres ser Streamer Oficial?**\n` +
             `> Abre un ticket de creadores en ${canalTickets} ❗\n\n` +
             `🌍 **| 𝗗𝗶𝘀𝗳𝗿𝘂𝘁𝗮 𝘆 𝗰𝗼𝗺𝗽𝗮𝗿𝘁𝗲 𝘁𝘂 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼,**\n` +
             `> ${canalGeneral} ❗\n\n` +
-            `🇪🇸 **| ¡Disfruta y crece en VALLECAS RP! |** 🇪🇸`
+            `🇪🇸 **| ¡Disfruta y crece en ${v.name}! |** 🇪🇸`
         )
         .setFooter({
-            text: 'VALLECAS RP • Creadores de Contenido Oficiales',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            text: `${v.name} • Creadores de Contenido Oficiales`,
+            iconURL: v.logoUrl
         })
         .setTimestamp();
 
-    if (fs.existsSync(imgPanelPath)) {
-        embed.setImage('attachment://panel_directos.png');
+    if (v.bannerUrl) {
+        embed.setImage(v.bannerUrl);
     }
 
     return embed;
@@ -3645,32 +3654,26 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
 // CONSTRUCTORES: SISTEMA DE BIENVENIDAS OFICIALES (VALLECAS RP)
 // ==========================================
 function buildWelcomeEmbed(member, guild) {
-    const logoPath = getLogoPath();
-    const bannerPath = path.join(__dirname, 'assets', 'banner_bienvenida.png');
-    const files = [];
-
-    let iconURL = client.user.displayAvatarURL();
-    if (fs.existsSync(logoPath)) {
-        files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-        iconURL = 'attachment://logo.png';
-    }
+    const v = guildManager.resolveGuildVisuals(guild?.id, 'bienvenida');
+    const cfg = v.config;
+    const files = [...v.files];
 
     const user = member.user || member;
     const memberCount = guild?.memberCount || 0;
     const accountCreatedTimestamp = Math.floor(user.createdTimestamp / 1000);
 
-    const canalNormativas = botConfig.CHANNEL_NORMATIVAS_ID ? `<#${botConfig.CHANNEL_NORMATIVAS_ID}>` : '`#normativas`';
-    const canalSolicitudes = botConfig.CHANNEL_SOLICITUDES_ID ? `<#${botConfig.CHANNEL_SOLICITUDES_ID}>` : '`#solicitudes`';
-    const canalTickets = botConfig.CHANNEL_TICKETS_ID ? `<#${botConfig.CHANNEL_TICKETS_ID}>` : '`#tickets`';
-    const canalGeneral = botConfig.CHANNEL_GENERAL_ID ? `<#${botConfig.CHANNEL_GENERAL_ID}>` : '`#general`';
+    const canalNormativas = cfg.CHANNEL_NORMATIVAS_ID ? `<#${cfg.CHANNEL_NORMATIVAS_ID}>` : '`#normativas`';
+    const canalSolicitudes = cfg.CHANNEL_SOLICITUDES_ID ? `<#${cfg.CHANNEL_SOLICITUDES_ID}>` : '`#solicitudes`';
+    const canalTickets = cfg.CHANNEL_TICKETS_ID ? `<#${cfg.CHANNEL_TICKETS_ID}>` : '`#tickets`';
+    const canalGeneral = cfg.CHANNEL_GENERAL_ID ? `<#${cfg.CHANNEL_GENERAL_ID}>` : '`#general`';
 
     const welcomeEmbed = new EmbedBuilder()
-        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
+        .setColor(v.color)
         .setAuthor({
-            name: '¡TE DAMOS LA BIENVENIDA A VALLECAS RP!',
-            iconURL: 'attachment://logo.png'
+            name: `¡TE DAMOS LA BIENVENIDA A ${v.name}!`,
+            iconURL: v.logoUrl
         })
-        .setThumbnail('attachment://logo.png')
+        .setThumbnail(v.logoUrl)
         .setDescription(
             `\u200B\n` +
             `➥ 𝗘𝘀𝗽𝗲𝗿𝗮𝗺𝗼𝘀 𝗾𝘂𝗲 𝗱𝗶𝘀𝗳𝗿𝘂𝘁𝗲𝘀 𝗱𝗲 𝗻𝘂𝗲𝘀𝘁𝗿𝗮 𝗰𝗼𝗺𝘂𝗻𝗶𝗱𝗮𝗱, 𝘁𝗼𝗱𝗼 𝗹𝗼 𝗾𝘂𝗲 𝗻𝗲𝗰𝗲𝘀𝗶𝘁𝗲𝘀 𝘀𝗮𝗯𝗲𝗿 𝗹𝗼 𝘁𝗲𝗻𝗱𝗿𝗮́𝘀 𝗲𝗻 𝗹𝗼𝘀 𝗿𝗲𝘀𝗽𝗲𝗰𝘁𝗶𝘃𝗼𝘀 𝗰𝗮𝗻𝗮𝗹𝗲𝘀 𝗰𝗼𝗿𝗿𝗲𝘀𝗽𝗼𝗻𝗱𝗶𝗲𝗻𝘁𝗲𝘀 ❗\n\n` +
@@ -3685,17 +3688,16 @@ function buildWelcomeEmbed(member, guild) {
             `> ${canalTickets} ❗\n\n` +
             `🌍 **| Disfruta y diviértete en,**\n` +
             `> ${canalGeneral} ❗\n\n\n` +
-            `🇪🇸 **| ¡Disfruta de VALLECAS RP! |** 🇪🇸\n`
+            `🇪🇸 **| ¡Disfruta de ${v.name}! |** 🇪🇸\n`
         )
         .setFooter({
-            text: 'VALLECAS RP • Sistema de Bienvenidas',
-            iconURL: iconURL
+            text: `${v.name} • Sistema de Bienvenidas`,
+            iconURL: v.logoUrl
         })
         .setTimestamp();
 
-    if (fs.existsSync(bannerPath)) {
-        files.push(new AttachmentBuilder(bannerPath, { name: 'banner_bienvenida.png' }));
-        welcomeEmbed.setImage('attachment://banner_bienvenida.png');
+    if (v.bannerUrl) {
+        welcomeEmbed.setImage(v.bannerUrl);
     }
 
     return { welcomeEmbed, files };
@@ -3715,7 +3717,8 @@ async function sendWelcomeMessage(member) {
         welcomedMembersSet.set(memberId, Date.now());
 
         const guild = member.guild;
-        const targetChannelId = botConfig.CHANNEL_BIENVENIDAS_ID;
+        const guildCfg = guildManager.getGuildConfig(guild?.id);
+        const targetChannelId = guildCfg.CHANNEL_BIENVENIDAS_ID;
         if (!targetChannelId) return;
 
         const targetChannel = guild.channels.cache.get(targetChannelId) ||
@@ -3869,23 +3872,22 @@ async function updateStaffTopRankingPanel() {
     }
 }
 
-function buildStaffRatingPanelEmbed() {
-    const logoPath = getLogoPath();
-    const panelImgPath = path.join(__dirname, 'assets', 'panel_valoracion.png');
-
-    const canalPublicacion = botConfig.CHANNEL_VALORACIONES_ID ? `<#${botConfig.CHANNEL_VALORACIONES_ID}>` : '`No configurado`';
+function buildStaffRatingPanelEmbed(guildId = null) {
+    const v = guildManager.resolveGuildVisuals(guildId, 'valoraciones');
+    const cfg = v.config;
+    const canalPublicacion = cfg.CHANNEL_VALORACIONES_ID ? `<#${cfg.CHANNEL_VALORACIONES_ID}>` : '`No configurado`';
 
     const embed = new EmbedBuilder()
-        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
+        .setColor(v.color)
         .setAuthor({
-            name: 'SISTEMA DE VALORACIONES • VALLECAS RP',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            name: `SISTEMA DE VALORACIONES • ${v.name}`,
+            iconURL: v.logoUrl
         })
-        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setThumbnail(v.logoUrl)
         .setTitle('⭐ ¿CÓMO FUE TU EXPERIENCIA CON EL EQUIPO DE STAFF?')
         .setDescription(
             `\u200B\n` +
-            `¡Bienvenido al sistema oficial de **Calidad y Atención al Usuario** de **VALLECAS RP**!\n\n` +
+            `¡Bienvenido al sistema oficial de **Calidad y Atención al Usuario** de **${v.name}**!\n\n` +
             `Tu opinión es fundamental para seguir mejorando nuestro servidor. Si has recibido atención en soporte, tickets, reportes o dudas, puedes valorar la labor del Staff que te atendió.\n\n` +
             `📋 **¿Cómo valorar a un Staff?**\n` +
             `> 1️⃣ Haz clic en el botón **"⭐ Valorar a un Staff"** aquí abajo.\n` +
@@ -3894,16 +3896,16 @@ function buildStaffRatingPanelEmbed() {
             `> 4️⃣ Cuéntanos tu experiencia o comentario sobre la atención recibida.\n\n` +
             `📢 **Canal de publicación de valoraciones:**\n` +
             `> Las valoraciones se enviarán automáticamente a ${canalPublicacion} ❗\n\n` +
-            `🇪🇸 **¡Gracias por ayudar a VALLECAS RP!** 🇪🇸`
+            `🇪🇸 **¡Gracias por ayudar a ${v.name}!** 🇪🇸`
         )
         .setFooter({
-            text: 'VALLECAS RP • Departamento de Calidad y Atención al Usuario',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            text: `${v.name} • Departamento de Calidad y Atención al Usuario`,
+            iconURL: v.logoUrl
         })
         .setTimestamp();
 
-    if (fs.existsSync(panelImgPath)) {
-        embed.setImage('attachment://panel_valoracion.png');
+    if (v.bannerUrl) {
+        embed.setImage(v.bannerUrl);
     }
 
     return embed;
@@ -4002,24 +4004,22 @@ function getPlantillasData() {
     return { plantillas: {} };
 }
 
-function buildPlantillasPanelEmbed() {
-    const logoPath = getLogoPath();
-    const panelImgPath = path.join(__dirname, 'assets', 'panel_postulaciones.png');
+function buildPlantillasPanelEmbed(guildId = null) {
+    const v = guildManager.resolveGuildVisuals(guildId, 'plantillas');
 
     const embed = new EmbedBuilder()
-        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
+        .setColor(v.color)
         .setAuthor({
-            name: 'CENTRO DE POSTULACIONES • VALLECAS RP',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            name: `CENTRO DE POSTULACIONES • ${v.name}`,
+            iconURL: v.logoUrl
         })
-        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setThumbnail(v.logoUrl)
         .setTitle('📋 SISTEMA DE PLANTILLAS DE POSTULACIÓN')
         .setDescription(
             `\u200B\n` +
-            `¡Bienvenido al panel central de **Plantillas de Postulaciones Oficiales** de **VALLECAS RP**!\n\n` +
+            `¡Bienvenido al panel central de **Plantillas de Postulaciones Oficiales** de **${v.name}**!\n\n` +
             `Aquí el equipo de Staff puede obtener instantáneamente el formato oficial y limpio de cualquier postulación para enviarlo a los usuarios o tickets de soporte.\n\n` +
             `📌 **Plantillas Disponibles en el Sistema:**\n` +
-            `> 🎙️ **WL-ORAL** *(OOC, Normativa, Conceptos y Situaciones)*\n` +
             `> 💼 **Postulación Negocio** *(Apertura de comercios y locales)*\n` +
             `> 💀 **Postulación Mafia** *(Organizaciones y jerarquías)*\n` +
             `> 🏴‍☠️ **Postulación Banda** *(Bandas callejeras y territorios)*\n` +
@@ -4030,16 +4030,16 @@ function buildPlantillasPanelEmbed() {
             `> 1️⃣ Haz clic en el botón **"📋 Seleccionar Plantilla"** abajo.\n` +
             `> 2️⃣ Elige la plantilla deseada en el selector desplegable.\n` +
             `> 3️⃣ El bot te la entregará y podrás reenviarla con \`!enviar <ID_TICKET>\`.\n\n` +
-            `🇪🇸 **| VALLECAS RP • Calidad y Organización |** 🇪🇸`
+            `🇪🇸 **| ${v.name} • Calidad y Organización |** 🇪🇸`
         )
         .setFooter({
-            text: 'VALLECAS RP • Gestión de Postulaciones y Formularios',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            text: `${v.name} • Gestión de Postulaciones y Formularios`,
+            iconURL: v.logoUrl
         })
         .setTimestamp();
 
-    if (fs.existsSync(panelImgPath)) {
-        embed.setImage('attachment://panel_postulaciones.png');
+    if (v.bannerUrl) {
+        embed.setImage(v.bannerUrl);
     }
 
     return embed;
@@ -4430,19 +4430,18 @@ async function saveSancionRecord(sancionObj) {
     }
 }
 
-function buildSancionesPanelEmbed() {
-    const logoPath = getLogoPath();
-    const bannerPath = path.join(__dirname, 'assets', 'panel_sanciones.png');
+function buildSancionesPanelEmbed(guildId = null) {
+    const v = guildManager.resolveGuildVisuals(guildId, 'sanciones');
     const embed = new EmbedBuilder()
-        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
+        .setColor(v.color)
         .setAuthor({
-            name: 'SISTEMA DE SANCIONES • VALLECAS RP',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            name: `SISTEMA DE SANCIONES • ${v.name}`,
+            iconURL: v.logoUrl
         })
-        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setThumbnail(v.logoUrl)
         .setTitle('🚨 REGISTRO OFICIAL DE SANCIONES Y SANCIONADOS')
         .setDescription(
-            `Bienvenido al **Panel Oficial de Registro de Sanciones** para el equipo de Staff de **VALLECAS RP** 🇪🇸.\n\n` +
+            `Bienvenido al **Panel Oficial de Registro de Sanciones** para el equipo de Staff de **${v.name}** 🇪🇸.\n\n` +
             `Este canal está destinado a mantener un control estricto, transparente y unificado de todas las faltas, advertencias y expulsiones aplicadas a usuarios en la comunidad.\n\n` +
             `📋 **¿Cómo registrar una nueva sanción?**\n` +
             `> 1️⃣ Pulsa el botón **"🚨 Registrar Sanción"** aquí abajo.\n` +
@@ -4451,13 +4450,13 @@ function buildSancionesPanelEmbed() {
             `💡 *El bot detectará automáticamente tu nombre de Staff y generará el expediente oficial con formato blindado.*`
         )
         .setFooter({
-            text: 'VALLECAS RP • Registro Interno Exclusivo de Moderación',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            text: `${v.name} • Registro Interno Exclusivo de Moderación`,
+            iconURL: v.logoUrl
         })
         .setTimestamp();
 
-    if (fs.existsSync(bannerPath)) {
-        embed.setImage('attachment://panel_sanciones.png');
+    if (v.bannerUrl) {
+        embed.setImage(v.bannerUrl);
     }
 
     return embed;
@@ -4601,19 +4600,18 @@ async function saveEventoRecord(eventoObj) {
     }
 }
 
-function buildEventosPanelEmbed() {
-    const logoPath = getLogoPath();
-    const bannerPath = path.join(__dirname, 'assets', 'panel_eventos.png');
+function buildEventosPanelEmbed(guildId = null) {
+    const v = guildManager.resolveGuildVisuals(guildId, 'eventos');
     const embed = new EmbedBuilder()
-        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
+        .setColor(v.color)
         .setAuthor({
-            name: 'SISTEMA DE EVENTOS | VALLECAS RP',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            name: `SISTEMA DE EVENTOS | ${v.name}`,
+            iconURL: v.logoUrl
         })
-        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setThumbnail(v.logoUrl)
         .setTitle('🎉 GESTIÓN Y PUBLICACIÓN OFICIAL DE EVENTOS')
         .setDescription(
-            `Bienvenido al **Panel Oficial de Publicación de Eventos** para el equipo de Staff de **VALLECAS RP** 🇪🇸.\n\n` +
+            `Bienvenido al **Panel Oficial de Publicación de Eventos** para el equipo de Staff de **${v.name}** 🇪🇸.\n\n` +
             `Este sistema permite anunciar quedadas, exhibiciones, carreras, fiestas y eventos especiales de la ciudad con una maquetación automática y diseño prémium.\n\n` +
             `📋 **¿Cómo publicar un nuevo evento?**\n` +
             `> 1️⃣ Pulsa el botón **"📢 Publicar Evento"** aquí abajo.\n` +
@@ -4622,13 +4620,13 @@ function buildEventosPanelEmbed() {
             `💡 *El bot publicará el anuncio automáticamente en los canales oficiales de eventos con mención @everyone y formato de lujo.*`
         )
         .setFooter({
-            text: 'VALLECAS RP • Sistema Oficial de Eventos Staff',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            text: `${v.name} • Sistema Oficial de Eventos Staff`,
+            iconURL: v.logoUrl
         })
         .setTimestamp();
 
-    if (fs.existsSync(bannerPath)) {
-        embed.setImage('attachment://panel_eventos.png');
+    if (v.bannerUrl) {
+        embed.setImage(v.bannerUrl);
     }
 
     return embed;
@@ -6697,20 +6695,21 @@ client.on('messageCreate', async (message) => {
                 });
             }
 
-            updateConfig(configKey, channelId);
+            await updateConfig(configKey, channelId, message.guild?.id);
 
-            // Si se cambió el canal del panel de directos, enviar el panel allí de inmediato
-            if (configKey === 'CHANNEL_STREAM_PANEL_ID') {
+            // Si se cambió el canal del panel de directos en el servidor principal, actualizarlo
+            if (configKey === 'CHANNEL_STREAM_PANEL_ID' && guildManager.isPrimaryGuild(message.guild?.id)) {
                 ensureStreamPanel().catch(() => { });
             }
 
-            // Si se cambió el canal de estado, actualizar panel
-            if (configKey === 'CHANNEL_STATUS_ID') {
+            // Si se cambió el canal de estado en el servidor principal, actualizar panel
+            if (configKey === 'CHANNEL_STATUS_ID' && guildManager.isPrimaryGuild(message.guild?.id)) {
                 updateChannelStatusPanel().catch(() => { });
             }
 
+            const gVis = guildManager.resolveGuildVisuals(message.guild?.id);
             return message.reply({
-                content: `✅ **Canal actualizado con éxito:**\n⚙️ **Ajuste:** \`${configKey}\`\n📍 **Nuevo Canal:** <#${channelId}> (\`${channelId}\`)`
+                content: `✅ **Canal actualizado en \`${gVis.name}\`:**\n⚙️ **Ajuste:** \`${configKey}\`\n📍 **Nuevo Canal:** <#${channelId}> (\`${channelId}\`)`
             });
         }
 
@@ -6725,7 +6724,7 @@ client.on('messageCreate', async (message) => {
 
             if (!tipo || !rawTarget) {
                 return message.reply({
-                    content: `❌ **Uso:** \`!setrol <staff|streamer> <@rol o ID>\`\n*Ejemplo:* \`!setrol staff @Staff WL\``
+                    content: `❌ **Uso:** \`!setrol <staff|streamer> <@rol o ID>\`\n*Ejemplo:* \`!setrol staff @Staff\``
                 });
             }
 
@@ -6743,10 +6742,10 @@ client.on('messageCreate', async (message) => {
                 return message.reply({ content: '❌ Tipo de rol inválido. Usa `staff` o `streamer`.' });
             }
 
-            updateConfig(configKey, roleId);
+            await updateConfig(configKey, roleId, message.guild?.id);
 
             return message.reply({
-                content: `✅ **Rol actualizado con éxito:**\n⚙️ **Ajuste:** \`${configKey}\`\n🛡️ **Nuevo Rol:** <@&${roleId}> (\`${roleId}\`)`
+                content: `✅ **Rol actualizado en este servidor:**\n⚙️ **Ajuste:** \`${configKey}\`\n🛡️ **Nuevo Rol:** <@&${roleId}> (\`${roleId}\`)`
             });
         }
 
@@ -6761,9 +6760,9 @@ client.on('messageCreate', async (message) => {
                 return message.reply({ content: '❌ **Uso:** `!setip <ip:puerto>` (Ej: `!setip 185.230.52.246:30120`)' });
             }
 
-            updateConfig('FIVEM_SERVER_IP', newIp);
+            await updateConfig('FIVEM_SERVER_IP', newIp, message.guild?.id);
             return message.reply({
-                content: `✅ **IP de FiveM actualizada:** \`${newIp}\`\nEl bot empezará a consultar los datos de esta IP automáticamente.`
+                content: `✅ **IP de FiveM actualizada en este servidor:** \`${newIp}\``
             });
         }
 
@@ -6778,10 +6777,93 @@ client.on('messageCreate', async (message) => {
                 return message.reply({ content: '❌ **Uso:** `!setcfx <codigo>` (Ej: `!setcfx 7b97gmr`)' });
             }
 
-            updateConfig('FIVEM_CFX_CODE', newCfx);
+            await updateConfig('FIVEM_CFX_CODE', newCfx, message.guild?.id);
             return message.reply({
-                content: `✅ **Código CFX actualizado:** \`${newCfx}\``
+                content: `✅ **Código CFX actualizado en este servidor:** \`${newCfx}\``
             });
+        }
+
+        // 5.1 MULTI-SERVIDOR: !setnombre <Nombre Oficial del Servidor>
+        if (['!setnombre', '!setmarca', '!setserver'].includes(command)) {
+            if (message.author.id !== OWNER_ID) return sendDeniedAccessMessage(message);
+            const newName = args.slice(1).join(' ').trim();
+            if (!newName) return message.reply('❌ **Uso:** `!setnombre <Nombre de tu servidor>` (Ej: `!setnombre MADRID RP`)');
+            await updateConfig('BRAND_NAME', newName, message.guild?.id);
+            return message.reply(`✅ **Nombre oficial actualizado solo en este servidor:** \`${newName}\``);
+        }
+
+        // 5.1b MULTI-SERVIDOR: !setcarpeta <NombreCarpetaEnAssets> (Ej: !setcarpeta MadridRP -> lee assets/MadridRP/)
+        if (['!setcarpeta', '!setassets', '!setfolder'].includes(command)) {
+            if (message.author.id !== OWNER_ID) return sendDeniedAccessMessage(message);
+            const folderName = args.slice(1).join(' ').trim();
+            if (!folderName) return message.reply('❌ **Uso:** `!setcarpeta <NombreCarpeta>` (Ej: `!setcarpeta MadridRP` para cargar logos y banners de `assets/MadridRP/`).');
+            await updateConfig('ASSETS_FOLDER', folderName, message.guild?.id);
+            const exists = fs.existsSync(path.join(__dirname, 'assets', folderName));
+            return message.reply(
+                `✅ **Carpeta de imágenes asignada a este servidor:** \`assets/${folderName}/\`\n` +
+                (exists ? '🟢 Carpeta detectada correctamente en el proyecto.' : '⚠️ Aún no existe en GitHub: recuerda subir la carpeta `assets/' + folderName + '/` con `logo.png` y tus banners.')
+            );
+        }
+
+        // 5.2 MULTI-SERVIDOR: !setcolor <#HEX>
+        if (command === '!setcolor') {
+            if (message.author.id !== OWNER_ID) return sendDeniedAccessMessage(message);
+            const hex = (args[1] || '').trim();
+            if (!/^#[0-9a-f]{6}$/i.test(hex)) return message.reply('❌ **Uso:** `!setcolor #FF002E` (código HEX válido de 6 caracteres).');
+            await updateConfig('BRAND_COLOR', hex.toUpperCase(), message.guild?.id);
+            return message.reply(`✅ **Color principal actualizado solo en este servidor:** \`${hex.toUpperCase()}\``);
+        }
+
+        // 5.3 MULTI-SERVIDOR: !setlogo <URL o adjunta imagen>
+        if (command === '!setlogo') {
+            if (message.author.id !== OWNER_ID) return sendDeniedAccessMessage(message);
+            const url = message.attachments.first()?.url || args[1];
+            if (!url || !/^https?:\/\//i.test(url)) {
+                return message.reply('❌ **Uso:** `!setlogo <URL de imagen>` o escribe `!setlogo` adjuntando directamente el archivo del logo.');
+            }
+            await updateConfig('LOGO_URL', url, message.guild?.id);
+            return message.reply(`✅ **Logo privado guardado solo para este servidor.** Todos los paneles y bienvenidas de este Discord usarán este logo.`);
+        }
+
+        // 5.4 MULTI-SERVIDOR: !setbanner <tipo> <URL o adjunta imagen>
+        if (command === '!setbanner') {
+            if (message.author.id !== OWNER_ID) return sendDeniedAccessMessage(message);
+            const tipo = (args[1] || '').toLowerCase();
+            const info = guildManager.BANNER_TYPES[tipo];
+            if (!info) {
+                return message.reply('❌ **Uso:** `!setbanner <directos|eventos|valoraciones|sanciones|plantillas|bienvenida|consultas|aprobado|denegado|tops> <URL o adjunta imagen>`');
+            }
+            const url = message.attachments.first()?.url || args[2];
+            if (!url || !/^https?:\/\//i.test(url)) {
+                return message.reply(`❌ Adjunta una imagen o pega una URL válida después de \`!setbanner ${tipo}\`.`);
+            }
+            await updateConfig(info.key, url, message.guild?.id);
+            return message.reply(`✅ **Banner \`${tipo}\` guardado en privado solo para este servidor.**`);
+        }
+
+        // 5.5 MULTI-SERVIDOR: !verconfig (Ver perfil aislado del servidor actual)
+        if (['!verconfig', '!miconfig', '!serverconfig'].includes(command)) {
+            if (message.author.id !== OWNER_ID) return sendDeniedAccessMessage(message);
+            const v = guildManager.resolveGuildVisuals(message.guild?.id);
+            const c = v.config;
+            const fmtCh = (id) => id ? `<#${id}>` : '`No configurado`';
+            const emb = new EmbedBuilder()
+                .setColor(v.color)
+                .setAuthor({ name: `CONFIGURACIÓN PRIVADA • ${v.name}`, iconURL: v.logoUrl })
+                .setThumbnail(v.logoUrl)
+                .setTitle(`⚙️ Perfil de ${message.guild?.name || v.name}`)
+                .setDescription(
+                    `🏷️ **Marca:** \`${v.name}\` • **Color:** \`${v.colorHex}\` • **Tipo:** ${v.isPrimary ? '`Servidor Principal`' : '`Servidor Independiente`'}\n\n` +
+                    `🟣 **Directos:** Panel ${fmtCh(c.CHANNEL_STREAM_PANEL_ID)} | Avisos ${fmtCh(c.CHANNEL_STREAMERS_ID)}\n` +
+                    `🎉 **Eventos:** Panel ${fmtCh(c.CHANNEL_EVENTOS_PANEL_ID)} | Canal 1 ${fmtCh(c.CHANNEL_EVENTOS_ID)} | Canal 2 ${fmtCh(c.CHANNEL_EVENTOS_2_ID)}\n` +
+                    `⚖️ **Sanciones:** Panel ${fmtCh(c.CHANNEL_SANCIONES_PANEL_ID)} | Actas ${fmtCh(c.CHANNEL_SANCIONES_ID)}\n` +
+                    `⭐ **Valoraciones:** Panel ${fmtCh(c.CHANNEL_VALORACION_PANEL_ID)} | Reseñas ${fmtCh(c.CHANNEL_VALORACIONES_ID)}\n` +
+                    `🧠 **Consultas IA:** Staff ${fmtCh(c.CHANNEL_CONSULTAS_STAFF_ID)} | Usuarios ${fmtCh(c.CHANNEL_CONSULTAS_USERS_ID)} | Logs ${fmtCh(c.CHANNEL_CONSULTAS_LOGS_ID)}\n` +
+                    `👋 **Bienvenidas:** ${fmtCh(c.CHANNEL_BIENVENIDAS_ID)} | **General:** ${fmtCh(c.CHANNEL_GENERAL_ID)} | **Tickets:** ${fmtCh(c.CHANNEL_TICKETS_ID)}\n\n` +
+                    `💡 *Comandos exclusivos de este servidor:* \`!setnombre\`, \`!setcolor\`, \`!setlogo\`, \`!setbanner\`, \`!setcanal\`, \`!setrol\`.`
+                )
+                .setTimestamp();
+            return message.reply({ embeds: [emb], files: v.files });
         }
 
         // 6. COMANDO PARA REINICIAR / REENVIAR PANELES (!reiniciar-paneles)
@@ -8353,13 +8435,10 @@ client.on('messageCreate', async (message) => {
                 return;
             }
 
-            const embed = buildStreamPanelEmbed();
+            const gId = message.guild?.id;
+            const embed = buildStreamPanelEmbed(gId);
             const row = buildStreamPanelRow();
-            const files = [];
-            const logoPath = getLogoPath();
-            const imgPanelPath = path.join(__dirname, 'assets', 'panel_directos.png');
-            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-            if (fs.existsSync(imgPanelPath)) files.push(new AttachmentBuilder(imgPanelPath, { name: 'panel_directos.png' }));
+            const files = guildManager.resolveGuildVisuals(gId, 'directos').files;
 
             await message.channel.send({
                 embeds: [embed],
@@ -8678,13 +8757,13 @@ client.on('messageCreate', async (message) => {
             }
             if (!targetChannel) targetChannel = message.channel;
 
-            await updateConfig('CHANNEL_SANCIONES_ID', targetChannel.id);
+            await updateConfig('CHANNEL_SANCIONES_ID', targetChannel.id, message.guild?.id);
 
             const confEmbed = new EmbedBuilder()
                 .setColor(0xE74C3C)
                 .setTitle('🚨 Canal de Publicación de Sanciones Configurado')
                 .setDescription(`✅ Los expedientes de sanciones y actas disciplinarias se publicarán ahora en: <#${targetChannel.id}> (\`${targetChannel.id}\`)`)
-                .setFooter({ text: 'VALLECAS RP • Configuración Oficial de Moderación' })
+                .setFooter({ text: `${guildManager.resolveGuildVisuals(message.guild?.id).name} • Configuración Oficial de Moderación` })
                 .setTimestamp();
 
             const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
@@ -8710,13 +8789,13 @@ client.on('messageCreate', async (message) => {
             }
             if (!targetChannel) targetChannel = message.channel;
 
-            await updateConfig('CHANNEL_SANCIONES_PANEL_ID', targetChannel.id);
+            await updateConfig('CHANNEL_SANCIONES_PANEL_ID', targetChannel.id, message.guild?.id);
 
             const confEmbed = new EmbedBuilder()
                 .setColor(0xE74C3C)
                 .setTitle('📋 Canal del Panel de Sanciones Configurado')
                 .setDescription(`✅ El canal asignado para el Panel interactivo de Sanciones es: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n💡 *Puedes enviar el panel allí escribiendo **\`!panel-sanciones\`**.*`)
-                .setFooter({ text: 'VALLECAS RP • Configuración Oficial de Moderación' })
+                .setFooter({ text: `${guildManager.resolveGuildVisuals(message.guild?.id).name} • Configuración Oficial de Moderación` })
                 .setTimestamp();
 
             const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
@@ -8741,13 +8820,10 @@ client.on('messageCreate', async (message) => {
 
             if (!targetChannel) targetChannel = message.channel;
 
-            const embed = buildSancionesPanelEmbed();
+            const gId = message.guild?.id;
+            const embed = buildSancionesPanelEmbed(gId);
             const row = buildSancionesPanelRow();
-            const logoPath = getLogoPath();
-            const bannerPath = path.join(__dirname, 'assets', 'panel_sanciones.png');
-            const files = [];
-            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-            if (fs.existsSync(bannerPath)) files.push(new AttachmentBuilder(bannerPath, { name: 'panel_sanciones.png' }));
+            const files = guildManager.resolveGuildVisuals(gId, 'sanciones').files;
 
             await targetChannel.send({
                 embeds: [embed],
@@ -8780,13 +8856,13 @@ client.on('messageCreate', async (message) => {
             }
             if (!targetChannel) targetChannel = message.channel;
 
-            await updateConfig('CHANNEL_EVENTOS_ID', targetChannel.id);
+            await updateConfig('CHANNEL_EVENTOS_ID', targetChannel.id, message.guild?.id);
 
             const confEmbed = new EmbedBuilder()
                 .setColor(0xD900FF)
                 .setTitle('🎉 Canal Principal de Eventos Configurado')
                 .setDescription(`✅ Los anuncios oficiales de eventos se publicarán ahora en el **Canal 1**: <#${targetChannel.id}> (\`${targetChannel.id}\`)`)
-                .setFooter({ text: 'VALLECAS RP • Configuración Oficial de Eventos' })
+                .setFooter({ text: `${guildManager.resolveGuildVisuals(message.guild?.id).name} • Configuración Oficial de Eventos` })
                 .setTimestamp();
 
             const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
@@ -8812,13 +8888,13 @@ client.on('messageCreate', async (message) => {
             }
             if (!targetChannel) targetChannel = message.channel;
 
-            await updateConfig('CHANNEL_EVENTOS_2_ID', targetChannel.id);
+            await updateConfig('CHANNEL_EVENTOS_2_ID', targetChannel.id, message.guild?.id);
 
             const confEmbed = new EmbedBuilder()
                 .setColor(0xD900FF)
                 .setTitle('🎉 Segundo Canal de Eventos Configurado (Dual-Channel)')
                 .setDescription(`✅ Los anuncios de eventos se enviarán **también** al **Canal 2**: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n*(Ahora cada evento se publicará a la vez en ambos canales).*`)
-                .setFooter({ text: 'VALLECAS RP • Publicación Simultánea de Eventos' })
+                .setFooter({ text: `${guildManager.resolveGuildVisuals(message.guild?.id).name} • Publicación Simultánea de Eventos` })
                 .setTimestamp();
 
             const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
@@ -8844,13 +8920,13 @@ client.on('messageCreate', async (message) => {
             }
             if (!targetChannel) targetChannel = message.channel;
 
-            await updateConfig('CHANNEL_EVENTOS_PANEL_ID', targetChannel.id);
+            await updateConfig('CHANNEL_EVENTOS_PANEL_ID', targetChannel.id, message.guild?.id);
 
             const confEmbed = new EmbedBuilder()
                 .setColor(0xD900FF)
                 .setTitle('📋 Canal del Panel de Eventos Configurado')
                 .setDescription(`✅ El canal asignado para el Panel interactivo de Eventos es: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n💡 *Puedes enviar el panel allí escribiendo **\`!panel-eventos\`**.*`)
-                .setFooter({ text: 'VALLECAS RP • Configuración Oficial de Eventos' })
+                .setFooter({ text: `${guildManager.resolveGuildVisuals(message.guild?.id).name} • Configuración Oficial de Eventos` })
                 .setTimestamp();
 
             const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
@@ -8875,13 +8951,10 @@ client.on('messageCreate', async (message) => {
 
             if (!targetChannel) targetChannel = message.channel;
 
-            const embed = buildEventosPanelEmbed();
+            const gId = message.guild?.id;
+            const embed = buildEventosPanelEmbed(gId);
             const row = buildEventosPanelRow();
-            const logoPath = getLogoPath();
-            const bannerPath = path.join(__dirname, 'assets', 'panel_eventos.png');
-            const files = [];
-            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-            if (fs.existsSync(bannerPath)) files.push(new AttachmentBuilder(bannerPath, { name: 'panel_eventos.png' }));
+            const files = guildManager.resolveGuildVisuals(gId, 'eventos').files;
 
             await targetChannel.send({
                 embeds: [embed],
@@ -8912,13 +8985,13 @@ client.on('messageCreate', async (message) => {
             }
             if (!targetChannel) targetChannel = message.channel;
 
-            await updateConfig('CHANNEL_CONSULTAS_STAFF_ID', targetChannel.id);
+            await updateConfig('CHANNEL_CONSULTAS_STAFF_ID', targetChannel.id, message.guild?.id);
 
             const confEmbed = new EmbedBuilder()
                 .setColor(0x3498db)
                 .setTitle('🛡️ Canal de Consultas IA (Staff) Configurado')
                 .setDescription(`✅ El canal de consultas exclusivo para el **Staff** se ha establecido en: <#${targetChannel.id}> (\`${targetChannel.id}\`)`)
-                .setFooter({ text: 'VALLECAS RP • Consultas IA Staff' })
+                .setFooter({ text: `${guildManager.resolveGuildVisuals(message.guild?.id).name} • Consultas IA Staff` })
                 .setTimestamp();
 
             const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
@@ -8943,13 +9016,13 @@ client.on('messageCreate', async (message) => {
             }
             if (!targetChannel) targetChannel = message.channel;
 
-            await updateConfig('CHANNEL_CONSULTAS_USERS_ID', targetChannel.id);
+            await updateConfig('CHANNEL_CONSULTAS_USERS_ID', targetChannel.id, message.guild?.id);
 
             const confEmbed = new EmbedBuilder()
                 .setColor(0x9B59B6)
                 .setTitle('👥 Canal de Consultas IA (Usuarios) Configurado')
                 .setDescription(`✅ El canal de consultas para **Usuarios y Comunidad** se ha establecido en: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n*(Ahora todos los miembros de la comunidad pueden consultar sus dudas de normativa libremente aquí).*`)
-                .setFooter({ text: 'VALLECAS RP • Consultas IA Comunidad' })
+                .setFooter({ text: `${guildManager.resolveGuildVisuals(message.guild?.id).name} • Consultas IA Comunidad` })
                 .setTimestamp();
 
             const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
@@ -8976,13 +9049,13 @@ client.on('messageCreate', async (message) => {
             }
             if (!targetChannel) targetChannel = message.channel;
 
-            await updateConfig('CHANNEL_BIENVENIDAS_ID', targetChannel.id);
+            await updateConfig('CHANNEL_BIENVENIDAS_ID', targetChannel.id, message.guild?.id);
 
             const confEmbed = new EmbedBuilder()
                 .setColor(0xE74C3C)
                 .setTitle('👋 Canal de Bienvenidas Configurado')
                 .setDescription(`✅ Los mensajes de bienvenida con contenedor y banner se publicarán en: <#${targetChannel.id}> (\`${targetChannel.id}\`)\n\n💡 *Puedes probar cómo queda escribiendo **\`!test-bienvenida\`**.*`)
-                .setFooter({ text: 'VALLECAS RP • Sistema Oficial de Bienvenidas' })
+                .setFooter({ text: `${guildManager.resolveGuildVisuals(message.guild?.id).name} • Sistema Oficial de Bienvenidas` })
                 .setTimestamp();
 
             const confMsg = await message.channel.send({ embeds: [confEmbed] }).catch(() => null);
@@ -9019,13 +9092,10 @@ client.on('messageCreate', async (message) => {
             const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) return;
 
-            const embed = buildPlantillasPanelEmbed();
+            const gId = message.guild?.id;
+            const embed = buildPlantillasPanelEmbed(gId);
             const row = buildPlantillasPanelRow();
-            const logoPath = getLogoPath();
-            const bannerPath = path.join(__dirname, 'assets', 'panel_postulaciones.png');
-            const files = [];
-            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-            if (fs.existsSync(bannerPath)) files.push(new AttachmentBuilder(bannerPath, { name: 'panel_postulaciones.png' }));
+            const files = guildManager.resolveGuildVisuals(gId, 'plantillas').files;
 
             await message.channel.send({
                 embeds: [embed],
@@ -9247,13 +9317,10 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
 
-            const embed = buildStreamPanelEmbed();
+            const gId = interaction.guild?.id;
+            const embed = buildStreamPanelEmbed(gId);
             const row = buildStreamPanelRow();
-            const files = [];
-            const logoPath = getLogoPath();
-            const imgPanelPath = path.join(__dirname, 'assets', 'panel_directos.png');
-            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-            if (fs.existsSync(imgPanelPath)) files.push(new AttachmentBuilder(imgPanelPath, { name: 'panel_directos.png' }));
+            const files = guildManager.resolveGuildVisuals(gId, 'directos').files;
 
             await interaction.channel.send({
                 embeds: [embed],
@@ -10061,29 +10128,6 @@ client.on('interactionCreate', async (interaction) => {
                 targetTag,
                 reason,
                 punishment,
-                involvedStaff: involvedStaff || `<@${interaction.user.id}>`,
-                imageUrl,
-                channelId: interaction.channelId
-            };
-
-            await saveSancionRecord(sancionObj);
-
-            const { embeds, embed, files } = buildSancionCardEmbed(sancionObj);
-            const targetChannelId = botConfig.CHANNEL_SANCIONES_ID || interaction.channelId;
-            const targetChannel = await client.channels.fetch(targetChannelId).catch(() => interaction.channel);
-
-            await targetChannel.send({ embeds: embeds || [embed], files }).catch(e => console.error('Error al enviar sancion:', e));
-
-            await interaction.editReply({
-                content: `✅ **Expediente de sanción #${sancionId} registrado y publicado con éxito.**`
-            }).catch(() => { });
-
-            setTimeout(() => {
-                interaction.deleteReply().catch(() => { });
-            }, 3000);
-            return;
-        } catch (err) {
-            console.error('Error al procesar modal de sancion:', err);
             await interaction.editReply({
                 content: '❌ Ocurrió un error al procesar el acta de sanción.'
             }).catch(() => { });
@@ -10446,65 +10490,61 @@ async function startBot() {
         console.error('⚠️ [DM ASSISTANT ERROR]:', dmErr.message);
     }
 
+    // Inicializar Gestor Multi-Servidor (aisla configuración, logo y banners por guildId sin afectar a Vallecas RP)
+    guildManager.initGuildManager({
+        client,
+        getPrimaryConfig: () => botConfig,
+        updatePrimaryConfig: (k, v) => updateConfig(k, v)
+    });
+    await guildManager.syncGuildProfilesFromMongo().catch(() => {});
+    client.once('ready', async () => {
+        guildManager.detectPrimaryGuildId();
+        await guildManager.ensurePrimaryGuildProfileInMongo().catch(() => {});
+    });
+
     // Sistema independiente de Web Dashboard Prémium (OAuth2 + Selector de Servidores + Configuración en Vivo)
     try {
         const initDashboardServer = require('./dashboardServer');
         initDashboardServer(app, client, {
             getBotConfig: () => botConfig,
-            updateBotConfig: (k, v) => updateConfig(k, v),
+            updateBotConfig: (k, v, gid) => updateConfig(k, v, gid),
             publishPanel: async (panelType, channel) => {
-                const buildFiles = (bannerCandidates = []) => {
-                    const files = [];
-                    const lp = getLogoPath();
-                    if (fs.existsSync(lp)) files.push(new AttachmentBuilder(lp, { name: 'logo.png' }));
-                    for (const name of bannerCandidates) {
-                        const bp = path.join(__dirname, 'assets', name);
-                        if (fs.existsSync(bp)) {
-                            files.push(new AttachmentBuilder(bp, { name }));
-                            break;
-                        }
-                    }
-                    return files;
-                };
+                const gId = channel.guild?.id;
 
                 if (panelType === 'streamers') {
-                    const files = buildFiles(['panel_directos.png']);
-                    await channel.send({ embeds: [buildStreamPanelEmbed()], components: [buildStreamPanelRow()], files });
-                    return `Panel de Directos publicado con banner en #${channel.name}`;
+                    const files = guildManager.resolveGuildVisuals(gId, 'directos').files;
+                    await channel.send({ embeds: [buildStreamPanelEmbed(gId)], components: [buildStreamPanelRow()], files });
+                    return `Panel de Directos publicado en #${channel.name}`;
                 }
                 if (panelType === 'eventos') {
-                    const files = buildFiles(['panel_eventos.png']);
-                    await channel.send({ embeds: [buildEventosPanelEmbed()], components: [buildEventosPanelRow()], files });
-                    return `Panel de Eventos publicado con banner en #${channel.name}`;
+                    const files = guildManager.resolveGuildVisuals(gId, 'eventos').files;
+                    await channel.send({ embeds: [buildEventosPanelEmbed(gId)], components: [buildEventosPanelRow()], files });
+                    return `Panel de Eventos publicado en #${channel.name}`;
                 }
                 if (panelType === 'valoraciones') {
-                    const files = buildFiles(['panel_valoracion.png']);
-                    await channel.send({ embeds: [buildStaffRatingPanelEmbed()], components: [buildStaffRatingPanelRow()], files });
-                    return `Panel de Valoraciones publicado con banner en #${channel.name}`;
+                    const files = guildManager.resolveGuildVisuals(gId, 'valoraciones').files;
+                    await channel.send({ embeds: [buildStaffRatingPanelEmbed(gId)], components: [buildStaffRatingPanelRow()], files });
+                    return `Panel de Valoraciones publicado en #${channel.name}`;
                 }
                 if (panelType === 'sanciones') {
-                    const files = buildFiles(['panel_sanciones.png']);
-                    await channel.send({ embeds: [buildSancionesPanelEmbed()], components: [buildSancionesPanelRow()], files });
-                    return `Panel de Sanciones publicado con banner en #${channel.name}`;
+                    const files = guildManager.resolveGuildVisuals(gId, 'sanciones').files;
+                    await channel.send({ embeds: [buildSancionesPanelEmbed(gId)], components: [buildSancionesPanelRow()], files });
+                    return `Panel de Sanciones publicado en #${channel.name}`;
                 }
                 if (panelType === 'plantillas') {
-                    const files = buildFiles(['panel_postulaciones.png']);
-                    await channel.send({ embeds: [buildPlantillasPanelEmbed()], components: [buildPlantillasPanelRow()], files });
-                    return `Panel de Plantillas publicado con banner en #${channel.name}`;
+                    const files = guildManager.resolveGuildVisuals(gId, 'plantillas').files;
+                    await channel.send({ embeds: [buildPlantillasPanelEmbed(gId)], components: [buildPlantillasPanelRow()], files });
+                    return `Panel de Plantillas publicado en #${channel.name}`;
                 }
                 if (panelType === 'consultas') {
-                    const bannerNames = ['banner_consultas.png', 'consultas.png', 'panel_consultas.png'];
-                    const files = buildFiles(bannerNames);
-                    const foundBanner = bannerNames.find(n => fs.existsSync(path.join(__dirname, 'assets', n)));
-                    const hasLogo = fs.existsSync(getLogoPath());
-                    const logoUrl = hasLogo ? 'attachment://logo.png' : client.user.displayAvatarURL();
+                    const v = guildManager.resolveGuildVisuals(gId, 'consultas');
                     const embed = new EmbedBuilder()
-                        .setColor(0xD900FF)
-                        .setAuthor({ name: 'CONSULTAS DE LA NORMATIVA | VALLECAS RP', iconURL: logoUrl })
-                        .setThumbnail(logoUrl)
+                        .setColor(v.color)
+                        .setAuthor({ name: `CONSULTAS DE LA NORMATIVA | ${v.name}`, iconURL: v.logoUrl })
+                        .setThumbnail(v.logoUrl)
                         .setTitle('📚 ¿TIENES ALGUNA DUDA SOBRE LA NORMATIVA?')
                         .setDescription(
-                            `¡Bienvenido al canal oficial de **Consultas Inteligentes**!\n\n` +
+                            `¡Bienvenido al canal oficial de **Consultas Inteligentes** de **${v.name}**!\n\n` +
                             `💬 **¿Cómo funciona?**\n` +
                             `> • Simplemente **escribe tu duda directamente en este canal** hablando de forma normal *(sin comandos)*.\n` +
                             `> • Nuestra Inteligencia Artificial revisará al instante la **Normativa General**, la **Normativa de Ilegales** y todas las actualizaciones del servidor para darte una respuesta exacta.\n\n` +
@@ -10512,11 +10552,11 @@ async function startBot() {
                             `> • Puedes preguntar por siglas RP (\`RK\`, \`MG\`, \`PG\`, \`PK\`, \`CK\`, \`VDM\`...), atracos, bandas, zonas seguras o sanciones.\n` +
                             `> • Tu pregunta y la respuesta se limpiarán automáticamente a los **90 segundos** *(o al pulsar el botón 🗑️ Cerrar / Borrar)* para mantener el canal siempre impecable.`
                         )
-                        .setFooter({ text: 'VALLECAS RP • Sistema Inteligente de Normativa 24/7', iconURL: logoUrl })
+                        .setFooter({ text: `${v.name} • Sistema Inteligente de Normativa 24/7`, iconURL: v.logoUrl })
                         .setTimestamp();
-                    if (foundBanner) embed.setImage(`attachment://${foundBanner}`);
-                    await channel.send({ embeds: [embed], files });
-                    return `Panel de Consultas publicado con banner en #${channel.name}`;
+                    if (v.bannerUrl) embed.setImage(v.bannerUrl);
+                    await channel.send({ embeds: [embed], files: v.files });
+                    return `Panel de Consultas publicado en #${channel.name}`;
                 }
                 return `Panel "${panelType}" listo para #${channel.name}`;
             }

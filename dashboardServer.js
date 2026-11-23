@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
+const guildManager = require('./guildManager');
 
 const GUILD_CONFIGS_FILE = path.join(__dirname, 'guild_configs.json');
 const SESSION_COOKIE = 'vyre_dash_session';
@@ -192,7 +193,10 @@ function buildDemoFullData() {
 }
 
 const SAFE_CONFIG_KEYS = [
-    'BRAND_NAME', 'BRAND_COLOR', 'PREFIX', 'FIVEM_CFX_CODE',
+    'BRAND_NAME', 'BRAND_COLOR', 'ASSETS_FOLDER', 'PREFIX', 'FIVEM_CFX_CODE',
+    'LOGO_URL', 'BANNER_DIRECTOS_URL', 'BANNER_EVENTOS_URL', 'BANNER_VALORACIONES_URL',
+    'BANNER_TOPS_URL', 'BANNER_SANCIONES_URL', 'BANNER_PLANTILLAS_URL',
+    'BANNER_BIENVENIDA_URL', 'BANNER_CONSULTAS_URL', 'BANNER_APROBADO_URL', 'BANNER_DENEGADO_URL',
     'AI_ENABLED', 'AI_AUTOCLEAN_SECONDS', 'TICKETS_AI_ENABLED',
     'LOCUCION_ENABLED', 'LOCUCION_INTERVAL_SEC', 'ANTI_IA_WL_ENABLED', 'ASCENSOS_ENABLED',
     'CHANNEL_CONSULTAS_STAFF_ID', 'CHANNEL_CONSULTAS_USERS_ID', 'CHANNEL_CONSULTAS_LOGS_ID',
@@ -632,48 +636,27 @@ module.exports = function initDashboardServer(app, client, options = {}) {
             VOICE_ESPERA_ID: 'vc_espera',
             VOICE_CHARLA_ID: 'vc_charla'
         } : {
-            BRAND_NAME: client.guilds?.cache?.get(guildId)?.name || 'MI SERVIDOR RP',
-            BRAND_COLOR: '#D900FF',
-            PREFIX: '!',
-            AI_ENABLED: true,
-            AI_AUTOCLEAN_SECONDS: 90,
-            TICKETS_AI_ENABLED: true,
-            LOCUCION_ENABLED: true,
-            LOCUCION_INTERVAL_SEC: 30,
-            ANTI_IA_WL_ENABLED: true,
-            ASCENSOS_ENABLED: true,
-            ...pickSafeConfig(getBotConfig())
+            ...pickSafeConfig(guildManager.getGuildConfig(guildId))
         };
 
-        res.json({ config: pickSafeConfig({ ...base, ...(all[guildId] || {}) }) });
+        res.json({ config: pickSafeConfig(req.dashSession.isDemo ? { ...base, ...(all[guildId] || {}) } : base) });
     });
 
     app.post('/api/guild/:id/config', requireGuildAccess, async (req, res) => {
         try {
             const guildId = req.params.id;
             const incoming = pickSafeConfig(req.body?.config || {});
-            const all = readGuildConfigs();
-            all[guildId] = { ...(all[guildId] || {}), ...incoming, updatedAt: new Date().toISOString() };
-            saveGuildConfigs(all);
 
-            if (!req.dashSession.isDemo) {
-                const syncKeys = [
-                    'CHANNEL_CONSULTAS_STAFF_ID', 'CHANNEL_CONSULTAS_USERS_ID', 'CHANNEL_CONSULTAS_LOGS_ID',
-                    'CHANNEL_STREAM_PANEL_ID', 'CHANNEL_STREAMERS_ID',
-                    'CHANNEL_EVENTOS_PANEL_ID', 'CHANNEL_EVENTOS_ID', 'CHANNEL_EVENTOS_2_ID',
-                    'CHANNEL_SANCIONES_PANEL_ID', 'CHANNEL_SANCIONES_ID',
-                    'CHANNEL_VALORACION_PANEL_ID', 'CHANNEL_VALORACIONES_ID',
-                    'CHANNEL_SOLICITUDES_ID', 'CHANNEL_APROBADOS_ID', 'CHANNEL_DENEGADOS_ID',
-                    'CHANNEL_BIENVENIDAS_ID', 'CHANNEL_NORMATIVAS_ID', 'CHANNEL_GENERAL_ID', 'CHANNEL_TICKETS_ID',
-                    'ROLE_STREAMER_ID', 'FIVEM_CFX_CODE'
-                ];
-                for (const key of syncKeys) {
-                    if (incoming[key] !== undefined) {
-                        await updateBotConfig(key, String(incoming[key])).catch(() => {});
-                    }
-                }
+            if (req.dashSession.isDemo) {
+                const all = readGuildConfigs();
+                all[guildId] = { ...(all[guildId] || {}), ...incoming, updatedAt: new Date().toISOString() };
+                saveGuildConfigs(all);
+                return res.json({ ok: true, savedAt: all[guildId].updatedAt });
             }
-            res.json({ ok: true, savedAt: all[guildId].updatedAt });
+
+            // Guardar en MongoDB por servidor (totalmente aislado por guildId, sin tocar Vallecas RP si es otro servidor)
+            await guildManager.setGuildConfigBulk(guildId, incoming);
+            res.json({ ok: true, savedAt: new Date().toISOString() });
         } catch (err) {
             res.status(500).json({ error: err.message });
         }
