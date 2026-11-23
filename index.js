@@ -10128,6 +10128,30 @@ client.on('interactionCreate', async (interaction) => {
                 targetTag,
                 reason,
                 punishment,
+                involvedStaff: involvedStaff || `<@${interaction.user.id}>`,
+                imageUrl,
+                channelId: interaction.channelId
+            };
+
+            await saveSancionRecord(sancionObj);
+
+            const { embeds, embed, files } = buildSancionCardEmbed(sancionObj);
+            const gCfgSan = guildManager.getGuildConfig(interaction.guild?.id);
+            const targetChannelId = gCfgSan.CHANNEL_SANCIONES_ID || interaction.channelId;
+            const targetChannel = await client.channels.fetch(targetChannelId).catch(() => interaction.channel);
+
+            await targetChannel.send({ embeds: embeds || [embed], files }).catch(e => console.error('Error al enviar sancion:', e));
+
+            await interaction.editReply({
+                content: `✅ **Expediente de sanción #${sancionId} registrado y publicado con éxito.**`
+            }).catch(() => { });
+
+            setTimeout(() => {
+                interaction.deleteReply().catch(() => { });
+            }, 3000);
+            return;
+        } catch (err) {
+            console.error('Error al procesar modal de sancion:', err);
             await interaction.editReply({
                 content: '❌ Ocurrió un error al procesar el acta de sanción.'
             }).catch(() => { });
