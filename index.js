@@ -529,6 +529,75 @@ function removeStaffMemberFromRating(staffId, guildId = null) {
     return true;
 }
 
+// Sincronización automática de Staffs valorables y Top Staff basada en el ROLE_STAFF_ID del servidor
+// Añade nuevos miembros con el rol y elimina automáticamente a los que perdieron el rol o fueron expulsados/salieron.
+async function syncStaffListFromRole(guild, force = false) {
+    if (!guild || !guild.id) return { added: 0, removed: 0, total: 0 };
+    const gId = guild.id;
+    const gCfg = guildManager.getGuildConfig(gId);
+    const staffRoleId = gCfg.ROLE_STAFF_ID;
+    if (!staffRoleId || (!force && !gCfg.AUTO_SYNC_STAFF_ROLE)) {
+        return { added: 0, removed: 0, total: 0 };
+    }
+
+    try {
+        await guild.members.fetch().catch(() => { });
+        const roleMembers = guild.members.cache.filter(m => !m.user.bot && m.roles.cache.has(staffRoleId));
+        const activeIds = new Set(roleMembers.map(m => m.id));
+
+        const data = getStaffRatingsData(gId);
+        if (!data.staffList) data.staffList = [];
+        if (!data.stats) data.stats = {};
+        if (!data.ratings) data.ratings = [];
+
+        let added = 0;
+        let removed = 0;
+
+        // 1. Añadir miembros nuevos que tienen el rol de Staff
+        for (const [, member] of roleMembers) {
+            if (!data.staffList.includes(member.id)) {
+                data.staffList.push(member.id);
+                if (!data.stats[member.id]) {
+                    data.stats[member.id] = {
+                        staffTag: member.user.tag || member.displayName || 'Staff',
+                        totalRatings: 0,
+                        sumRatings: 0,
+                        average: 0
+                    };
+                }
+                added++;
+            } else if (data.stats[member.id]) {
+                data.stats[member.id].staffTag = member.user.tag || member.displayName || data.stats[member.id].staffTag;
+            }
+        }
+
+        // 2. Eliminar automáticamente Staffs que ya no tienen el rol o salieron/fueron expulsados del servidor
+        const keptList = [];
+        for (const sId of data.staffList) {
+            if (activeIds.has(sId)) {
+                keptList.push(sId);
+            } else {
+                removed++;
+                if (data.stats[sId]) delete data.stats[sId];
+            }
+        }
+        data.staffList = keptList;
+        if (removed > 0) {
+            data.ratings = data.ratings.filter(r => r.staffId && activeIds.has(r.staffId));
+        }
+
+        if (added > 0 || removed > 0 || force) {
+            saveStaffRatingsData(data, gId);
+            console.log(`🛡️ [AUTO-SYNC STAFF] ${guild.name}: +${added} añadidos, -${removed} eliminados (Total activos: ${data.staffList.length}).`);
+        }
+
+        return { added, removed, total: data.staffList.length };
+    } catch (e) {
+        console.error(`⚠️ [AUTO-SYNC STAFF] Error en ${guild.name}:`, e.message);
+        return { added: 0, removed: 0, total: 0 };
+    }
+}
+
 function recalculateStaffRatings(data) {
     const newStats = {};
     const validRatings = data.ratings || [];
@@ -6459,18 +6528,22 @@ client.on('messageCreate', async (message) => {
 
             if (targetRole) {
                 await updateConfig('ROLE_STAFF_ID', targetRole.id, message.guild?.id);
+                await updateConfig('AUTO_SYNC_STAFF_ROLE', true, message.guild?.id);
+                const syncRes = await syncStaffListFromRole(message.guild, true);
                 const vSt = guildManager.resolveGuildVisuals(message.guild?.id);
                 const roleEmbed = new EmbedBuilder()
                     .setColor(vSt.color)
-                    .setTitle('🛡️ Rol de Staff Configurado')
+                    .setTitle('🛡️ Rol de Staff Configurado y Sincronizado')
                     .setDescription(
                         `✅ El rol <@&${targetRole.id}> (\`${targetRole.id}\`) ha sido configurado como **Rol Oficial de Staff** en **${vSt.name}**.\n\n` +
-                        `> 🔑 *A partir de ahora, todos los miembros con este rol podrán usar las funciones, paneles y comandos de Staff del bot en este servidor.*`
+                        `👥 **Staffs sincronizados automáticamente:** \`${syncRes.total}\` activos *(+${syncRes.added} añadidos, -${syncRes.removed} retirados)*\n\n` +
+                        `> 🔑 *Todos los miembros con este rol tienen acceso a las funciones de Staff del bot.*\n` +
+                        `> 🔄 *Auto-actualización activada: si entra un nuevo Staff, pierde el rol o sale del servidor, se actualizará solo en el menú de valoraciones y en el panel de Tops.*`
                     )
-                    .setFooter({ text: `${vSt.name} • Permisos de Staff` })
+                    .setFooter({ text: `${vSt.name} • Permisos y Sincronización Automática de Staff` })
                     .setTimestamp();
                 const okMsg = await message.channel.send({ embeds: [roleEmbed] }).catch(() => null);
-                if (okMsg) setTimeout(() => okMsg.delete().catch(() => { }), 8000);
+                if (okMsg) setTimeout(() => okMsg.delete().catch(() => { }), 10000);
                 return;
             }
 
@@ -10047,79 +10120,6 @@ client.on('interactionCreate', async (interaction) => {
     );
 
     await interaction.update({
-        embeds: [updatedEmbed],
-        components: [disabledRow]
-    });
-
-    // 2. Procesar el mensaje actualizado para que envíe el contenedor al canal de aprobados
-    const message = await interaction.message.fetch();
-    await handleWhitelistMessage(message, 'interactionSimulator');
-});
-
-// Manejo de envío de Modales (Formularios)
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isModalSubmit()) return;
-
-    // ----------------------------------------------------
-    // PROCESAMIENTO: MODAL VALORACIÓN DE STAFF
-    // ----------------------------------------------------
-    if (interaction.customId.startsWith('modal_valorar_staff')) {
-        await interaction.deferReply({ ephemeral: true }).catch(() => { });
-
-        try {
-            const rawRating = interaction.fields.getTextInputValue('input_staff_rating').trim();
-            const comment = interaction.fields.getTextInputValue('input_staff_comment').trim();
-
-            // Extraer staffId del customId (ej: modal_valorar_staff_123456789)
-            let staffId = interaction.customId.replace('modal_valorar_staff_', '');
-            if (staffId === 'modal_valorar_staff') staffId = null;
-
-            // Si vino del formato anterior con input de texto
-            if (!staffId && interaction.fields.fields.has('input_staff_target')) {
-                const rawStaff = interaction.fields.getTextInputValue('input_staff_target').trim();
-                const idMatch = rawStaff.match(/^<@!?(\d{17,20})>$/) || rawStaff.match(/^(\d{17,20})$/);
-                if (idMatch) staffId = idMatch[1];
-                else {
-                    const members = await interaction.guild.members.fetch({ query: rawStaff, limit: 1 }).catch(() => null);
-                    const found = members?.first();
-                    if (found) staffId = found.id;
-                    else staffId = rawStaff.toLowerCase().replace(/[^a-z0-9]/g, '_');
-                }
-            }
-
-            // Validar puntuación numérica
-            const numRating = parseInt(rawRating, 10);
-            if (isNaN(numRating) || numRating < 1 || numRating > 10) {
-                return interaction.editReply({
-                    content: '❌ **Puntuación inválida:** Debes indicar un número entero del **1 al 10** (por ejemplo `10` o `8`).'
-                }).catch(() => { });
-            }
-
-            // Obtener datos del staff
-            let staffTag = 'Staff';
-            let staffMention = `<@${staffId}>`;
-
-            if (staffId && /^\d+$/.test(staffId)) {
-                try {
-                    const member = await interaction.guild.members.fetch(staffId).catch(() => null);
-                    if (member) {
-                        staffTag = member.user.tag || member.displayName;
-                        staffMention = `<@${member.id}>`;
-                    }
-                } catch (e) { }
-            }
-
-            // Evitar auto-valoraciones
-            if (staffId === interaction.user.id) {
-                await interaction.editReply({
-                    content: '⚠️ **No puedes valorarte a ti mismo.** La valoración debe ser para otro miembro del equipo de Staff.'
-                }).catch(() => { });
-                setTimeout(() => {
-                    interaction.deleteReply().catch(() => { });
-                }, 3000);
-                return;
-            }
-
             // Guardar en la base de datos persistente EXCLUSIVA de este servidor
             const gId = interaction.guild?.id;
             const { entry, stats } = saveStaffRating({
