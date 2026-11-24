@@ -493,6 +493,7 @@ module.exports = {
     findGuildAssetsDir,
     getGuildConfig,
     setGuildConfigKey,
+    updateGuildConfig: setGuildConfigKey,
     setGuildConfigBulk,
     resolveGuildVisuals,
     getAllSecondaryGuildConfigs
