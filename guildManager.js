@@ -83,6 +83,7 @@ const BANNER_TYPES = {
     bienvenida:    { key: 'BANNER_BIENVENIDA_URL',   files: ['banner_bienvenida.png', 'bienvenida.png', 'bienvenidas.png', 'welcome.png'] },
     bienvenidas:   { key: 'BANNER_BIENVENIDA_URL',   files: ['banner_bienvenida.png', 'bienvenida.png', 'bienvenidas.png', 'welcome.png'] },
     consultas:     { key: 'BANNER_CONSULTAS_URL',    files: ['banner_consultas.png', 'consultas.png', 'panel_consultas.png', 'consulta.png'] },
+    verificacion:  { key: 'BANNER_VERIFICACION_URL', files: ['verificacion.png', 'banner_verificacion.png', 'panel_verificacion.png', 'verify.png'] },
     aprobado:      { key: 'BANNER_APROBADO_URL',     files: ['aprobado.png', 'aprobada.png', 'wl_aprobada.png'] },
     denegado:      { key: 'BANNER_DENEGADO_URL',     files: ['denegado.png', 'denegada.png', 'wl_denegada.png'] }
 };

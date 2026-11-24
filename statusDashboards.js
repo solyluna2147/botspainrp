@@ -689,4 +689,12 @@ module.exports = function initStatusDashboards(client) {
             console.error('⚠️ [DASHBOARDS interactionCreate Error]:', err.message);
         }
     });
+
+    // Cargar módulo independiente de Verificación Multi-Servidor (verificacion.js)
+    try {
+        const initVerificacion = require('./verificacion');
+        initVerificacion(client);
+    } catch (verErr) {
+        console.error('⚠️ [VERIFICACIÓN] Error inicializando módulo:', verErr.message);
+    }
 };
