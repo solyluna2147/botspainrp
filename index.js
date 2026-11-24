@@ -327,6 +327,74 @@ async function syncDataFromMongo() {
     }
 }
 
+// Sincronizar datos de TODOS los servidores secundarios (ej: VilaCityRP) desde su propia DB en MongoDB
+// Evita que tras un reinicio/redeploy en Railway se pierdan staffs, valoraciones, streamers, sanciones o eventos.
+async function syncSecondaryGuildsFromMongo() {
+    if (!isMongoConnected || !client || !client.guilds) return;
+    try {
+        for (const guild of client.guilds.cache.values()) {
+            const gId = guild.id;
+            if (guildManager.isPrimaryGuild(gId)) continue;
+
+            try {
+                // 1. Staffs y Valoraciones
+                const GuildValModel = guildManager.getGuildModel(gId, 'ValoracionData', staffRatingDataSchema);
+                const staffDoc = await GuildValModel.findOne({ docId: 'main' }).catch(() => null);
+                if (staffDoc) {
+                    const statsObj = {};
+                    if (staffDoc.stats) {
+                        if (typeof staffDoc.stats.forEach === 'function') {
+                            staffDoc.stats.forEach((val, key) => { statsObj[key] = val; });
+                        } else if (typeof staffDoc.stats === 'object') {
+                            Object.assign(statsObj, staffDoc.stats);
+                        }
+                    }
+                    const officialList = Array.isArray(staffDoc.staffList) ? staffDoc.staffList : [];
+                    const filteredRatings = (staffDoc.ratings || []).filter(r => r.staffId && officialList.includes(r.staffId));
+                    const dataToSave = {
+                        staffList: officialList,
+                        ratings: filteredRatings,
+                        stats: statsObj
+                    };
+                    recalculateStaffRatings(dataToSave);
+                    fs.writeFileSync(getStaffRatingsFileForGuild(gId), JSON.stringify(dataToSave, null, 2), 'utf8');
+                }
+
+                // 2. Streamers
+                const GuildStrModel = guildManager.getGuildModel(gId, 'Streamer', streamerSchema);
+                const streamersDb = await GuildStrModel.find().catch(() => []);
+                if (streamersDb.length > 0) {
+                    const merged = {};
+                    for (const st of streamersDb) {
+                        if (st.userId && st.data) merged[st.userId] = st.data;
+                    }
+                    fs.writeFileSync(getStreamersFileForGuild(gId), JSON.stringify(merged, null, 2), 'utf8');
+                }
+
+                // 3. Sanciones
+                const GuildSanModel = guildManager.getGuildModel(gId, 'Sancion', sancionSchema);
+                const sancionesDb = await GuildSanModel.find().sort({ createdAt: -1 }).limit(500).lean().catch(() => []);
+                if (sancionesDb.length > 0) {
+                    fs.writeFileSync(getSancionesFileForGuild(gId), JSON.stringify(sancionesDb, null, 2), 'utf8');
+                }
+
+                // 4. Eventos
+                const GuildEvModel = guildManager.getGuildModel(gId, 'Evento', eventoSchema);
+                const eventosDb = await GuildEvModel.find().sort({ createdAt: -1 }).limit(500).lean().catch(() => []);
+                if (eventosDb.length > 0) {
+                    fs.writeFileSync(getEventosFileForGuild(gId), JSON.stringify(eventosDb, null, 2), 'utf8');
+                }
+
+                console.log(`🔄 [MULTI-SERVER SYNC] Datos restaurados desde la nube para ${guild.name} (${gId}).`);
+            } catch (gErr) {
+                console.warn(`⚠️ [MULTI-SERVER SYNC] Error sincronizando ${guild.name}:`, gErr.message);
+            }
+        }
+    } catch (e) {
+        console.error('⚠️ [MULTI-SERVER SYNC] Error general:', e.message);
+    }
+}
+
 function loadDynamicConfig() {
     const defaults = {
         CHANNEL_SOLICITUDES_ID: process.env.CHANNEL_SOLICITUDES_ID || '',
@@ -2119,19 +2187,23 @@ async function isStaffMember(member, guild = null, userId = null) {
         return true;
     }
 
-    const staffRoleId = botConfig.ROLE_STAFF_ID;
+    const gId = guild?.id || member?.guild?.id || null;
+    const gCfg = guildManager.getGuildConfig(gId);
+    const staffRoleId = gCfg.ROLE_STAFF_ID || (guildManager.isPrimaryGuild(gId) ? botConfig.ROLE_STAFF_ID : '');
 
     // Comprobar si el ID del rol de Staff está presente en su lista de roles
-    if (member.roles && member.roles.cache) {
-        if (member.roles.cache.has(staffRoleId)) return true;
-    }
+    if (staffRoleId) {
+        if (member.roles && member.roles.cache) {
+            if (member.roles.cache.has(staffRoleId)) return true;
+        }
 
-    // Comprobación de respaldo en array raw de roles
-    if (member.roles && Array.isArray(member.roles) && member.roles.includes(staffRoleId)) {
-        return true;
-    }
-    if (member._roles && Array.isArray(member._roles) && member._roles.includes(staffRoleId)) {
-        return true;
+        // Comprobación de respaldo en array raw de roles
+        if (member.roles && Array.isArray(member.roles) && member.roles.includes(staffRoleId)) {
+            return true;
+        }
+        if (member._roles && Array.isArray(member._roles) && member._roles.includes(staffRoleId)) {
+            return true;
+        }
     }
 
     return false;
@@ -6364,21 +6436,46 @@ client.on('messageCreate', async (message) => {
             }
         }
 
-        // COMANDO: !addstaff @usuario / !delstaff @usuario / !staffs (Gestiona la lista de Staffs a valorar)
+        // COMANDO: !addstaff @usuario/@rol/<ID> / !delstaff @usuario / !staffs
+        // - Si recibe un ID o mención de ROL -> configura ese rol como ROLE_STAFF_ID del servidor (permisos Staff del bot)
+        // - Si recibe un usuario -> lo añade a la lista de Staffs valorables del servidor
         if (['!addstaff', '!agregarstaff', '!nuevostaff'].includes(command)) {
             await message.delete().catch(() => { });
             if (message.author.id !== OWNER_ID) {
                 return sendDeniedAccessMessage(message);
             }
 
-            const rawTarget = args[1]?.replace(/[<@!>]/g, '').trim();
-            const targetUser = message.mentions.users.first() || (rawTarget ? { id: rawTarget } : null);
-            if (!targetUser || !targetUser.id) {
-                const helpMsg = await message.channel.send('⚠️ **Uso:** `!addstaff @usuario` o `!addstaff <ID>`').catch(() => null);
-                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 5000);
+            const rawTarget = args[1]?.replace(/[<@!&>]/g, '').trim();
+            if (!rawTarget) {
+                const helpMsg = await message.channel.send('⚠️ **Uso:** `!addstaff <ID_Rol_Staff>` *(permisos Staff)* o `!addstaff @usuario` *(lista valoraciones)*').catch(() => null);
+                if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 6000);
                 return;
             }
 
+            // 1. Comprobar si el argumento es un ROL del servidor
+            const mentionedRole = message.mentions.roles.first();
+            const targetRole = mentionedRole
+                || (message.guild ? (message.guild.roles.cache.get(rawTarget) || await message.guild.roles.fetch(rawTarget).catch(() => null)) : null);
+
+            if (targetRole) {
+                await updateConfig('ROLE_STAFF_ID', targetRole.id, message.guild?.id);
+                const vSt = guildManager.resolveGuildVisuals(message.guild?.id);
+                const roleEmbed = new EmbedBuilder()
+                    .setColor(vSt.color)
+                    .setTitle('🛡️ Rol de Staff Configurado')
+                    .setDescription(
+                        `✅ El rol <@&${targetRole.id}> (\`${targetRole.id}\`) ha sido configurado como **Rol Oficial de Staff** en **${vSt.name}**.\n\n` +
+                        `> 🔑 *A partir de ahora, todos los miembros con este rol podrán usar las funciones, paneles y comandos de Staff del bot en este servidor.*`
+                    )
+                    .setFooter({ text: `${vSt.name} • Permisos de Staff` })
+                    .setTimestamp();
+                const okMsg = await message.channel.send({ embeds: [roleEmbed] }).catch(() => null);
+                if (okMsg) setTimeout(() => okMsg.delete().catch(() => { }), 8000);
+                return;
+            }
+
+            // 2. Si no es un rol, tratarlo como usuario para la lista de valoraciones
+            const targetUser = message.mentions.users.first() || { id: rawTarget };
             const tag = targetUser.tag || targetUser.username || 'Staff';
             addStaffMemberToRating(targetUser.id, tag, message.guild?.id);
             const successMsg = await message.channel.send(`✅ Staff <@${targetUser.id}> (\`${targetUser.id}\`) añadido a la lista del menú de valoraciones de este servidor.`).catch(() => null);
@@ -10067,79 +10164,6 @@ client.on('interactionCreate', async (interaction) => {
             updateStaffTopRankingPanel(gId).catch(() => { });
 
             await interaction.editReply({
-                content: `✅ **¡Tu valoración ha sido enviada con éxito!**\n⭐ Puntuación: \`${numRating}/10\` para ${staffMention}.\nMuchas gracias por ayudarnos a mejorar el servidor.`
-            }).catch(() => { });
-
-            // Auto-eliminar el mensaje efímero de confirmación en 3 segundos
-            setTimeout(() => {
-                interaction.deleteReply().catch(() => { });
-            }, 3000);
-
-            // Eliminar el mensaje anterior que contenía el selector si es accesible
-            try {
-                if (interaction.message && interaction.message.deletable) {
-                    await interaction.message.delete().catch(() => { });
-                }
-            } catch (e) { }
-            return;
-        } catch (err) {
-            console.error('Error al procesar modal de valoración de staff:', err);
-            await interaction.editReply({
-                content: '❌ Ocurrió un error al procesar tu valoración. Inténtalo de nuevo.'
-            }).catch(() => { });
-            setTimeout(() => {
-                interaction.deleteReply().catch(() => { });
-            }, 3000);
-            return;
-        }
-    }
-
-    // ----------------------------------------------------
-    // PROCESAMIENTO: MODAL REGISTRAR SANCIÓN STAFF
-    // ----------------------------------------------------
-    if (interaction.customId === 'modal_sancion_staff') {
-        await interaction.deferReply({ ephemeral: true }).catch(() => { });
-
-        try {
-            const rawTarget = interaction.fields.getTextInputValue('input_sancion_target').trim();
-            const punishment = interaction.fields.getTextInputValue('input_sancion_punishment').trim();
-            const reason = interaction.fields.getTextInputValue('input_sancion_reason').trim();
-            const involvedStaff = `<@${interaction.user.id}>`;
-            let imageUrl = '';
-
-            let targetId = null;
-            let targetTag = rawTarget;
-            const idMatch = rawTarget.match(/^<@!?(\d{17,20})>$/) || rawTarget.match(/^(\d{17,20})$/);
-            if (idMatch) {
-                targetId = idMatch[1];
-                try {
-                    const member = await interaction.guild.members.fetch(targetId).catch(() => null);
-                    if (member) targetTag = member.user.tag || member.displayName;
-                } catch (e) { }
-            }
-
-            const sancionId = Date.now().toString().slice(-4);
-
-            // Si no proporcionó enlace de imagen, poner al Staff en estado de espera para que la adjunte en el chat
-            if (!imageUrl || (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://'))) {
-                pendingSancionesAwaitingImage.set(interaction.user.id, {
-                    id: sancionId,
-                    reporterId: interaction.user.id,
-                    reporterTag: interaction.user.tag || interaction.user.username,
-                    targetId,
-                    targetTag,
-                    reason,
-                    punishment,
-                    involvedStaff,
-                    channelId: interaction.channelId,
-                    expiresAt: Date.now() + 60000 // 60 segundos
-                });
-
-                console.log(`\n⏳ [SANCIÓN EN ESPERA DE FOTO] Staff ${interaction.user.tag} (${interaction.user.id}) ha rellenado el formulario #${sancionId}. Esperando captura en el chat...`);
-
-                await interaction.editReply({
-                    content: `📸 **¡Datos del expediente #${sancionId} registrados!**\n\n` +
-                        `👉 **Ahora pega o sube la captura de prueba en este chat** en los próximos **60 segundos** para publicarla automáticamente.\n` +
                         `*(Si no tienes captura, escribe \`sin foto\` y se publicará sin imagen).*`
                 }).catch(() => { });
 
@@ -10556,6 +10580,7 @@ async function startBot() {
     client.once('ready', async () => {
         guildManager.detectPrimaryGuildId();
         await guildManager.ensurePrimaryGuildProfileInMongo().catch(() => {});
+        await syncSecondaryGuildsFromMongo().catch(() => {});
     });
 
     // Sistema independiente de Web Dashboard Prémium (OAuth2 + Selector de Servidores + Configuración en Vivo)

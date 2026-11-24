@@ -198,8 +198,11 @@ async function setActiveInDB(active) {
  */
 function isMemberStaff(member) {
     if (!member || member.user.bot) return false;
-    if (ROLE_STAFF_ID && member.roles.cache.has(ROLE_STAFF_ID)) return true;
-    if (member.roles.cache.has('1538191116610838691')) return true; // Rol ▬▬▬[STAFF]▬▬▬
+    const gId = member.guild?.id;
+    const gCfg = guildManager.getGuildConfig(gId);
+    const guildStaffRoleId = gCfg.ROLE_STAFF_ID || (guildManager.isPrimaryGuild(gId) ? ROLE_STAFF_ID : '');
+    if (guildStaffRoleId && member.roles.cache.has(guildStaffRoleId)) return true;
+    if (guildManager.isPrimaryGuild(gId) && member.roles.cache.has('1538191116610838691')) return true; // Rol ▬▬▬[STAFF]▬▬▬
     if (member.roles.cache.some(r => 
         r.name.includes('[STAFF]') || 
         r.name.includes('[MODERACION]') || 

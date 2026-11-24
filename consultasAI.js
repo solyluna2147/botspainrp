@@ -784,7 +784,10 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null, guil
 
 function isMemberStaff(member) {
     if (!member || member.user.bot) return false;
-    if (ROLE_STAFF_ID && member.roles.cache.has(ROLE_STAFF_ID)) return true;
+    const gId = member.guild?.id;
+    const gCfg = guildManager.getGuildConfig(gId);
+    const staffRoleId = gCfg.ROLE_STAFF_ID || (guildManager.isPrimaryGuild(gId) ? ROLE_STAFF_ID : '');
+    if (staffRoleId && member.roles.cache.has(staffRoleId)) return true;
     if (member.permissions.has(PermissionFlagsBits.Administrator) || member.permissions.has(PermissionFlagsBits.ManageGuild)) return true;
     return false;
 }
