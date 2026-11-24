@@ -10164,6 +10164,73 @@ client.on('interactionCreate', async (interaction) => {
             updateStaffTopRankingPanel(gId).catch(() => { });
 
             await interaction.editReply({
+                content: `✅ **¡Gracias por tu valoración!** Tu nota de **${numRating}/10 ⭐** para ${staffMention} ha sido publicada correctamente.`
+            }).catch(() => { });
+
+            setTimeout(() => {
+                interaction.deleteReply().catch(() => { });
+            }, 3500);
+            return;
+        } catch (err) {
+            console.error('Error al procesar modal de valoración:', err);
+            await interaction.editReply({
+                content: '❌ Ocurrió un error al registrar tu valoración.'
+            }).catch(() => { });
+            setTimeout(() => {
+                interaction.deleteReply().catch(() => { });
+            }, 3000);
+            return;
+        }
+    }
+
+    // ----------------------------------------------------
+    // PROCESAMIENTO: MODAL SANCIONAR USUARIO STAFF
+    // ----------------------------------------------------
+    if (interaction.customId === 'modal_sancion_staff') {
+        await interaction.deferReply({ ephemeral: true }).catch(() => { });
+
+        try {
+            const rawTarget = interaction.fields.getTextInputValue('input_sancion_target').trim();
+            const punishment = interaction.fields.getTextInputValue('input_sancion_punishment').trim();
+            const reason = interaction.fields.getTextInputValue('input_sancion_reason').trim();
+            let involvedStaff = `<@${interaction.user.id}>`;
+            let imageUrl = '';
+            try { involvedStaff = interaction.fields.getTextInputValue('input_sancion_staff').trim() || involvedStaff; } catch (_) { }
+            try { imageUrl = interaction.fields.getTextInputValue('input_sancion_image').trim() || ''; } catch (_) { }
+
+            const targetId = rawTarget.replace(/[<@!>]/g, '').trim();
+            let targetTag = rawTarget;
+            if (targetId && interaction.guild) {
+                try {
+                    const member = await interaction.guild.members.fetch(targetId).catch(() => null);
+                    if (member) targetTag = member.user.tag || member.displayName;
+                } catch (e) { }
+            }
+
+            const sancionId = Date.now().toString().slice(-4);
+            const gIdSan = interaction.guild?.id || null;
+
+            // Si no proporcionó enlace de imagen, poner al Staff en estado de espera para que la adjunte en el chat
+            if (!imageUrl || (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://'))) {
+                pendingSancionesAwaitingImage.set(interaction.user.id, {
+                    id: sancionId,
+                    reporterId: interaction.user.id,
+                    reporterTag: interaction.user.tag || interaction.user.username,
+                    targetId,
+                    targetTag,
+                    reason,
+                    punishment,
+                    involvedStaff,
+                    channelId: interaction.channelId,
+                    guildId: gIdSan,
+                    expiresAt: Date.now() + 60000 // 60 segundos
+                });
+
+                console.log(`\n⏳ [SANCIÓN EN ESPERA DE FOTO] Staff ${interaction.user.tag} (${interaction.user.id}) ha rellenado el formulario #${sancionId}. Esperando captura en el chat...`);
+
+                await interaction.editReply({
+                    content: `📸 **¡Datos del expediente #${sancionId} registrados!**\n\n` +
+                        `👉 **Ahora pega o sube la captura de prueba en este chat** en los próximos **60 segundos** para publicarla automáticamente.\n` +
                         `*(Si no tienes captura, escribe \`sin foto\` y se publicará sin imagen).*`
                 }).catch(() => { });
 
@@ -10184,10 +10251,11 @@ client.on('interactionCreate', async (interaction) => {
                 punishment,
                 involvedStaff: involvedStaff || `<@${interaction.user.id}>`,
                 imageUrl,
-                channelId: interaction.channelId
+                channelId: interaction.channelId,
+                guildId: gIdSan
             };
 
-            await saveSancionRecord(sancionObj);
+            await saveSancionRecord(sancionObj, gIdSan);
 
             const { embeds, embed, files } = buildSancionCardEmbed(sancionObj);
             const gCfgSan = guildManager.getGuildConfig(interaction.guild?.id);
