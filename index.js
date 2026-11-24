@@ -10120,6 +10120,58 @@ client.on('interactionCreate', async (interaction) => {
     );
 
     await interaction.update({
+        embeds: [updatedEmbed],
+        components: [disabledRow]
+    }).catch(() => { });
+});
+
+// ==========================================
+// MANEJADOR DE MODALES (VALORACIONES, SANCIONES, EVENTOS)
+// ==========================================
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isModalSubmit()) return;
+
+    // ----------------------------------------------------
+    // PROCESAMIENTO: MODAL VALORAR STAFF
+    // ----------------------------------------------------
+    if (interaction.customId.startsWith('modal_valorar_staff_')) {
+        await interaction.deferReply({ ephemeral: true }).catch(() => { });
+
+        try {
+            const staffId = interaction.customId.replace('modal_valorar_staff_', '').trim();
+            const rawRating = interaction.fields.getTextInputValue('input_staff_rating').trim();
+            const comment = interaction.fields.getTextInputValue('input_staff_comment').trim();
+            const numRating = parseInt(rawRating.replace(/[^0-9]/g, ''), 10);
+
+            if (isNaN(numRating) || numRating < 1 || numRating > 10) {
+                await interaction.editReply({
+                    content: '⚠️ **Puntuación no válida.** Por favor, introduce un número del **1 al 10**.'
+                }).catch(() => { });
+                setTimeout(() => interaction.deleteReply().catch(() => { }), 3500);
+                return;
+            }
+
+            let staffTag = 'Staff';
+            let staffMention = staffId ? `<@${staffId}>` : 'Equipo de Staff';
+            if (staffId && interaction.guild) {
+                try {
+                    const member = await interaction.guild.members.fetch(staffId).catch(() => null);
+                    if (member) {
+                        staffTag = member.user.tag || member.displayName;
+                        staffMention = `<@${member.id}>`;
+                    }
+                } catch (e) { }
+            }
+
+            // Evitar auto-valoraciones
+            if (staffId === interaction.user.id) {
+                await interaction.editReply({
+                    content: '⚠️ **No puedes valorarte a ti mismo.** La valoración debe ser para otro miembro del equipo de Staff.'
+                }).catch(() => { });
+                setTimeout(() => interaction.deleteReply().catch(() => { }), 3000);
+                return;
+            }
+
             // Guardar en la base de datos persistente EXCLUSIVA de este servidor
             const gId = interaction.guild?.id;
             const { entry, stats } = saveStaffRating({
