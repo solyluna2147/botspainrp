@@ -3095,41 +3095,29 @@ client.once(Events.ClientReady, async () => {
         // Función para actualizar la presencia del bot (siempre en estado Online 🟢)
         const updateBotPresence = async () => {
             try {
-                const state = await fetchFiveMServerStatus();
-                if (state && state.online) {
-                    client.user.setPresence({
-                        activities: [{
-                            name: `${state.players}/${state.maxPlayers} Jugadores • VALLECAS RP`,
-                            type: ActivityType.Watching
-                        }],
-                        status: 'online'
-                    });
-                } else {
-                    client.user.setPresence({
-                        activities: [{
-                            name: 'VALLECAS RP 🇪🇸',
-                            type: ActivityType.Playing
-                        }],
-                        status: 'online'
-                    });
-                }
-            } catch (err) {
                 client.user.setPresence({
                     activities: [{
-                        name: 'VALLECAS RP 🇪🇸',
+                        name: 'Kevin Sanchez ツ',
                         type: ActivityType.Playing
                     }],
                     status: 'online'
                 });
-            }
+            } catch (err) { }
         };
 
-        // Cambiar apodo del bot a VALLECAS RP en todos los servidores
+        // Aplicar apodo propio de cada servidor (en Vallecas RP -> VALLECAS RP; en otros -> su propio BRAND_NAME)
         try {
+            guildManager.detectPrimaryGuildId();
             for (const guild of client.guilds.cache.values()) {
                 const me = guild.members.me;
-                if (me && me.permissions.has('ChangeNickname')) {
+                if (!me || !me.permissions.has('ChangeNickname')) continue;
+                if (guildManager.isPrimaryGuild(guild.id)) {
                     await me.setNickname('VALLECAS RP').catch(() => { });
+                } else {
+                    const gCfg = guildManager.getGuildConfig(guild.id);
+                    if (gCfg.BRAND_NAME && gCfg.BRAND_NAME.trim()) {
+                        await me.setNickname(gCfg.BRAND_NAME.trim().slice(0, 32)).catch(() => { });
+                    }
                 }
             }
         } catch (nickErr) { }
@@ -6789,7 +6777,10 @@ client.on('messageCreate', async (message) => {
             const newName = args.slice(1).join(' ').trim();
             if (!newName) return message.reply('❌ **Uso:** `!setnombre <Nombre de tu servidor>` (Ej: `!setnombre MADRID RP`)');
             await updateConfig('BRAND_NAME', newName, message.guild?.id);
-            return message.reply(`✅ **Nombre oficial actualizado solo en este servidor:** \`${newName}\``);
+            if (message.guild?.members?.me?.permissions?.has('ChangeNickname')) {
+                await message.guild.members.me.setNickname(newName.slice(0, 32)).catch(() => {});
+            }
+            return message.reply(`✅ **Nombre oficial y apodo del bot actualizados solo en este servidor:** \`${newName}\``);
         }
 
         // 5.1b MULTI-SERVIDOR: !setcarpeta <NombreCarpetaEnAssets> (Ej: !setcarpeta MadridRP -> lee assets/MadridRP/)
