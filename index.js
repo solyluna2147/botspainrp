@@ -403,23 +403,30 @@ async function updateConfig(key, value, guildId = null) {
 // ==========================================
 const STAFF_RATINGS_FILE = path.join(__dirname, 'staff_ratings.json');
 
-function getStaffRatingsData() {
-    if (fs.existsSync(STAFF_RATINGS_FILE)) {
+function getStaffRatingsFileForGuild(guildId = null) {
+    if (!guildId || guildManager.isPrimaryGuild(guildId)) return STAFF_RATINGS_FILE;
+    return path.join(__dirname, `staff_ratings_${guildId}.json`);
+}
+
+function getStaffRatingsData(guildId = null) {
+    const isPrimary = !guildId || guildManager.isPrimaryGuild(guildId);
+    const targetFile = getStaffRatingsFileForGuild(guildId);
+    if (fs.existsSync(targetFile)) {
         try {
-            const data = JSON.parse(fs.readFileSync(STAFF_RATINGS_FILE, 'utf8'));
-            if (!data.staffList) data.staffList = ['418558256840179722'];
+            const data = JSON.parse(fs.readFileSync(targetFile, 'utf8'));
+            if (!data.staffList) data.staffList = isPrimary ? ['418558256840179722'] : [];
             if (!data.ratings) data.ratings = [];
             if (!data.stats) data.stats = {};
             return data;
         } catch (e) {
-            console.error('Error al leer staff_ratings.json:', e);
+            console.error(`Error al leer ${targetFile}:`, e);
         }
     }
-    return { staffList: ['418558256840179722'], ratings: [], stats: {} };
+    return { staffList: isPrimary ? ['418558256840179722'] : [], ratings: [], stats: {} };
 }
 
-function addStaffMemberToRating(staffId, staffTag = 'Staff') {
-    const data = getStaffRatingsData();
+function addStaffMemberToRating(staffId, staffTag = 'Staff', guildId = null) {
+    const data = getStaffRatingsData(guildId);
     if (!data.staffList.includes(staffId)) {
         data.staffList.push(staffId);
         if (!data.stats) data.stats = {};
@@ -431,14 +438,14 @@ function addStaffMemberToRating(staffId, staffTag = 'Staff') {
                 average: 0
             };
         }
-        saveStaffRatingsData(data);
+        saveStaffRatingsData(data, guildId);
         return true;
     }
     return false;
 }
 
-function removeStaffMemberFromRating(staffId) {
-    const data = getStaffRatingsData();
+function removeStaffMemberFromRating(staffId, guildId = null) {
+    const data = getStaffRatingsData(guildId);
     const idx = data.staffList.indexOf(staffId);
     if (idx !== -1) {
         data.staffList.splice(idx, 1);
@@ -448,9 +455,9 @@ function removeStaffMemberFromRating(staffId) {
     }
     // Eliminar por completo todas las reseñas y valoraciones de ese staff
     data.ratings = (data.ratings || []).filter(r => r.staffId !== staffId);
-    
+
     // Guardar en JSON, en MongoDB y actualizar el panel de Tops en vivo
-    saveStaffRatingsData(data);
+    saveStaffRatingsData(data, guildId);
     return true;
 }
 
@@ -484,15 +491,20 @@ function recalculateStaffRatings(data) {
     return data;
 }
 
-function saveStaffRatingsData(data) {
+function saveStaffRatingsData(data, guildId = null) {
     recalculateStaffRatings(data);
+    const isPrimary = !guildId || guildManager.isPrimaryGuild(guildId);
+    const targetFile = getStaffRatingsFileForGuild(guildId);
     try {
-        fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(data, null, 2), 'utf8');
+        fs.writeFileSync(targetFile, JSON.stringify(data, null, 2), 'utf8');
     } catch (e) {
-        console.error('Error al guardar staff_ratings.json:', e);
+        console.error(`Error al guardar ${targetFile}:`, e);
     }
     if (isMongoConnected) {
-        StaffRatingDataModel.findOneAndUpdate(
+        const TargetModel = isPrimary
+            ? StaffRatingDataModel
+            : guildManager.getGuildModel(guildId, 'ValoracionData', staffRatingDataSchema);
+        TargetModel.findOneAndUpdate(
             { docId: 'main' },
             {
                 staffList: data.staffList,
@@ -502,14 +514,16 @@ function saveStaffRatingsData(data) {
             { upsert: true }
         ).catch(e => console.error('Error guardando ratings completos en Mongo:', e));
     }
-    // Auto-actualizar el mensaje fijado en Discord de inmediato
+    // Auto-actualizar el mensaje fijado en Discord de inmediato solo en ESTE servidor
     if (typeof updateStaffTopRankingPanel === 'function') {
-        updateStaffTopRankingPanel().catch(() => { });
+        updateStaffTopRankingPanel(guildId).catch(() => { });
     }
 }
 
-function saveStaffRating({ userId, userName, staffId, staffTag, rating, comment }) {
-    const data = getStaffRatingsData();
+function saveStaffRating({ userId, userName, staffId, staffTag, rating, comment, guildId = null }) {
+    const data = getStaffRatingsData(guildId);
+    const isPrimary = !guildId || guildManager.isPrimaryGuild(guildId);
+    const targetFile = getStaffRatingsFileForGuild(guildId);
     const entry = {
         id: Date.now().toString(),
         userId,
@@ -526,13 +540,16 @@ function saveStaffRating({ userId, userName, staffId, staffTag, rating, comment 
     recalculateStaffRatings(data);
 
     try {
-        fs.writeFileSync(STAFF_RATINGS_FILE, JSON.stringify(data, null, 2), 'utf8');
+        fs.writeFileSync(targetFile, JSON.stringify(data, null, 2), 'utf8');
     } catch (e) {
-        console.error('Error al guardar staff_ratings.json:', e);
+        console.error(`Error al guardar ${targetFile}:`, e);
     }
 
     if (isMongoConnected) {
-        StaffRatingDataModel.findOneAndUpdate(
+        const TargetModel = isPrimary
+            ? StaffRatingDataModel
+            : guildManager.getGuildModel(guildId, 'ValoracionData', staffRatingDataSchema);
+        TargetModel.findOneAndUpdate(
             { docId: 'main' },
             {
                 staffList: data.staffList,
@@ -3506,9 +3523,11 @@ async function sendDeniedNotification({ userMention, staffName = 'Equipo de Staf
     return { success: true, channelId: targetChannelId, messageId: sentMsg.id };
 }
 
-async function sendStreamerNotification({ userMention, streamUrl, streamTitle, platform = 'Twitch', avatarUrl = null }) {
-    const targetChannelId = botConfig.CHANNEL_STREAMERS_ID;
-    if (!targetChannelId) return;
+async function sendStreamerNotification({ userMention, streamUrl, streamTitle, platform = 'Twitch', avatarUrl = null, guildId = null }) {
+    const v = guildManager.resolveGuildVisuals(guildId, 'directos');
+    const cfg = v.config;
+    const targetChannelId = cfg.CHANNEL_STREAMERS_ID;
+    if (!targetChannelId) return null;
 
     const targetChannel = await client.channels.fetch(targetChannelId).catch(err => {
         console.error(`❌ [ERROR FETCH CANAL STREAMERS] No se pudo obtener el canal con ID ${targetChannelId}:`, err.message);
@@ -3520,99 +3539,99 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
         return null;
     }
 
-    const logoPath = getLogoPath();
-    const imgDirectoPath = path.join(__dirname, 'assets', 'directo.png');
-    const imgTiktokPath = path.join(__dirname, 'assets', 'tiktok.png');
-    const imgKickPath = path.join(__dirname, 'assets', 'kick.png');
-    const imgTwitchPath = path.join(__dirname, 'assets', 'stream.png');
-    const files = [];
-
-    if (fs.existsSync(logoPath)) {
-        files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-    }
+    const baseDir = v.assetsDir || path.join(__dirname, 'assets');
+    const imgDirectoPath = path.join(baseDir, 'directo.png');
+    const imgTiktokPath = path.join(baseDir, 'tiktok.png');
+    const imgKickPath = path.join(baseDir, 'kick.png');
+    const imgTwitchPath = path.join(baseDir, 'stream.png');
+    const files = v.files.filter(f => f.name.toLowerCase().startsWith('logo'));
 
     const normPlatform = (platform || 'Twitch').toLowerCase();
     const isKick = normPlatform.includes('kick') || (streamUrl && streamUrl.includes('kick.com'));
     const isTikTok = !isKick && (normPlatform.includes('tiktok') || (streamUrl && streamUrl.includes('tiktok.com')));
     const isTwitch = !isKick && !isTikTok;
 
-    // Adjuntar banner según plataforma (Kick: kick.png | TikTok: tiktok.png | Twitch: stream.png | General: directo.png)
+    let streamBannerUrl = null;
     if (isKick && fs.existsSync(imgKickPath)) {
         files.push(new AttachmentBuilder(imgKickPath, { name: 'kick.png' }));
+        streamBannerUrl = 'attachment://kick.png';
     } else if (isTikTok && fs.existsSync(imgTiktokPath)) {
         files.push(new AttachmentBuilder(imgTiktokPath, { name: 'tiktok.png' }));
+        streamBannerUrl = 'attachment://tiktok.png';
     } else if (isTwitch && fs.existsSync(imgTwitchPath)) {
         files.push(new AttachmentBuilder(imgTwitchPath, { name: 'twitch.png' }));
+        streamBannerUrl = 'attachment://twitch.png';
     } else if (fs.existsSync(imgDirectoPath)) {
         files.push(new AttachmentBuilder(imgDirectoPath, { name: 'directo.png' }));
+        streamBannerUrl = 'attachment://directo.png';
+    } else if (v.bannerUrl) {
+        const extraBanner = v.files.find(f => !f.name.toLowerCase().startsWith('logo'));
+        if (extraBanner) files.push(extraBanner);
+        streamBannerUrl = v.bannerUrl;
     }
 
-    // Configuración visual por plataforma (Kick: Verde Neón | TikTok: Rosa Fucsia | Twitch: Morado)
     const platformColor = isKick ? 0x53FC18 : (isTikTok ? 0xFE2C55 : 0x9146FF);
     const platformEmoji = isKick ? '🟢' : (isTikTok ? '🌸' : '🟣');
     const platformName = isKick ? 'Kick' : (isTikTok ? 'TikTok LIVE' : 'Twitch');
     const platformButtonLabel = isKick ? '🟢 Ver Directo en Kick' : (isTikTok ? '🌸 Ver TikTok LIVE' : '🟣 Ver Directo en Twitch');
     const notificationHeadline = isKick
-        ? `# 🟢 ¡${userMention} ESTÁ EN DIRECTO EN KICK!\n# ¡Entra a apoyar el stream en VALLECAS RP!`
+        ? `# 🟢 ¡${userMention} ESTÁ EN DIRECTO EN KICK!\n# ¡Entra a apoyar el stream en ${v.name}!`
         : (isTikTok
-            ? `# 🌸 ¡${userMention} ESTÁ EN DIRECTO EN TIKTOK!\n# ¡Entra al LIVE y apoya el stream en VALLECAS RP!`
-            : `# 🟣 ¡${userMention} ESTÁ EN DIRECTO EN TWITCH!\n# ¡Entra a apoyar el stream en VALLECAS RP!`);
+            ? `# 🌸 ¡${userMention} ESTÁ EN DIRECTO EN TIKTOK!\n# ¡Entra al LIVE y apoya el stream en ${v.name}!`
+            : `# 🟣 ¡${userMention} ESTÁ EN DIRECTO EN TWITCH!\n# ¡Entra a apoyar el stream en ${v.name}!`);
 
-    const cleanTitle = streamTitle && streamTitle.trim() ? streamTitle.trim() : `Roleplay en vivo en VALLECAS RP 🇪🇸 (${platformName})`;
+    const cleanTitle = streamTitle && streamTitle.trim() ? streamTitle.trim() : `Roleplay en vivo en ${v.name} 🇪🇸 (${platformName})`;
     const validStreamUrl = streamUrl.startsWith('http') ? streamUrl : `https://${streamUrl}`;
-
-    // Canales oficiales interactivos (<#ID>)
-    const canalGeneral = `<#${process.env.CHANNEL_GENERAL_ID || '1517530849032016002'}>`;
+    const canalGeneral = cfg.CHANNEL_GENERAL_ID ? `<#${cfg.CHANNEL_GENERAL_ID}>` : '`#general`';
 
     const embedStream = new EmbedBuilder()
         .setColor(platformColor)
         .setAuthor({
-            name: `SISTEMA DE DIRECTOS | VALLECAS RP 🇪🇸 • ${platformName}`,
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            name: `SISTEMA DE DIRECTOS | ${v.name} 🇪🇸 • ${platformName}`,
+            iconURL: v.logoUrl
         })
-        .setThumbnail(avatarUrl || (fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()))
+        .setThumbnail(avatarUrl || v.logoUrl)
         .setTitle(`${platformEmoji} ¡CREADOR EN DIRECTO EN ${platformName.toUpperCase()}!`)
         .setDescription(
             `\u200B\n` +
-            `✨ ¡El creador de contenido **${userMention}** acaba de iniciar transmisión en vivo en **VALLECAS RP** 🇪🇸!\n\n` +
+            `✨ ¡El creador de contenido **${userMention}** acaba de iniciar transmisión en vivo en **${v.name}** 🇪🇸!\n\n` +
             `🎮 **Título de la Transmisión:**\n` +
             `> 💬 *"${cleanTitle}"*\n\n` +
             `📺 **Plataforma:** \`${platformName}\`\n` +
-            `🏙️ **Servidor:** **VALLECAS RP** 🇪🇸\n\n` +
+            `🏙️ **Servidor:** **${v.name}** 🇪🇸\n\n` +
             `🔗 **| Entra al directo a dejar tu apoyo y follow:**\n` +
             `> ${validStreamUrl} ❗\n\n` +
             `🌍 **| Comenta el directo en la comunidad:**\n` +
             `> ${canalGeneral} ❗\n\n` +
-            `🇪🇸 **| ¡Disfruta del mejor Roleplay en VALLECAS RP! |** 🇪🇸\n\n` +
+            `🇪🇸 **| ¡Disfruta del mejor Roleplay en ${v.name}! |** 🇪🇸\n\n` +
             `👤 **Streamer:** ${userMention}\n` +
             `🌍 **Notificacion:** @everyone`
         )
         .setFooter({
-            text: `VALLECAS RP • Creadores de Contenido Oficiales (${platformName})`,
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            text: `${v.name} • Creadores de Contenido Oficiales (${platformName})`,
+            iconURL: v.logoUrl
         })
         .setTimestamp();
 
-    if (isKick && fs.existsSync(imgKickPath)) {
-        embedStream.setImage('attachment://kick.png');
-    } else if (isTikTok && fs.existsSync(imgTiktokPath)) {
-        embedStream.setImage('attachment://tiktok.png');
-    } else if (isTwitch && fs.existsSync(imgTwitchPath)) {
-        embedStream.setImage('attachment://twitch.png');
-    } else if (fs.existsSync(imgDirectoPath)) {
-        embedStream.setImage('attachment://directo.png');
+    if (streamBannerUrl) {
+        embedStream.setImage(streamBannerUrl);
     }
 
-    const row = new ActionRowBuilder().addComponents(
+    const rowButtons = [
         new ButtonBuilder()
             .setLabel(platformButtonLabel)
             .setStyle(ButtonStyle.Link)
-            .setURL(validStreamUrl),
-        new ButtonBuilder()
-            .setLabel('🚀 Conectar a VALLECAS RP')
-            .setStyle(ButtonStyle.Link)
-            .setURL(`https://cfx.re/join/${botConfig.FIVEM_CFX_CODE}`)
-    );
+            .setURL(validStreamUrl)
+    ];
+    if (cfg.FIVEM_CFX_CODE) {
+        rowButtons.push(
+            new ButtonBuilder()
+                .setLabel(`🚀 Conectar a ${v.name}`)
+                .setStyle(ButtonStyle.Link)
+                .setURL(`https://cfx.re/join/${cfg.FIVEM_CFX_CODE}`)
+        );
+    }
+    const row = new ActionRowBuilder().addComponents(...rowButtons);
 
     try {
         const sentMsg = await targetChannel.send({
@@ -3651,9 +3670,13 @@ function buildWelcomeEmbed(member, guild) {
     const accountCreatedTimestamp = Math.floor(user.createdTimestamp / 1000);
 
     const canalNormativas = cfg.CHANNEL_NORMATIVAS_ID ? `<#${cfg.CHANNEL_NORMATIVAS_ID}>` : '`#normativas`';
-    const canalSolicitudes = cfg.CHANNEL_SOLICITUDES_ID ? `<#${cfg.CHANNEL_SOLICITUDES_ID}>` : '`#solicitudes`';
+    const canalSolicitudes = cfg.CHANNEL_SOLICITUDES_ID ? `<#${cfg.CHANNEL_SOLICITUDES_ID}>` : '';
     const canalTickets = cfg.CHANNEL_TICKETS_ID ? `<#${cfg.CHANNEL_TICKETS_ID}>` : '`#tickets`';
     const canalGeneral = cfg.CHANNEL_GENERAL_ID ? `<#${cfg.CHANNEL_GENERAL_ID}>` : '`#general`';
+
+    const wlBlock = (v.isPrimary || canalSolicitudes)
+        ? `📋 **| Puedes realizar tu Whitelist en,**\n> ${canalSolicitudes || '`#solicitudes`'} ❗\n\n`
+        : '';
 
     const welcomeEmbed = new EmbedBuilder()
         .setColor(v.color)
@@ -3670,8 +3693,7 @@ function buildWelcomeEmbed(member, guild) {
             `📅 **Cuenta Creada:** <t:${accountCreatedTimestamp}:R>\n\n\n` +
             `📝 **| Puedes consultar nuestras,**\n` +
             `> ${canalNormativas} ❗\n\n` +
-            `📋 **| Puedes realizar tu Whitelist en,**\n` +
-            `> ${canalSolicitudes} ❗\n\n` +
+            wlBlock +
             `📁 **| Si tienes alguna duda abre,**\n` +
             `> ${canalTickets} ❗\n\n` +
             `🌍 **| Disfruta y diviértete en,**\n` +
@@ -3734,27 +3756,23 @@ async function sendWelcomeMessage(member) {
 // ==========================================
 // CONSTRUCTORES: SISTEMA DE VALORACIÓN DE STAFF (MODO CONTENEDOR)
 // ==========================================
-function buildStaffTopRankingEmbed() {
-    const ratingsData = getStaffRatingsData();
+function buildStaffTopRankingEmbed(guildId = null) {
+    const ratingsData = getStaffRatingsData(guildId);
     const stats = ratingsData.stats || {};
     const validStaffList = ratingsData.staffList || [];
-    
-    // Únicamente considerar staffs oficiales configurados en staffList
+
     const staffList = validStaffList
         .map(id => {
             const s = stats[id] || { staffTag: 'Staff', totalRatings: 0, sumRatings: 0, average: 0 };
             return { id, ...s };
         })
-        .filter(s => (s.totalRatings || 0) > 0); // Únicamente mostrar staffs con al menos 1 valoración válida
+        .filter(s => (s.totalRatings || 0) > 0);
 
-    // Ordenar: mayor promedio primero, y a igualdad de promedio el que más votos tenga
     staffList.sort((a, b) => (b.average - a.average) || (b.totalRatings - a.totalRatings));
 
-    const logoPath = getLogoPath();
-    const topsBannerPath = path.join(__dirname, 'assets', 'panel_tops.png');
-    const files = [];
-    if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-    if (fs.existsSync(topsBannerPath)) files.push(new AttachmentBuilder(topsBannerPath, { name: 'panel_tops.png' }));
+    const v = guildManager.resolveGuildVisuals(guildId, 'tops');
+    const files = [...v.files];
+    const targetGuild = guildId ? client.guilds.cache.get(guildId) : client.guilds.cache.first();
 
     let desc = '';
     if (staffList.length === 0) {
@@ -3763,7 +3781,7 @@ function buildStaffTopRankingEmbed() {
         desc = `\u200B\n`;
         staffList.slice(0, 25).forEach((s, idx) => {
             const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `\`#${idx + 1}\``));
-            const member = client.guilds.cache.first()?.members?.cache?.get(s.id);
+            const member = targetGuild?.members?.cache?.get(s.id);
             const userMentionOrName = member ? `<@${s.id}>` : (s.staffTag && s.staffTag !== 'Staff' ? `**@${s.staffTag}**` : `<@${s.id}>`);
             const ratingDisplay = `**${s.average}/10** ⭐`;
             const votesDisplay = `\`${s.totalRatings}\` ${s.totalRatings === 1 ? 'voto recibido' : 'votos recibidos'}`;
@@ -3771,38 +3789,38 @@ function buildStaffTopRankingEmbed() {
                 `> 💬 **Reseñas:** ${votesDisplay}\n\n` +
                 `────────────────────────────\n\n`;
         });
-        // Quitar la última línea divisoria si termina en ella
         desc = desc.replace(/\n\n────────[^\n]*\n\n$/, '');
     }
 
-    const topEmbed = new EmbedBuilder().setColor(0xD900FF)
+    const topEmbed = new EmbedBuilder().setColor(v.color)
         .setAuthor({
-            name: 'RANKING DE ATENCIÓN DE STAFF • VALLECAS RP',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            name: `RANKING DE ATENCIÓN DE STAFF • ${v.name}`,
+            iconURL: v.logoUrl
         })
-        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setThumbnail(v.logoUrl)
         .setTitle('🏆 Top Miembros del Equipo con Mejor Calificación')
         .setDescription(desc)
-        .setFooter({ text: 'VALLECAS RP • Actualizado automáticamente en tiempo real' })
+        .setFooter({ text: `${v.name} • Actualizado automáticamente en tiempo real` })
         .setTimestamp();
 
-    if (fs.existsSync(topsBannerPath)) {
-        topEmbed.setImage('attachment://panel_tops.png');
+    if (v.bannerUrl) {
+        topEmbed.setImage(v.bannerUrl);
     }
 
     return { topEmbed, files };
 }
 
-async function updateStaffTopRankingPanel() {
+async function updateStaffTopRankingPanel(guildId = null) {
     try {
+        const cfg = guildManager.getGuildConfig(guildId);
         let targetMessage = null;
 
-        // 1. Intentar por canal y mensaje guardados
-        if (botConfig.CHANNEL_VALORACION_PANEL_ID) {
-            const channel = await client.channels.fetch(botConfig.CHANNEL_VALORACION_PANEL_ID).catch(() => null);
-            if (channel) {
-                if (botConfig.MESSAGE_TOP_STAFF_ID) {
-                    targetMessage = await channel.messages.fetch(botConfig.MESSAGE_TOP_STAFF_ID).catch(() => null);
+        // 1. Intentar por canal y mensaje guardados EXCLUSIVAMENTE de este servidor
+        if (cfg.CHANNEL_VALORACION_PANEL_ID) {
+            const channel = await client.channels.fetch(cfg.CHANNEL_VALORACION_PANEL_ID).catch(() => null);
+            if (channel && (!guildId || channel.guild?.id === guildId)) {
+                if (cfg.MESSAGE_TOP_STAFF_ID) {
+                    targetMessage = await channel.messages.fetch(cfg.MESSAGE_TOP_STAFF_ID).catch(() => null);
                 }
                 if (!targetMessage) {
                     const fetched = await channel.messages.fetch({ limit: 30 }).catch(() => null);
@@ -3815,42 +3833,16 @@ async function updateStaffTopRankingPanel() {
                             )
                         );
                         if (targetMessage) {
-                            updateConfig('MESSAGE_TOP_STAFF_ID', targetMessage.id);
+                            await updateConfig('MESSAGE_TOP_STAFF_ID', targetMessage.id, guildId);
                         }
                     }
                 }
             }
         }
 
-        // 2. Si no se encontró, buscar en todos los canales de texto de los servidores del bot
-        if (!targetMessage) {
-            for (const guild of client.guilds.cache.values()) {
-                for (const channel of guild.channels.cache.filter(c => c.isTextBased()).values()) {
-                    try {
-                        const fetched = await channel.messages.fetch({ limit: 15 }).catch(() => null);
-                        if (fetched) {
-                            targetMessage = fetched.find(m =>
-                                m.author.id === client.user.id &&
-                                m.embeds.some(e =>
-                                    (e.title && e.title.includes('Top Miembros del Equipo')) ||
-                                    (e.author?.name && e.author.name.includes('RANKING DE ATENCIÓN DE STAFF'))
-                                )
-                            );
-                            if (targetMessage) {
-                                updateConfig('CHANNEL_VALORACION_PANEL_ID', channel.id);
-                                updateConfig('MESSAGE_TOP_STAFF_ID', targetMessage.id);
-                                break;
-                            }
-                        }
-                    } catch (e) { }
-                }
-                if (targetMessage) break;
-            }
-        }
-
         if (!targetMessage) return false;
 
-        const { topEmbed, files } = buildStaffTopRankingEmbed();
+        const { topEmbed, files } = buildStaffTopRankingEmbed(guildId);
         await targetMessage.edit({ embeds: [topEmbed], files }).catch(() => { });
         console.log(`🏆 [RANKING AUTO-SYNC] Mensaje de Top Staff (${targetMessage.id}) editado y sincronizado con éxito.`);
         return true;
@@ -3909,7 +3901,7 @@ function buildStaffRatingPanelRow() {
     );
 }
 
-function buildStaffRatingCardEmbed({ userMention, userAvatar, staffMention, staffName, rating, comment, average, totalRatings }) {
+function buildStaffRatingCardEmbed({ userMention, userAvatar, staffMention, staffName, rating, comment, average, totalRatings, guildId = null }) {
     const numRating = Number(rating);
     const fullStars = Math.min(Math.max(Math.round(numRating / 2), 1), 5);
     const starString = '⭐'.repeat(fullStars) + '☆'.repeat(5 - fullStars);
@@ -3925,27 +3917,16 @@ function buildStaffRatingCardEmbed({ userMention, userAvatar, staffMention, staf
         badgeText = '🟡 ATENCIÓN CORRECTA';
     }
 
-    const logoPath = getLogoPath();
-    const cardImgPath = path.join(__dirname, 'assets', 'valoracion_card.png');
-    const panelImgPath = path.join(__dirname, 'assets', 'panel_valoracion.png');
-    const files = [];
-
-    if (fs.existsSync(logoPath)) {
-        files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-    }
-    if (fs.existsSync(cardImgPath)) {
-        files.push(new AttachmentBuilder(cardImgPath, { name: 'valoracion_card.png' }));
-    } else if (fs.existsSync(panelImgPath)) {
-        files.push(new AttachmentBuilder(panelImgPath, { name: 'valoracion_card.png' }));
-    }
+    const v = guildManager.resolveGuildVisuals(guildId, 'valoraciones');
+    const files = [...v.files];
 
     const embed = new EmbedBuilder()
         .setColor(embedColor)
         .setAuthor({
-            name: 'SISTEMA DE VALORACIONES | VALLECAS RP',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            name: `SISTEMA DE VALORACIONES | ${v.name}`,
+            iconURL: v.logoUrl
         })
-        .setThumbnail('attachment://logo.png')
+        .setThumbnail(v.logoUrl)
         .setTitle(badgeText)
         .setDescription(
             `\u200B\n` +
@@ -3960,16 +3941,16 @@ function buildStaffRatingCardEmbed({ userMention, userAvatar, staffMention, staf
             `> *"${comment}"*\n\n` +
             `📈 **| Estadísticas Acumuladas del Staff:**\n` +
             `> ⭐ **Promedio General:** \`${average || numRating}/10\` • 📋 **Total:** \`${totalRatings || 1}\` valoraciones\n\n` +
-            `🇪🇸 **¡Gracias por ayudar a VALLECAS RP!** 🇪🇸`
+            `🇪🇸 **¡Gracias por ayudar a ${v.name}!** 🇪🇸`
         )
         .setFooter({
-            text: 'VALLECAS RP • Opiniones y Soporte',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            text: `${v.name} • Opiniones y Soporte`,
+            iconURL: v.logoUrl
         })
         .setTimestamp();
 
-    if (fs.existsSync(cardImgPath) || fs.existsSync(panelImgPath)) {
-        embed.setImage('attachment://valoracion_card.png');
+    if (v.bannerUrl) {
+        embed.setImage(v.bannerUrl);
     }
 
     return { embed, files };
@@ -4460,10 +4441,9 @@ function buildSancionesPanelRow() {
     );
 }
 
-function buildSancionCardEmbed({ id, reporterId, reporterTag, targetId, targetTag, reason, punishment, involvedStaff, imageUrl, imageAttachment, mediaFiles = [], videoUrl = null }) {
-    const logoPath = getLogoPath();
-    const files = [];
-    if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+function buildSancionCardEmbed({ id, reporterId, reporterTag, targetId, targetTag, reason, punishment, involvedStaff, imageUrl, imageAttachment, mediaFiles = [], videoUrl = null, guildId = null }) {
+    const vSanInit = guildManager.resolveGuildVisuals(guildId);
+    const files = [...vSanInit.files];
 
     const reporterMention = `<@${reporterId}>`;
     const targetMention = targetId ? `<@${targetId}>` : `\`${targetTag || 'Usuario'}\``;
@@ -4481,17 +4461,18 @@ function buildSancionCardEmbed({ id, reporterId, reporterTag, targetId, targetTa
         videoSection = `🎥 **Vídeo / Clip de Prueba:**\n> 🔗 [Ver Grabación de Prueba](${videoUrl})\n\n`;
     }
 
-    const galleryUrl = `https://vallecasrp.es/sanciones/${id || Date.now()}`;
+    const vSan = guildManager.resolveGuildVisuals(guildId);
+    const galleryUrl = `https://server.rp/sanciones/${id || Date.now()}`;
     const mainEmbed = new EmbedBuilder()
-        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
+        .setColor(vSan.color)
         .setAuthor({
-            name: 'SISTEMA DE SANCIONES • VALLECAS RP',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            name: `SISTEMA DE SANCIONES • ${vSan.name}`,
+            iconURL: vSan.logoUrl
         })
         .setURL(galleryUrl)
         .setDescription(
             `**🚨 ACTA DISCIPLINARIA • EXPEDIENTE #${id || Date.now().toString().slice(-4)}**\n\n` +
-            `Este expediente certifica la resolución disciplinaria oficial aplicada dentro de la comunidad de **VALLECAS RP** 🇪🇸.\n\n` +
+            `Este expediente certifica la resolución disciplinaria oficial aplicada dentro de la comunidad de **${vSan.name}** 🇪🇸.\n\n` +
             `👤 **| Información del Reporte y Staff:**\n` +
             `> 👮 **Quien reporta:** ${reporterMention}\n` +
             `> 🎯 **A quien se reporta:** ${targetMention}\n` +
@@ -4500,11 +4481,11 @@ function buildSancionCardEmbed({ id, reporterId, reporterTag, targetId, targetTa
             `📝 **| Breve explicación:**\n` +
             `> ${reason || 'Sin explicación adicional'}\n\n` +
             videoSection +
-            `🇪🇸 **| ¡Gracias por ayudar a VALLECAS RP! |** 🇪🇸`
+            `🇪🇸 **| ¡Gracias por ayudar a ${vSan.name}! |** 🇪🇸`
         )
         .setFooter({
-            text: 'VALLECAS RP • Registro Oficial de Moderación',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            text: `${vSan.name} • Registro Oficial de Moderación`,
+            iconURL: vSan.logoUrl
         })
         .setTimestamp();
 
@@ -4630,12 +4611,11 @@ function buildEventosPanelRow() {
     );
 }
 
-function buildEventoCardEmbed({ id, reporterId, reporterTag, title, description, hora, lugar, organiza, ping, imageUrl, imageAttachment, mediaFiles = [] }) {
-    const logoPath = getLogoPath();
-    const files = [];
-    if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+function buildEventoCardEmbed({ id, reporterId, reporterTag, title, description, hora, lugar, organiza, ping, imageUrl, imageAttachment, mediaFiles = [], guildId = null }) {
+    const vEvInit = guildManager.resolveGuildVisuals(guildId);
+    const files = [...vEvInit.files];
 
-    const canalGeneral = `<#${botConfig.CHANNEL_GENERAL_ID || '1517530849032016002'}>`;
+    const canalGeneral = vEvInit.config.CHANNEL_GENERAL_ID ? `<#${vEvInit.config.CHANNEL_GENERAL_ID}>` : '`#general`';
 
     // Procesar y reestructurar el texto libre que introduce el Staff de forma dinámica e inteligente
     const rawText = (description || '').trim();
@@ -4825,23 +4805,25 @@ function buildEventoCardEmbed({ id, reporterId, reporterTag, title, description,
         descSections.push(`\n🔥 ¡No faltes y ven a disfrutar del evento con toda la comunidad!`);
     }
 
+    const vEv = guildManager.resolveGuildVisuals(guildId);
+    const evCanalGeneral = vEv.config.CHANNEL_GENERAL_ID ? `<#${vEv.config.CHANNEL_GENERAL_ID}>` : '`#general`';
     // 5. Cierre oficial
-    descSections.push(`\n🌍 **| Comenta y comparte el evento con la comunidad:**\n> ${canalGeneral} ❗\n\n🇪🇸 **| ¡Disfruta de VALLECAS RP! |** 🇪🇸`);
+    descSections.push(`\n🌍 **| Comenta y comparte el evento con la comunidad:**\n> ${evCanalGeneral} ❗\n\n🇪🇸 **| ¡Disfruta de ${vEv.name}! |** 🇪🇸`);
 
     const finalDescription = descSections.join('\n');
 
     const mainEmbed = new EmbedBuilder()
-        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
+        .setColor(vEv.color)
         .setAuthor({
-            name: `🎉 | SISTEMA DE EVENTOS | VALLECAS RP 👑`,
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            name: `🎉 | SISTEMA DE EVENTOS | ${vEv.name} 👑`,
+            iconURL: vEv.logoUrl
         })
-        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setThumbnail(vEv.logoUrl)
         .setTitle(`${titleEmojiLeft} ${eventTitleClean.toUpperCase()} ${titleEmojiRight}`)
         .setDescription(finalDescription)
         .setFooter({
-            text: `VALLECAS RP • Evento Oficial de la Comunidad`,
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            text: `${vEv.name} • Evento Oficial de la Comunidad`,
+            iconURL: vEv.logoUrl
         })
         .setTimestamp();
 
@@ -5263,13 +5245,15 @@ client.on('messageCreate', async (message) => {
                         imageUrl: imgUrl,
                         mediaFiles,
                         videoUrl,
-                        channelId: message.channel.id
+                        channelId: message.channel.id,
+                        guildId: message.guild?.id
                     };
 
                     await saveSancionRecord(sancionObj);
 
                     const { embeds, embed, files, videoFiles } = buildSancionCardEmbed(sancionObj);
-                    const targetChannelId = (botConfig.CHANNEL_SANCIONES_ID && botConfig.CHANNEL_SANCIONES_ID.trim()) ? botConfig.CHANNEL_SANCIONES_ID.trim() : message.channel.id;
+                    const gCfgSanMsg = guildManager.getGuildConfig(message.guild?.id);
+                    const targetChannelId = (gCfgSanMsg.CHANNEL_SANCIONES_ID && gCfgSanMsg.CHANNEL_SANCIONES_ID.trim()) ? gCfgSanMsg.CHANNEL_SANCIONES_ID.trim() : message.channel.id;
                     let targetChannel = message.guild.channels.cache.get(targetChannelId) ||
                         await client.channels.fetch(targetChannelId).catch(err => {
                             console.error(`⚠️ [SANCIONES] No se pudo obtener el canal #${targetChannelId}:`, err.message);
@@ -5387,14 +5371,16 @@ client.on('messageCreate', async (message) => {
                         ping: pending.ping || '@everyone',
                         imageUrl: imgUrl,
                         mediaFiles,
-                        channelId: message.channel.id
+                        channelId: message.channel.id,
+                        guildId: message.guild?.id
                     };
 
                     await saveEventoRecord(eventoObj);
 
                     const { embeds, embed, files, pingText } = buildEventoCardEmbed(eventoObj);
-                    const primaryChanId = (botConfig.CHANNEL_EVENTOS_ID && botConfig.CHANNEL_EVENTOS_ID.trim()) ? botConfig.CHANNEL_EVENTOS_ID.trim() : message.channel.id;
-                    const secondaryChanId = (botConfig.CHANNEL_EVENTOS_2_ID && botConfig.CHANNEL_EVENTOS_2_ID.trim()) ? botConfig.CHANNEL_EVENTOS_2_ID.trim() : null;
+                    const gCfgEvMsg = guildManager.getGuildConfig(message.guild?.id);
+                    const primaryChanId = (gCfgEvMsg.CHANNEL_EVENTOS_ID && gCfgEvMsg.CHANNEL_EVENTOS_ID.trim()) ? gCfgEvMsg.CHANNEL_EVENTOS_ID.trim() : message.channel.id;
+                    const secondaryChanId = (gCfgEvMsg.CHANNEL_EVENTOS_2_ID && gCfgEvMsg.CHANNEL_EVENTOS_2_ID.trim()) ? gCfgEvMsg.CHANNEL_EVENTOS_2_ID.trim() : null;
 
                     const targetChannels = [];
                     const primaryChan = message.guild.channels.cache.get(primaryChanId) || await client.channels.fetch(primaryChanId).catch(() => null);
@@ -5919,16 +5905,12 @@ client.on('messageCreate', async (message) => {
                 return sendDeniedAccessMessage(message);
             }
             try {
+                const gId = message.guild?.id;
                 const targetChannel = message.channel;
 
-                const embed = buildStaffRatingPanelEmbed();
+                const embed = buildStaffRatingPanelEmbed(gId);
                 const row = buildStaffRatingPanelRow();
-                const files = [];
-
-                const logoPath = getLogoPath();
-                const panelImgPath = path.join(__dirname, 'assets', 'panel_valoracion.png');
-                if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-                if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_valoracion.png' }));
+                const files = guildManager.resolveGuildVisuals(gId, 'valoraciones').files;
 
                 await targetChannel.send({
                     embeds: [embed],
@@ -5936,8 +5918,8 @@ client.on('messageCreate', async (message) => {
                     files
                 });
 
-                // Guardar automáticamente el canal donde se envió como canal del panel de valoraciones
-                updateConfig('CHANNEL_VALORACION_PANEL_ID', targetChannel.id);
+                // Guardar automáticamente el canal donde se envió como canal del panel de valoraciones SOLO de este servidor
+                await updateConfig('CHANNEL_VALORACION_PANEL_ID', targetChannel.id, gId);
                 console.log(`⭐ [PANEL VALORACIÓN] Panel de valoraciones publicado en #${targetChannel.name} (${targetChannel.id})`);
                 return;
             } catch (err) {
@@ -6291,12 +6273,12 @@ client.on('messageCreate', async (message) => {
                 return sendDeniedAccessMessage(message);
             }
             try {
+                const gId = message.guild?.id;
                 const targetChannel = message.channel;
-                const { topEmbed, files } = buildStaffTopRankingEmbed();
+                const { topEmbed, files } = buildStaffTopRankingEmbed(gId);
 
                 const sentMsg = await targetChannel.send({ embeds: [topEmbed], files }).catch(async (sendErr) => {
                     console.error('❌ [ERROR ENVIAR TOPS CON ASSETS]:', sendErr);
-                    // Reintento sin adjuntos locales en caso de que falten archivos en el servidor de producción
                     const safeEmbed = EmbedBuilder.from(topEmbed).setImage(null).setThumbnail(client.user.displayAvatarURL());
                     return await targetChannel.send({ embeds: [safeEmbed] }).catch(err2 => {
                         console.error('❌ [ERROR CRÍTICO ENVIAR TOPS]:', err2);
@@ -6305,8 +6287,8 @@ client.on('messageCreate', async (message) => {
                 });
 
                 if (sentMsg) {
-                    await updateConfig('CHANNEL_VALORACION_PANEL_ID', targetChannel.id);
-                    await updateConfig('MESSAGE_TOP_STAFF_ID', sentMsg.id);
+                    await updateConfig('CHANNEL_VALORACION_PANEL_ID', targetChannel.id, gId);
+                    await updateConfig('MESSAGE_TOP_STAFF_ID', sentMsg.id, gId);
                     console.log(`🏆 [PANEL TOP STAFF] Mensaje publicado al instante en #${targetChannel.name} (Msg ID: ${sentMsg.id})`);
                 }
                 return;
@@ -6361,8 +6343,8 @@ client.on('messageCreate', async (message) => {
             }
 
             const tag = targetUser.tag || targetUser.username || 'Staff';
-            addStaffMemberToRating(targetUser.id, tag);
-            const successMsg = await message.channel.send(`✅ Staff <@${targetUser.id}> (\`${targetUser.id}\`) añadido a la lista del menú de valoraciones.`).catch(() => null);
+            addStaffMemberToRating(targetUser.id, tag, message.guild?.id);
+            const successMsg = await message.channel.send(`✅ Staff <@${targetUser.id}> (\`${targetUser.id}\`) añadido a la lista del menú de valoraciones de este servidor.`).catch(() => null);
             if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 6000);
             return;
         }
@@ -6381,7 +6363,7 @@ client.on('messageCreate', async (message) => {
                 return;
             }
 
-            removeStaffMemberFromRating(targetUser.id);
+            removeStaffMemberFromRating(targetUser.id, message.guild?.id);
             const successMsg = await message.channel.send(`🗑️ Staff <@${targetUser.id}> (\`${targetUser.id}\`) retirado del menú y **todas sus valoraciones han sido eliminadas por completo**.\n🏆 *El ranking de Tops se ha actualizado automáticamente.*`).catch(() => null);
             if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 7000);
             return;
@@ -6404,7 +6386,8 @@ client.on('messageCreate', async (message) => {
                 return;
             }
 
-            const currentData = getStaffRatingsData();
+            const gId = message.guild?.id;
+            const currentData = getStaffRatingsData(gId);
             const prevRatingsCount = (currentData.ratings || []).filter(r => r.staffId === targetId).length;
 
             currentData.ratings = (currentData.ratings || []).filter(r => r.staffId !== targetId);
@@ -6412,8 +6395,8 @@ client.on('messageCreate', async (message) => {
                 delete currentData.stats[targetId];
             }
 
-            saveStaffRatingsData(currentData);
-            await updateStaffTopRankingPanel().catch(() => { });
+            saveStaffRatingsData(currentData, gId);
+            await updateStaffTopRankingPanel(gId).catch(() => { });
 
             const successMsg = await message.channel.send({
                 content: `🗑️ **Valoraciones eliminadas:** Se han purgado las **${prevRatingsCount}** reseña(s) de <@${targetId}> (\`${targetId}\`).\n🏆 *El ranking de Tops ha sido actualizado automáticamente.*`
@@ -6427,12 +6410,14 @@ client.on('messageCreate', async (message) => {
             if (message.author.id !== OWNER_ID) {
                 return sendDeniedAccessMessage(message);
             }
-            const data = getStaffRatingsData();
+            const gId = message.guild?.id;
+            const gVis = guildManager.resolveGuildVisuals(gId);
+            const data = getStaffRatingsData(gId);
             const staffList = data.staffList || [];
 
             let desc = '';
             if (staffList.length === 0) {
-                desc = 'ℹ️ No hay Staffs registrados. Usa `!addstaff @usuario`';
+                desc = 'ℹ️ No hay Staffs registrados en este servidor. Usa `!addstaff @usuario`';
             } else {
                 for (let i = 0; i < staffList.length; i++) {
                     const sId = staffList[i];
@@ -6446,10 +6431,10 @@ client.on('messageCreate', async (message) => {
             }
 
             const staffListEmbed = new EmbedBuilder()
-                .setColor(0xF1C40F)
-                .setTitle('🛡️ Lista de Staffs Valorables en el Menú')
+                .setColor(gVis.color)
+                .setTitle(`🛡️ Lista de Staffs Valorables • ${gVis.name}`)
                 .setDescription(desc)
-                .setFooter({ text: 'VALLECAS RP • Usa !addstaff y !delstaff para configurar' });
+                .setFooter({ text: `${gVis.name} • Usa !addstaff y !delstaff para configurar` });
 
             const listMsg = await message.channel.send({ embeds: [staffListEmbed] }).catch(() => null);
             if (listMsg) setTimeout(() => listMsg.delete().catch(() => { }), 15000);
@@ -9580,16 +9565,18 @@ client.on('interactionCreate', async (interaction) => {
             const defaultPlatformTitle = requestedPlatform === 'Kick' ? streamerInfo.kickTitle : (requestedPlatform === 'TikTok' ? streamerInfo.tiktokTitle : (requestedPlatform === 'Twitch' ? streamerInfo.twitchTitle : streamerInfo.title));
             const liveTitle = await fetchLiveStreamTitle(targetStreamUrl, interaction.member, defaultPlatformTitle || streamerInfo.title);
 
-            // Enviar notificación personalizada al canal oficial de streams
+            // Enviar notificación personalizada al canal oficial de streams de ESTE servidor
+            const gIdStream = interaction.guild?.id;
             const result = await sendStreamerNotification({
                 userMention: `<@${userId}>`,
                 streamUrl: targetStreamUrl,
                 streamTitle: liveTitle,
                 platform: activePlatform,
-                avatarUrl: interaction.user.displayAvatarURL({ dynamic: true })
+                avatarUrl: interaction.user.displayAvatarURL({ dynamic: true }),
+                guildId: gIdStream
             });
 
-            const targetChannelId = botConfig.CHANNEL_STREAMERS_ID || '1517530849032016006';
+            const targetChannelId = guildManager.getGuildConfig(gIdStream).CHANNEL_STREAMERS_ID || interaction.channelId;
 
             if (result && result.success) {
                 let platEmoji = '🟣';
@@ -9631,13 +9618,22 @@ client.on('interactionCreate', async (interaction) => {
     // BOTÓN: ABRIR SELECTOR DE STAFF PARA VALORAR
     // ----------------------------------------------------
     if (interaction.customId === 'btn_abrir_valoracion_staff') {
-        const ratingsData = getStaffRatingsData();
-        const staffIds = ratingsData.staffList || ['418558256840179722'];
+        const gId = interaction.guild?.id;
+        const gVis = guildManager.resolveGuildVisuals(gId);
+        const ratingsData = getStaffRatingsData(gId);
+        const staffIds = ratingsData.staffList || [];
+
+        if (staffIds.length === 0) {
+            return interaction.reply({
+                content: `⚠️ Todavía no hay miembros de Staff registrados en **${gVis.name}**. Un administrador debe añadirlos con \`!addstaff @usuario\`.`,
+                ephemeral: true
+            }).catch(() => {});
+        }
 
         const options = [];
         for (const sId of staffIds) {
             let label = `Staff (${sId})`;
-            let description = 'Equipo de Staff • VALLECAS RP';
+            let description = `Equipo de Staff • ${gVis.name}`;
             let member = interaction.guild?.members?.cache?.get(sId);
             if (!member && interaction.guild) {
                 member = await interaction.guild.members.fetch(sId).catch(() => null);
@@ -9671,28 +9667,25 @@ client.on('interactionCreate', async (interaction) => {
 
         const row = new ActionRowBuilder().addComponents(selectMenu);
 
-        const logoPath = getLogoPath();
-        const hasLogo = fs.existsSync(logoPath);
-        const logoUrl = hasLogo ? 'attachment://logo.png' : client.user.displayAvatarURL();
         const selectEmbed = new EmbedBuilder()
-            .setColor(0xD900FF)
+            .setColor(gVis.color)
             .setAuthor({
-                name: 'SISTEMA DE VALORACIONES • VALLECAS RP',
-                iconURL: logoUrl
+                name: `SISTEMA DE VALORACIONES • ${gVis.name}`,
+                iconURL: gVis.logoUrl
             })
             .setDescription(
                 `👤 **Selecciona en el menú de abajo al Staff que deseas valorar:**\n\n` +
                 `> 🛡️ Elige al miembro del equipo que te atendió y a continuación podrás puntuar su atención del **1 al 10** y dejar tu comentario.`
             )
             .setFooter({
-                text: 'VALLECAS RP • Solo tú puedes ver este menú',
-                iconURL: logoUrl
+                text: `${gVis.name} • Solo tú puedes ver este menú`,
+                iconURL: gVis.logoUrl
             });
 
         await interaction.reply({
             embeds: [selectEmbed],
             components: [row],
-            files: hasLogo ? [new AttachmentBuilder(logoPath, { name: 'logo.png' })] : [],
+            files: gVis.files,
             ephemeral: true
         }).catch(() => { });
 
@@ -9988,17 +9981,19 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
 
-            // Guardar en la base de datos persistente
+            // Guardar en la base de datos persistente EXCLUSIVA de este servidor
+            const gId = interaction.guild?.id;
             const { entry, stats } = saveStaffRating({
                 userId: interaction.user.id,
                 userName: interaction.user.tag || interaction.user.username,
                 staffId: staffId || 'staff_general',
                 staffTag,
                 rating: numRating,
-                comment
+                comment,
+                guildId: gId
             });
 
-            // Construir la tarjeta contenedor oficial con banner y logo
+            // Construir la tarjeta contenedor oficial con banner y logo de este servidor
             const { embed: cardEmbed, files: cardFiles } = buildStaffRatingCardEmbed({
                 userMention: `<@${interaction.user.id}>`,
                 userAvatar: interaction.user.displayAvatarURL({ dynamic: true }),
@@ -10007,11 +10002,13 @@ client.on('interactionCreate', async (interaction) => {
                 rating: numRating,
                 comment,
                 average: stats.average,
-                totalRatings: stats.totalRatings
+                totalRatings: stats.totalRatings,
+                guildId: gId
             });
 
-            // Canal destino
-            const targetChannelId = botConfig.CHANNEL_VALORACIONES_ID || interaction.channelId;
+            // Canal destino EXCLUSIVO de este servidor
+            const gCfgVal = guildManager.getGuildConfig(gId);
+            const targetChannelId = gCfgVal.CHANNEL_VALORACIONES_ID || interaction.channelId;
             const targetChannel = await client.channels.fetch(targetChannelId).catch(() => null);
 
             if (targetChannel) {
@@ -10024,8 +10021,8 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
 
-            // Actualizar automáticamente el panel fijo de Tops si está configurado en el canal
-            updateStaffTopRankingPanel().catch(() => { });
+            // Actualizar automáticamente el panel fijo de Tops SOLO en este servidor
+            updateStaffTopRankingPanel(gId).catch(() => { });
 
             await interaction.editReply({
                 content: `✅ **¡Tu valoración ha sido enviada con éxito!**\n⭐ Puntuación: \`${numRating}/10\` para ${staffMention}.\nMuchas gracias por ayudarnos a mejorar el servidor.`
