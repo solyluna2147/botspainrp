@@ -235,10 +235,33 @@ module.exports = function initVerificacion(client) {
             }
 
             if (member.roles.cache.has(vCfg.roleId)) {
-                return interaction.reply({
-                    content: `✅ **¡Ya estás verificado!** Ya cuentas con el rol <@&${vCfg.roleId}> y acceso completo al servidor.`,
+                const vAlready = guildManager.resolveGuildVisuals(interaction.guild.id);
+                const alreadyIcon = vAlready.logoUrl || interaction.guild.iconURL() || undefined;
+                const alreadyEmbed = new EmbedBuilder()
+                    .setColor(vAlready.color)
+                    .setAuthor({
+                        name: `VERIFICACIÓN | ${vAlready.name}`,
+                        iconURL: alreadyIcon
+                    })
+                    .setThumbnail(alreadyIcon)
+                    .setTitle('✅ ¡Ya estás verificado!')
+                    .setDescription(
+                        `👋 Hola <@${interaction.user.id}>, ya cuentas con el rol oficial <@&${vCfg.roleId}> y acceso completo a **${vAlready.name}**.\n\n` +
+                        `> 🏙️ *Disfruta de la comunidad.*`
+                    )
+                    .setFooter({
+                        text: `${vAlready.name} • Este mensaje se auto-eliminará en 5s`,
+                        iconURL: alreadyIcon
+                    })
+                    .setTimestamp();
+
+                await interaction.reply({
+                    embeds: [alreadyEmbed],
+                    files: vAlready.files,
                     ephemeral: true
                 }).catch(() => {});
+                setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+                return;
             }
 
             // Asignar rol de Ciudadano
@@ -246,10 +269,12 @@ module.exports = function initVerificacion(client) {
                 await member.roles.add(vCfg.roleId, 'Verificación oficial mediante botón');
             } catch (roleErr) {
                 console.error('❌ [VERIFICACIÓN] Error asignando rol:', roleErr.message);
-                return interaction.reply({
+                await interaction.reply({
                     content: '❌ No tengo permisos suficientes para asignarte el rol. Asegúrate de que mi rol está por encima del rol de Ciudadano.',
                     ephemeral: true
                 }).catch(() => {});
+                setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+                return;
             }
 
             // Incrementar contador de verificados de este servidor y actualizar footer del panel
@@ -268,10 +293,33 @@ module.exports = function initVerificacion(client) {
             }
 
             const v = guildManager.resolveGuildVisuals(interaction.guild.id);
-            return interaction.reply({
-                content: `🎉 **¡Verificación completada con éxito, <@${interaction.user.id}>!**\n\n> 🎭 Se te ha asignado el rol oficial <@&${vCfg.roleId}>.\n> 🏙️ ¡Ya tienes acceso completo a **${v.name}**! Disfruta de la comunidad.`,
+            const okIcon = v.logoUrl || interaction.guild.iconURL() || undefined;
+            const okEmbed = new EmbedBuilder()
+                .setColor(v.color)
+                .setAuthor({
+                    name: `VERIFICACIÓN COMPLETADA | ${v.name}`,
+                    iconURL: okIcon
+                })
+                .setThumbnail(okIcon)
+                .setTitle('🎉 ¡Verificación completada con éxito!')
+                .setDescription(
+                    `👋 ¡Bienvenido/a <@${interaction.user.id}>!\n\n` +
+                    `> 🎭 **Rol asignado:** <@&${vCfg.roleId}>\n` +
+                    `> 🏙️ **Acceso:** ¡Ya tienes acceso completo a **${v.name}**! Disfruta de la comunidad.`
+                )
+                .setFooter({
+                    text: `${v.name} • Este mensaje se auto-eliminará en 5s`,
+                    iconURL: okIcon
+                })
+                .setTimestamp();
+
+            await interaction.reply({
+                embeds: [okEmbed],
+                files: v.files,
                 ephemeral: true
             }).catch(() => {});
+            setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+            return;
         } catch (err) {
             console.error('⚠️ [VERIFICACIÓN interactionCreate Error]:', err.message);
         }
