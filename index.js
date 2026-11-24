@@ -10140,14 +10140,6 @@ client.on('interactionCreate', async (interaction) => {
                 await interaction.editReply({
                     content: `📸 **¡Datos del expediente #${sancionId} registrados!**\n\n` +
                         `👉 **Ahora pega o sube la captura de prueba en este chat** en los próximos **60 segundos** para publicarla automáticamente.\n` +
-                    expiresAt: Date.now() + 60000 // 60 segundos
-                });
-
-                console.log(`\n⏳ [SANCIÓN EN ESPERA DE FOTO] Staff ${interaction.user.tag} (${interaction.user.id}) ha rellenado el formulario #${sancionId}. Esperando captura en el chat...`);
-
-                await interaction.editReply({
-                    content: `📸 **¡Datos del expediente #${sancionId} registrados!**\n\n` +
-                        `👉 **Ahora pega o sube la captura de prueba en este chat** en los próximos **60 segundos** para publicarla automáticamente.\n` +
                         `*(Si no tienes captura, escribe \`sin foto\` y se publicará sin imagen).*`
                 }).catch(() => { });
 
