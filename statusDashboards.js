@@ -24,6 +24,7 @@ const botSettingSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const BotSetting = mongoose.models.BotSetting || mongoose.model('BotSetting', botSettingSchema);
+const guildManager = require('./guildManager');
 
 const ROLE_STAFF_ID = '1538191116610838691';
 
@@ -68,9 +69,39 @@ function getLogoAttachment() {
 
 function isMemberStaff(member) {
     if (!member || member.user.bot) return false;
-    if (ROLE_STAFF_ID && member.roles.cache.has(ROLE_STAFF_ID)) return true;
+    const gId = member.guild?.id;
+    const gCfg = guildManager.getGuildConfig(gId);
+    const staffRoleId = gCfg.ROLE_STAFF_ID || (guildManager.isPrimaryGuild(gId) ? ROLE_STAFF_ID : '');
+    if (staffRoleId && member.roles.cache.has(staffRoleId)) return true;
     if (member.permissions.has(PermissionFlagsBits.Administrator) || member.permissions.has(PermissionFlagsBits.ManageGuild)) return true;
     return false;
+}
+
+function getGuildVoiceIds(guildId) {
+    if (!guildId || guildManager.isPrimaryGuild(guildId)) {
+        return { esperaId: CANAL_ESPERA_ID, soporteIds: CANALES_SOPORTE_IDS };
+    }
+    const gCfg = guildManager.getGuildConfig(guildId);
+    const soporteIds = Array.isArray(gCfg.VOICE_SOPORTE_IDS) ? gCfg.VOICE_SOPORTE_IDS : [];
+    return { esperaId: gCfg.VOICE_ESPERA_ID || '', soporteIds };
+}
+
+function getGuildTicketCats(guildId) {
+    if (!guildId || guildManager.isPrimaryGuild(guildId)) {
+        return {
+            soporte: CATEGORIA_SOPORTE_ID,
+            apelacion: CATEGORIA_APELACION_ID,
+            streamer: CATEGORIA_STREAMER_ID,
+            donaciones: CATEGORIA_DONACIONES_ID
+        };
+    }
+    const gCfg = guildManager.getGuildConfig(guildId);
+    return {
+        soporte: gCfg.CAT_TICKET_SOPORTE_ID || '',
+        apelacion: gCfg.CAT_TICKET_APELACION_ID || '',
+        streamer: gCfg.CAT_TICKET_STREAMER_ID || '',
+        donaciones: gCfg.CAT_TICKET_DONACIONES_ID || ''
+    };
 }
 
 function makeProgressBar(used, total, size = 10, mode = 'usage') {
@@ -144,7 +175,7 @@ async function loadPanelRefs() {
 // ==========================================
 // 1. DASHBOARD GENERAL DE SERVICIOS (!panel-servicios)
 // ==========================================
-async function buildServiciosEmbed(client) {
+async function buildServiciosEmbed(client, guildId = null) {
     const logoAttachment = getLogoAttachment();
     const logoUrl = logoAttachment ? 'attachment://logo.png' : undefined;
 
@@ -190,14 +221,16 @@ async function buildServiciosEmbed(client) {
     const healthBar = makeProgressBar(okCount, services.length, 12, 'health');
     const healthPct = Math.round((okCount / services.length) * 100);
 
+    const vSrv = guildManager.resolveGuildVisuals(guildId);
+    const srvLogoUrl = vSrv.logoUrl || logoUrl;
     const embed = new EmbedBuilder()
-        .setColor(0xD900FF)
+        .setColor(vSrv.color)
         .setAuthor({
-            name: 'MONITOR DE SERVICIOS EN VIVO | VALLECAS RP',
-            iconURL: logoUrl
+            name: `MONITOR DE SERVICIOS EN VIVO | ${vSrv.name}`,
+            iconURL: srvLogoUrl
         })
-        .setThumbnail(logoUrl)
-        .setTitle('🖥️ ESTADO GENERAL DEL SISTEMA (VALLECAS CORE)')
+        .setThumbnail(srvLogoUrl)
+        .setTitle(`🖥️ ESTADO GENERAL DEL SISTEMA (${vSrv.name} CORE)`)
         .setDescription(
             `⚡ **Salud global:** ${okCount === services.length ? '🟢 `Todos los servicios operativos`' : '🟡 `Algunos servicios pausados`'}\n` +
             `${healthBar} \`${healthPct}%\` (\`${okCount}/${services.length}\` activos)\n\n` +
@@ -215,12 +248,12 @@ async function buildServiciosEmbed(client) {
             `> 📢 **Eventos, Directos y Sanciones:** 🟢 \`Operativo\``
         )
         .setFooter({
-            text: 'VALLECAS RP • Auto-actualización cada 60s',
-            iconURL: logoUrl
+            text: `${vSrv.name} • Auto-actualización cada 60s`,
+            iconURL: srvLogoUrl
         })
         .setTimestamp();
 
-    return { embed, logoAttachment };
+    return { embed, files: vSrv.files, logoAttachment: vSrv.files[0] || null };
 }
 
 // ==========================================
@@ -263,18 +296,21 @@ async function buildLocucionEmbed(client, guild, forceQuota = false) {
         }
     } catch (e) { }
 
-    // Contar usuarios esperando y staffs en salas de soporte en tiempo real
+    // Contar usuarios esperando y staffs en salas de soporte en tiempo real (aislado por servidor)
+    const { esperaId, soporteIds } = getGuildVoiceIds(guild?.id);
     let usersWaiting = 0;
     let staffsInSupport = 0;
     let botInVoice = false;
     try {
         if (guild) {
-            const esperaCh = guild.channels.cache.get(CANAL_ESPERA_ID) || await guild.channels.fetch(CANAL_ESPERA_ID).catch(() => null);
-            if (esperaCh && esperaCh.members) {
-                usersWaiting = esperaCh.members.filter(m => !m.user.bot).size;
-                if (esperaCh.members.has(client.user.id)) botInVoice = true;
+            if (esperaId) {
+                const esperaCh = guild.channels.cache.get(esperaId) || await guild.channels.fetch(esperaId).catch(() => null);
+                if (esperaCh && esperaCh.members) {
+                    usersWaiting = esperaCh.members.filter(m => !m.user.bot).size;
+                    if (esperaCh.members.has(client.user.id)) botInVoice = true;
+                }
             }
-            for (const supId of CANALES_SOPORTE_IDS) {
+            for (const supId of soporteIds) {
                 const supCh = guild.channels.cache.get(supId);
                 if (supCh && supCh.members) {
                     staffsInSupport += supCh.members.filter(m => !m.user.bot).size;
@@ -303,13 +339,15 @@ async function buildLocucionEmbed(client, guild, forceQuota = false) {
             `> 🔊 Usados: \`${quota.used.toLocaleString('es-ES')}\` / \`${quota.limit.toLocaleString('es-ES')}\` car. • Quedan: \`${rem.toLocaleString('es-ES')}\``;
     }
 
+    const vLoc = guildManager.resolveGuildVisuals(guild?.id);
+    const locLogoUrl = vLoc.logoUrl || logoUrl;
     const embed = new EmbedBuilder()
-        .setColor(0xD900FF)
+        .setColor(vLoc.color)
         .setAuthor({
-            name: 'MONITOR DE LOCUCIÓN Y VOZ EN VIVO | VALLECAS RP',
-            iconURL: logoUrl
+            name: `MONITOR DE LOCUCIÓN Y VOZ EN VIVO | ${vLoc.name}`,
+            iconURL: locLogoUrl
         })
-        .setThumbnail(logoUrl)
+        .setThumbnail(locLogoUrl)
         .setTitle('🎙️ SISTEMA DE LOCUCIÓN Y SALAS DE SOPORTE')
         .setDescription(
             `🔊 **Estado del sistema:** ${locucionOn ? '🟢 `ACTIVADO`' : '🔴 `PAUSADO`'} • **Intervalo:** \`${Math.round(intervaloMin * 60)}s\`\n\n` +
@@ -325,12 +363,12 @@ async function buildLocucionEmbed(client, guild, forceQuota = false) {
             `${voiceBlock}`
         )
         .setFooter({
-            text: 'VALLECAS RP • Actualización en tiempo real',
-            iconURL: logoUrl
+            text: `${vLoc.name} • Actualización en tiempo real`,
+            iconURL: locLogoUrl
         })
         .setTimestamp();
 
-    return { embed, logoAttachment };
+    return { embed, files: vLoc.files, logoAttachment: vLoc.files[0] || null };
 }
 
 // ==========================================
@@ -361,24 +399,27 @@ async function buildTicketsEmbed(guild) {
         }
     } catch (e) { }
 
+    const cats = getGuildTicketCats(guild?.id);
     let cSoporte = 0, cApelacion = 0, cStreamer = 0, cDonaciones = 0;
     if (guild) {
         const textChannels = guild.channels.cache.filter(c => c.type === 0);
-        cSoporte = textChannels.filter(c => c.parentId === CATEGORIA_SOPORTE_ID).size;
-        cApelacion = textChannels.filter(c => c.parentId === CATEGORIA_APELACION_ID).size;
-        cStreamer = textChannels.filter(c => c.parentId === CATEGORIA_STREAMER_ID).size;
-        cDonaciones = textChannels.filter(c => c.parentId === CATEGORIA_DONACIONES_ID).size;
+        if (cats.soporte) cSoporte = textChannels.filter(c => c.parentId === cats.soporte).size;
+        if (cats.apelacion) cApelacion = textChannels.filter(c => c.parentId === cats.apelacion).size;
+        if (cats.streamer) cStreamer = textChannels.filter(c => c.parentId === cats.streamer).size;
+        if (cats.donaciones) cDonaciones = textChannels.filter(c => c.parentId === cats.donaciones).size;
     }
 
     const totalOpen = cSoporte + cApelacion + cStreamer + cDonaciones;
+    const vTk = guildManager.resolveGuildVisuals(guild?.id);
+    const tkLogoUrl = vTk.logoUrl || logoUrl;
 
     const embed = new EmbedBuilder()
-        .setColor(0xD900FF)
+        .setColor(vTk.color)
         .setAuthor({
-            name: 'MONITOR DE TICKETS EN VIVO | VALLECAS RP',
-            iconURL: logoUrl
+            name: `MONITOR DE TICKETS EN VIVO | ${vTk.name}`,
+            iconURL: tkLogoUrl
         })
-        .setThumbnail(logoUrl)
+        .setThumbnail(tkLogoUrl)
         .setTitle('🎫 ASISTENTE VIRTUAL Y COLA DE TICKETS')
         .setDescription(
             `🤖 **Asistente de Tickets:** ${asistenteOn ? '🟢 `ACTIVADO`' : '🔴 `PAUSADO`'}\n\n` +
@@ -395,12 +436,12 @@ async function buildTicketsEmbed(guild) {
             `> 🧠 **Base de conocimiento:** \`${knowledgeCount}\` entradas`
         )
         .setFooter({
-            text: 'VALLECAS RP • Actualización en tiempo real',
-            iconURL: logoUrl
+            text: `${vTk.name} • Actualización en tiempo real`,
+            iconURL: tkLogoUrl
         })
         .setTimestamp();
 
-    return { embed, logoAttachment };
+    return { embed, files: vTk.files, logoAttachment: vTk.files[0] || null };
 }
 
 function buildRefreshRow(customId) {
@@ -425,7 +466,7 @@ async function editSavedPanel(client, type) {
         let built;
         let btnId;
         if (type === 'servicios') {
-            built = await buildServiciosEmbed(client);
+            built = await buildServiciosEmbed(client, ch.guild?.id);
             btnId = 'btn_dash_refresh_servicios';
         } else if (type === 'locucion') {
             built = await buildLocucionEmbed(client, ch.guild, false);
@@ -503,20 +544,23 @@ module.exports = function initStatusDashboards(client) {
             if (['!panel-servicios', '!panelservicios', '!servicios', '!panel-bot'].includes(contentLower)) {
                 if (!isStaff) return;
                 await message.delete().catch(() => {});
-                const { embed, logoAttachment } = await buildServiciosEmbed(client);
+                const gId = message.guild.id;
+                const { embed, files } = await buildServiciosEmbed(client, gId);
                 const sent = await message.channel.send({
                     embeds: [embed],
-                    files: logoAttachment ? [logoAttachment] : [],
+                    files: files || [],
                     components: [buildRefreshRow('btn_dash_refresh_servicios')]
                 }).catch(() => null);
 
-                if (sent) {
+                if (sent && guildManager.isPrimaryGuild(gId)) {
                     panelRefs.servicios = { channelId: sent.channel.id, messageId: sent.id };
                     await BotSetting.findOneAndUpdate(
                         { key: 'dashboard_panel_servicios' },
                         { key: 'dashboard_panel_servicios', value: panelRefs.servicios },
                         { upsert: true }
                     ).catch(() => {});
+                } else if (sent) {
+                    await guildManager.updateGuildConfig(gId, 'DASH_PANEL_SERVICIOS', { channelId: sent.channel.id, messageId: sent.id }, message.guild.name).catch(() => {});
                 }
                 return;
             }
@@ -525,20 +569,23 @@ module.exports = function initStatusDashboards(client) {
             if (['!panel-locucion', '!panellocucion', '!panel-voz', '!panelvoz'].includes(contentLower)) {
                 if (!isStaff) return;
                 await message.delete().catch(() => {});
-                const { embed, logoAttachment } = await buildLocucionEmbed(client, message.guild, true);
+                const gId = message.guild.id;
+                const { embed, files } = await buildLocucionEmbed(client, message.guild, true);
                 const sent = await message.channel.send({
                     embeds: [embed],
-                    files: logoAttachment ? [logoAttachment] : [],
+                    files: files || [],
                     components: [buildRefreshRow('btn_dash_refresh_locucion')]
                 }).catch(() => null);
 
-                if (sent) {
+                if (sent && guildManager.isPrimaryGuild(gId)) {
                     panelRefs.locucion = { channelId: sent.channel.id, messageId: sent.id };
                     await BotSetting.findOneAndUpdate(
                         { key: 'dashboard_panel_locucion' },
                         { key: 'dashboard_panel_locucion', value: panelRefs.locucion },
                         { upsert: true }
                     ).catch(() => {});
+                } else if (sent) {
+                    await guildManager.updateGuildConfig(gId, 'DASH_PANEL_LOCUCION', { channelId: sent.channel.id, messageId: sent.id }, message.guild.name).catch(() => {});
                 }
                 return;
             }
@@ -547,20 +594,23 @@ module.exports = function initStatusDashboards(client) {
             if (['!panel-tickets', '!paneltickets', '!panel-tickets-monitor', '!monitortickets'].includes(contentLower)) {
                 if (!isStaff) return;
                 await message.delete().catch(() => {});
-                const { embed, logoAttachment } = await buildTicketsEmbed(message.guild);
+                const gId = message.guild.id;
+                const { embed, files } = await buildTicketsEmbed(message.guild);
                 const sent = await message.channel.send({
                     embeds: [embed],
-                    files: logoAttachment ? [logoAttachment] : [],
+                    files: files || [],
                     components: [buildRefreshRow('btn_dash_refresh_tickets')]
                 }).catch(() => null);
 
-                if (sent) {
+                if (sent && guildManager.isPrimaryGuild(gId)) {
                     panelRefs.tickets = { channelId: sent.channel.id, messageId: sent.id };
                     await BotSetting.findOneAndUpdate(
                         { key: 'dashboard_panel_tickets' },
                         { key: 'dashboard_panel_tickets', value: panelRefs.tickets },
                         { upsert: true }
                     ).catch(() => {});
+                } else if (sent) {
+                    await guildManager.updateGuildConfig(gId, 'DASH_PANEL_TICKETS', { channelId: sent.channel.id, messageId: sent.id }, message.guild.name).catch(() => {});
                 }
                 return;
             }
@@ -581,7 +631,7 @@ module.exports = function initStatusDashboards(client) {
 
             let built;
             if (id === 'btn_dash_refresh_servicios') {
-                built = await buildServiciosEmbed(client);
+                built = await buildServiciosEmbed(client, interaction.guild?.id);
             } else if (id === 'btn_dash_refresh_locucion') {
                 built = await buildLocucionEmbed(client, interaction.guild, true);
             } else if (id === 'btn_dash_refresh_tickets') {

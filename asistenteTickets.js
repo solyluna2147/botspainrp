@@ -25,6 +25,7 @@ const {
     ButtonStyle,
     PermissionFlagsBits
 } = require('discord.js');
+const guildManager = require('./guildManager');
 
 // ==========================================
 // MODELOS DE MONGODB
@@ -127,29 +128,67 @@ async function loadConfig() {
 }
 
 // ==========================================
-// VALIDACIONES ESTRICTAS DE CANALES Y STAFF
+// VALIDACIONES ESTRICTAS DE CANALES Y STAFF (AISLADO POR SERVIDOR)
 // ==========================================
+function getGuildTicketConfig(guildId) {
+    if (!guildId || guildManager.isPrimaryGuild(guildId)) {
+        return {
+            soporte: CATEGORIA_SOPORTE_ID,
+            apelacion: CATEGORIA_APELACION_ID,
+            streamer: CATEGORIA_STREAMER_ID,
+            donaciones: CATEGORIA_DONACIONES_ID,
+            allowedCategories: ALLOWED_CATEGORY_IDS,
+            staffRoleId: ROLE_STAFF_ID,
+            streamerRoleId: ROLE_STREAMER_ID,
+            aprendizajeChannelId: canalAprendizajeId
+        };
+    }
+    const gCfg = guildManager.getGuildConfig(guildId);
+    const soporte = gCfg.CAT_TICKET_SOPORTE_ID || '';
+    const apelacion = gCfg.CAT_TICKET_APELACION_ID || '';
+    const streamer = gCfg.CAT_TICKET_STREAMER_ID || '';
+    const donaciones = gCfg.CAT_TICKET_DONACIONES_ID || '';
+    const allowedCategories = [soporte, apelacion, streamer, donaciones].filter(Boolean);
+    return {
+        soporte,
+        apelacion,
+        streamer,
+        donaciones,
+        allowedCategories,
+        staffRoleId: gCfg.ROLE_STAFF_ID || '',
+        streamerRoleId: gCfg.ROLE_STREAMER_ID || '',
+        aprendizajeChannelId: gCfg.CHANNEL_APRENDIZAJE_TICKETS_ID || ''
+    };
+}
 
-// Comprueba si el canal pertenece EXCLUSIVAMENTE a una de las 4 categorías permitidas
+function isGuildStaffMember(member) {
+    if (!member || member.user?.bot) return false;
+    const tCfg = getGuildTicketConfig(member.guild?.id);
+    if (tCfg.staffRoleId && member.roles?.cache?.has(tCfg.staffRoleId)) return true;
+    if (member.permissions?.has(PermissionFlagsBits.Administrator) || member.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
+    return false;
+}
+
+// Comprueba si el canal pertenece EXCLUSIVAMENTE a una de las 4 categorías permitidas de ESE servidor
 function isValidTicketCategory(channel) {
     if (!channel || channel.isDMBased()) return false;
-    // Solo canales de texto dentro del servidor (ChannelType.GuildText = 0)
     if (channel.type !== 0) return false;
 
     const parentId = channel.parentId;
     if (!parentId) return false;
 
-    // Comparación ESTRICTA y ÚNICA por ID de Categoría
-    return ALLOWED_CATEGORY_IDS.includes(parentId);
+    const tCfg = getGuildTicketConfig(channel.guild?.id);
+    return tCfg.allowedCategories.includes(parentId);
 }
 
-// Detectar categoría basada en el ID exacto de la categoría de Discord
+// Detectar categoría basada en el ID exacto de la categoría de Discord de ESE servidor
 function detectTicketCategory(channel) {
     const parentId = channel.parentId;
-    if (parentId === CATEGORIA_SOPORTE_ID) return 'soporte';
-    if (parentId === CATEGORIA_APELACION_ID) return 'apelacion';
-    if (parentId === CATEGORIA_STREAMER_ID) return 'streamer';
-    if (parentId === CATEGORIA_DONACIONES_ID) return 'donaciones';
+    const tCfg = getGuildTicketConfig(channel.guild?.id);
+    if (tCfg.soporte && parentId === tCfg.soporte) return 'soporte';
+    if (tCfg.apelacion && parentId === tCfg.apelacion) return 'apelacion';
+    if (tCfg.streamer && parentId === tCfg.streamer) return 'streamer';
+    if (tCfg.donaciones && parentId === tCfg.donaciones) return 'donaciones';
     return 'general';
 }
 
@@ -209,7 +248,8 @@ async function hasStaffParticipated(channel, ticketOwnerId = null, excludedUserI
             // Comprobamos si tiene rol de staff o permisos de admin
             const member = msg.member || await channel.guild.members.fetch(msg.author.id).catch(() => null);
             if (member) {
-                const hasStaffRole = member.roles.cache.has(ROLE_STAFF_ID);
+                const tCfg = getGuildTicketConfig(channel.guild?.id);
+                const hasStaffRole = tCfg.staffRoleId ? member.roles.cache.has(tCfg.staffRoleId) : false;
                 const hasAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
                 if (hasStaffRole || hasAdmin) {
                     return true; // Efectivamente hay otro Staff hablando
@@ -522,17 +562,27 @@ function summarizeReason(category, text) {
 
     return `Consulta general: "${text.slice(0, 100)}..."`;
 }
-async function registerStreamerInDb(userId, data) {
+async function registerStreamerInDb(userId, data, guildId = null) {
     try {
+        const isPrimary = !guildId || guildManager.isPrimaryGuild(guildId);
+        const targetFile = isPrimary ? STREAMERS_FILE : path.join(__dirname, `streamers_${guildId}.json`);
         let current = {};
-        if (fs.existsSync(STREAMERS_FILE)) {
-            try { current = JSON.parse(fs.readFileSync(STREAMERS_FILE, 'utf8')); } catch (e) { }
+        if (fs.existsSync(targetFile)) {
+            try { current = JSON.parse(fs.readFileSync(targetFile, 'utf8')); } catch (e) { }
         }
         current[userId] = { ...(current[userId] || {}), ...data };
-        fs.writeFileSync(STREAMERS_FILE, JSON.stringify(current, null, 2), 'utf8');
+        fs.writeFileSync(targetFile, JSON.stringify(current, null, 2), 'utf8');
 
-        if (mongoose.models.Streamer) {
-            await mongoose.models.Streamer.findOneAndUpdate({ userId }, { userId, data: current[userId] }, { upsert: true });
+        if (mongoose.connection.readyState === 1) {
+            if (isPrimary && mongoose.models.Streamer) {
+                await mongoose.models.Streamer.findOneAndUpdate({ userId }, { userId, data: current[userId] }, { upsert: true });
+            } else if (!isPrimary) {
+                const GuildStrModel = guildManager.getGuildModel(guildId, 'Streamer', new mongoose.Schema({
+                    userId: { type: String, required: true, unique: true },
+                    data: mongoose.Schema.Types.Mixed
+                }, { timestamps: true }));
+                await GuildStrModel.findOneAndUpdate({ userId }, { userId, data: current[userId] }, { upsert: true });
+            }
         }
     } catch (e) {
         console.error('⚠️ [ASISTENTE TICKETS] Error guardando streamer:', e.message);
@@ -606,20 +656,21 @@ async function auditStreamChannel(rawUrl) {
     return { platform, url: rawUrl, handle, followers, avgViewers, avgViews, content, cumple };
 }
 
-function buildBaseEmbed(guild, title, description, color = 0x9b59b6) {
-    const logoAttachment = getLogoAttachment();
-    const iconUrl = logoAttachment ? 'attachment://logo.png' : (guild.iconURL() || undefined);
+function buildBaseEmbed(guild, title, description, color = null) {
+    const v = guildManager.resolveGuildVisuals(guild?.id);
+    const iconUrl = v.logoUrl || (guild?.iconURL() || undefined);
+    const serverName = v.name || 'VALLECAS RP';
 
     const embed = new EmbedBuilder()
-        .setColor(color)
+        .setColor(color || v.color)
         .setAuthor({
-            name: 'ASISTENTE VIRTUAL | VALLECAS RP',
+            name: `ASISTENTE VIRTUAL | ${serverName}`,
             iconURL: iconUrl
         })
         .setDescription(description)
         .setThumbnail(iconUrl)
         .setFooter({
-            text: 'VALLECAS RP • Sistema Inteligente de Tickets',
+            text: `${serverName} • Sistema Inteligente de Tickets`,
             iconURL: iconUrl
         })
         .setTimestamp();
@@ -628,7 +679,7 @@ function buildBaseEmbed(guild, title, description, color = 0x9b59b6) {
         embed.setTitle(title);
     }
 
-    return { embed, files: logoAttachment ? [logoAttachment] : [] };
+    return { embed, files: [...v.files] };
 }
 
 // Helper para saber si el usuario ha aportado pruebas (enlaces de clip, vídeos o imágenes adjuntas)
@@ -647,7 +698,7 @@ function hasUserProvidedEvidence(messages = []) {
 }
 
 // Generador de respuestas breves de recopilación de información para el Staff (Groq AI)
-async function generateAIResponse(category, session, currentMessage, userTag) {
+async function generateAIResponse(category, session, currentMessage, userTag, guildId = null) {
     const groqKey = process.env.GROQ_API_KEY;
     if (!groqKey) return null;
 
@@ -655,20 +706,22 @@ async function generateAIResponse(category, session, currentMessage, userTag) {
         const userMessages = session.userMessages || [];
         const userProvidedEvidence = hasUserProvidedEvidence([...userMessages, { content: currentMessage }]);
         const repliesSoFar = session.assistantRepliesCount || 0;
+        const vAi = guildManager.resolveGuildVisuals(guildId);
+        const serverName = vAi.name || 'VALLECAS RP';
 
         const categoryPrompts = {
-            donaciones: 'Eres el Asistente de Recepción de Tickets de Donaciones de VALLECAS RP. Tu ÚNICA función es recopilar los datos clave para el Staff (qué artículo/pack/coche/casa busca y si pagará por Bizum o PayPal). Si ya te ha dicho lo que quiere, confirma que queda anotado e indícale que pulse el botón "Hablar con un Staff" de abajo para que el encargado le atienda.',
-            apelacion: 'Eres el Asistente de Recepción de Apelaciones de VALLECAS RP. Tu ÚNICA función es recopilar datos para el expediente del Staff (motivo de la sanción/ban y si tiene alguna captura o clip). ' +
+            donaciones: `Eres el Asistente de Recepción de Tickets de Donaciones de ${serverName}. Tu ÚNICA función es recopilar los datos clave para el Staff (qué artículo/pack/coche/casa busca y si pagará por Bizum o PayPal). Si ya te ha dicho lo que quiere, confirma que queda anotado e indícale que pulse el botón "Hablar con un Staff" de abajo para que el encargado le atienda.`,
+            apelacion: `Eres el Asistente de Recepción de Apelaciones de ${serverName}. Tu ÚNICA función es recopilar datos para el expediente del Staff (motivo de la sanción/ban y si tiene alguna captura o clip). ` +
                 (userProvidedEvidence
                     ? 'El usuario ya aportó captura o prueba: confirma que queda registrada para el Staff e indícale que pulse el botón "Hablar con un Staff" de abajo.'
                     : 'REGLA CRÍTICA: Si el usuario dice que NO tiene clip/pruebas, que no sabe el motivo o que está en espera de SS, ACÉPTALO inmediatamente sin insistir ni pedir pruebas de nuevo; dile que queda anotado tal cual y que pulse el botón "Hablar con un Staff" de abajo para que la Administración revise su caso.'),
-            streamer: 'Eres el Asistente de Recepción de Creadores de Contenido de VALLECAS RP. Tu ÚNICA función es recoger el enlace de su canal (Twitch, Kick o TikTok). Si ya lo pasó, confirma que queda registrado e indícale que pulse "Hablar con un Staff" para que revisen su solicitud.',
-            soporte: 'Eres el Asistente de Recepción de Tickets de Soporte de VALLECAS RP. Tu función principal es recopilar la información del problema para el Staff (qué ocurre y si tiene captura) y solo responder dudas muy simples de normativa si es una pregunta directa. Si es un bug, sanción, espera de SS, devolución, fallo de cuenta o algo que requiera intervención humana, NO intentes resolverlo tú: confirma que has tomado nota de los detalles e indícale que pulse el botón "Hablar con un Staff" de abajo.'
+            streamer: `Eres el Asistente de Recepción de Creadores de Contenido de ${serverName}. Tu ÚNICA función es recoger el enlace de su canal (Twitch, Kick o TikTok). Si ya lo pasó, confirma que queda registrado e indícale que pulse "Hablar con un Staff" para que revisen su solicitud.`,
+            soporte: `Eres el Asistente de Recepción de Tickets de Soporte de ${serverName}. Tu función principal es recopilar la información del problema para el Staff (qué ocurre y si tiene captura) y solo responder dudas muy simples de normativa si es una pregunta directa. Si es un bug, sanción, espera de SS, devolución, fallo de cuenta o algo que requiera intervención humana, NO intentes resolverlo tú: confirma que has tomado nota de los detalles e indícale que pulse el botón "Hablar con un Staff" de abajo.`
         };
 
         const systemPrompt = (categoryPrompts[category] || categoryPrompts.soporte) +
-            '\n\nREGLAS ESTRICTAS OBLIGATORIAS:\n' +
-            '1. NUNCA te hagas pasar por un Staff humano ni digas "ya te atiendo sin bots". Eres un asistente virtual que recopila información para el equipo de Staff.\n' +
+            `\n\nREGLAS ESTRICTAS OBLIGATORIAS:\n` +
+            `1. NUNCA te hagas pasar por un Staff humano ni digas "ya te atiendo sin bots". Eres un asistente virtual de ${serverName} que recopila información para el equipo de Staff. NUNCA menciones otro servidor.\n` +
             '2. PROHIBIDO REPETIR PREGUNTAS: Lee el historial de la conversación. Si ya preguntaste por pruebas/clips o el usuario ya dijo que no tiene o que no sabe qué pasó, JAMÁS vuelvas a pedirlo.\n' +
             '3. NO INTENTES RESOLVER EL TICKET POR TU CUENTA: Nunca digas "el ban se mantiene", nunca cierres el caso ni des veredictos. Tu trabajo es dejar todo anotado y remitir al botón "Hablar con un Staff".\n' +
             '4. BREVEDAD: Máximo 2 frases cortas, naturales, educadas y en español de España.\n' +
@@ -679,13 +732,17 @@ async function generateAIResponse(category, session, currentMessage, userTag) {
         const conversationHistory = session.dialogueHistory.slice(-6).map(m => ({ role: m.role, content: m.content }));
         conversationHistory.push({ role: 'user', content: currentMessage });
 
-        // Solo inyectar conocimientos/normativa si es categoría soporte (para dudas rápidas)
+        // Solo inyectar conocimientos/normativa si es categoría soporte (aislado por servidor)
         let knowledgeContext = '';
         if (category === 'soporte') {
             try {
-                const allKnowledge = await TicketKnowledge.find({}).sort({ createdAt: -1 }).limit(15);
+                const isPrimary = !guildId || guildManager.isPrimaryGuild(guildId);
+                const TargetKnowledge = isPrimary
+                    ? TicketKnowledge
+                    : guildManager.getGuildModel(guildId, 'TicketKnowledge', ticketKnowledgeSchema);
+                const allKnowledge = await TargetKnowledge.find({}).sort({ createdAt: -1 }).limit(15);
                 if (allKnowledge && allKnowledge.length > 0) {
-                    knowledgeContext += '\nBASE DE CONOCIMIENTOS OFICIALES DE VALLECAS RP:\n' +
+                    knowledgeContext += `\nBASE DE CONOCIMIENTOS OFICIALES DE ${serverName}:\n` +
                         allKnowledge.map(k => `• ${k.response}`).join('\n') + '\n';
                 }
             } catch (e) { }
@@ -1304,7 +1361,8 @@ module.exports = function initAsistenteTickets(client) {
                 );
             }
             if (['!asistente', '!asistente ayuda', '!asistente help'].includes(contentLower)) {
-                if (!isStaff) return;
+                if (!isGuildStaffMember(message.member)) return;
+                const tCfg = getGuildTicketConfig(message.guild.id);
                 const { embed, files } = buildBaseEmbed(
                     message.guild,
                     '🤖 PANEL DE CONTROL | ASISTENTE VIRTUAL DE TICKETS',
@@ -1317,14 +1375,41 @@ module.exports = function initAsistenteTickets(client) {
                     `> • \`!asistente estado\` ➔ Consulta el estado actual.\n\n` +
                     `📋 **| Procesar Tickets:**\n` +
                     `> • \`!procesarticket\` ➔ Lee el ticket actual **solo si pertenece a las 4 categorías oficiales y ningún staff ha hablado**.\n\n` +
-                    `🔒 **| Categorías Oficiales Permitidas:**\n` +
-                    `> • Soporte: \`${CATEGORIA_SOPORTE_ID}\`\n` +
-                    `> • Apelación: \`${CATEGORIA_APELACION_ID}\`\n` +
-                    `> • C.Contenido: \`${CATEGORIA_STREAMER_ID}\`\n` +
-                    `> • Donaciones: \`${CATEGORIA_DONACIONES_ID}\``,
-                    0x8e44ad
+                    `🔒 **| Categorías Oficiales Permitidas (\`!setcategoria <tipo> <ID>\`):**\n` +
+                    `> • Soporte: \`${tCfg.soporte || 'Sin configurar'}\`\n` +
+                    `> • Apelación: \`${tCfg.apelacion || 'Sin configurar'}\`\n` +
+                    `> • C.Contenido: \`${tCfg.streamer || 'Sin configurar'}\`\n` +
+                    `> • Donaciones: \`${tCfg.donaciones || 'Sin configurar'}\``
                 );
                 return message.reply({ embeds: [embed], files });
+            }
+
+            if (contentLower.startsWith('!setcategoria')) {
+                if (!isGuildStaffMember(message.member)) return;
+                const parts = message.content.trim().split(/\s+/);
+                const tipo = (parts[1] || '').toLowerCase();
+                const catId = (parts[2] || '').replace(/[<#>]/g, '').trim();
+                const mapKeys = {
+                    soporte: 'CAT_TICKET_SOPORTE_ID',
+                    apelacion: 'CAT_TICKET_APELACION_ID',
+                    apelaciones: 'CAT_TICKET_APELACION_ID',
+                    streamer: 'CAT_TICKET_STREAMER_ID',
+                    contenido: 'CAT_TICKET_STREAMER_ID',
+                    donaciones: 'CAT_TICKET_DONACIONES_ID',
+                    donacion: 'CAT_TICKET_DONACIONES_ID'
+                };
+                if (!mapKeys[tipo] || !catId) {
+                    return message.reply('⚠️ **Uso:** `!setcategoria <soporte|apelacion|streamer|donaciones> <ID_Categoría>`').catch(() => {});
+                }
+                await guildManager.updateGuildConfig(message.guild.id, mapKeys[tipo], catId, message.guild.name);
+                return message.reply(`✅ Categoría de tickets **${tipo.toUpperCase()}** configurada en \`${catId}\` para **${message.guild.name}**.`).catch(() => {});
+            }
+
+            if (contentLower.startsWith('!setaprendizaje')) {
+                if (!isGuildStaffMember(message.member)) return;
+                const targetCh = message.mentions.channels.first() || message.channel;
+                await guildManager.updateGuildConfig(message.guild.id, 'CHANNEL_APRENDIZAJE_TICKETS_ID', targetCh.id, message.guild.name);
+                return message.reply(`✅ Canal de aprendizaje del Asistente de Tickets configurado en <#${targetCh.id}> para **${message.guild.name}**.`).catch(() => {});
             }
 
             // 2. Comando: !limpiarasistente (Purga solo mensajes del bot en tickets)
@@ -1385,8 +1470,8 @@ module.exports = function initAsistenteTickets(client) {
 
                 try {
                     const allChannels = await message.guild.channels.fetch();
-                    // Filtrar ESTRICTAMENTE: Canales de texto cuyo parentId sea una de las 4 IDs exactas
-                    const targetChannels = allChannels.filter(c => c && c.type === 0 && c.parentId && ALLOWED_CATEGORY_IDS.includes(c.parentId));
+                    const tCfgAll = getGuildTicketConfig(message.guild.id);
+                    const targetChannels = allChannels.filter(c => c && c.type === 0 && c.parentId && tCfgAll.allowedCategories.includes(c.parentId));
 
                     if (targetChannels.size === 0) {
                         return statusMsg.edit('⚠️ No se encontraron canales de texto dentro de las 4 categorías oficiales.');
@@ -1426,22 +1511,22 @@ module.exports = function initAsistenteTickets(client) {
                 }
             }
 
-            // ==========================================
-            // APRENDIZAJE ACTIVO EN CANAL 1571488286789079080
-            // ==========================================
-            // Cada vez que un Staff escribe en el canal de aprendizaje, el bot memoriza el texto
-            if (message.channel.id === canalAprendizajeId) {
+            const tCfgLearn = getGuildTicketConfig(message.guild.id);
+            if (tCfgLearn.aprendizajeChannelId && message.channel.id === tCfgLearn.aprendizajeChannelId) {
                 const cleanText = message.content.trim();
                 if (cleanText.length > 5 && !cleanText.startsWith('!')) {
                     try {
-                        await TicketKnowledge.create({
+                        const TargetKModel = guildManager.isPrimaryGuild(message.guild.id)
+                            ? TicketKnowledge
+                            : guildManager.getGuildModel(message.guild.id, 'TicketKnowledge', ticketKnowledgeSchema);
+                        await TargetKModel.create({
                             category: 'general',
                             questionPattern: cleanText.slice(0, 50),
                             response: cleanText,
                             addedBy: message.author.tag || message.author.username
                         });
                         await message.react('🧠').catch(() => {});
-                        console.log(`🧠 [ASISTENTE APRENDIZAJE] Nuevo conocimiento registrado: "${cleanText.slice(0, 60)}..."`);
+                        console.log(`🧠 [ASISTENTE APRENDIZAJE] (${message.guild.name}) Nuevo conocimiento: "${cleanText.slice(0, 60)}..."`);
                     } catch (e) {
                         console.error('Error guardando aprendizaje:', e.message);
                     }
@@ -1449,28 +1534,20 @@ module.exports = function initAsistenteTickets(client) {
                 return;
             }
 
-            // ==========================================
-            // DETECCIÓN DE RESUMEN DEL STAFF (RESUMEN: ...)
-            // ==========================================
-            // Si un miembro del Staff escribe "RESUMEN: ..." en un ticket oficial,
-            // el bot borra su mensaje plano y publica un Embed oficial con el resumen formateado.
-            if (isStaff && isValidTicketCategory(message.channel)) {
+            if (isGuildStaffMember(message.member) && isValidTicketCategory(message.channel)) {
                 const matchResumen = message.content.match(/^\*{0,2}RESUMEN\*{0,2}\s*:\s*([\s\S]+)$/i);
                 if (matchResumen && matchResumen[1]) {
                     const resumenStaffText = matchResumen[1].trim();
-                    // 1. Borrar el mensaje en texto plano del Staff
                     await message.delete().catch(() => {});
 
-                    // 2. Crear el Embed oficial con el diseño del servidor
-                    const logoAttachment = getLogoAttachment();
-                    const iconUrl = logoAttachment ? 'attachment://logo.png' : (message.guild.iconURL() || undefined);
-
+                    const vRes = guildManager.resolveGuildVisuals(message.guild.id);
+                    const iconUrl = vRes.logoUrl || (message.guild.iconURL() || undefined);
                     const staffTag = `<@${message.author.id}> (\`${message.author.tag || message.author.username}\`)`;
 
                     const resumenStaffEmbed = new EmbedBuilder()
                         .setColor(0x2ecc71)
                         .setAuthor({
-                            name: 'RESOLUCIÓN Y CIERRE DE TICKET | VALLECAS RP',
+                            name: `RESOLUCIÓN Y CIERRE DE TICKET | ${vRes.name}`,
                             iconURL: iconUrl
                         })
                         .setTitle('📌 RESUMEN DE ATENCIÓN DE STAFF')
@@ -1479,18 +1556,18 @@ module.exports = function initAsistenteTickets(client) {
                             `> ${staffTag} ❗\n\n` +
                             `📋 **| Resumen de la Intervención:**\n` +
                             `> ${resumenStaffText}\n\n` +
-                            `✅ *Caso atendido y registrado formalmente en la administración de VALLECAS RP.*`
+                            `✅ *Caso atendido y registrado formalmente en la administración de ${vRes.name}.*`
                         )
                         .setThumbnail(iconUrl)
                         .setFooter({
-                            text: 'VALLECAS RP • Registro de Soporte y Moderación',
+                            text: `${vRes.name} • Registro de Soporte y Moderación`,
                             iconURL: iconUrl
                         })
                         .setTimestamp();
 
                     await message.channel.send({
                         embeds: [resumenStaffEmbed],
-                        files: logoAttachment ? [logoAttachment] : []
+                        files: vRes.files
                     }).catch(() => {});
                     return;
                 }
@@ -1746,9 +1823,9 @@ module.exports = function initAsistenteTickets(client) {
                     session.status = 'solved';
                     if (session.save) await session.save();
 
-                    // 1. Mensaje cordial de confirmación para el usuario
+                    const vSol = guildManager.resolveGuildVisuals(interaction.guild?.id);
                     const replyMsg = `¡Estupendo <@${interaction.user.id}>! Nos alegra haberte ayudado y que la incidencia esté resuelta. 👍\n\n` +
-                                     `He registrado tu ticket como **SOLUCIONADO** para que el equipo de Staff lo revise y proceda a cerrarlo manualmente. ¡Muchas gracias y disfruta de **Vallecas RP**!`;
+                                     `He registrado tu ticket como **SOLUCIONADO** para que el equipo de Staff lo revise y proceda a cerrarlo manualmente. ¡Muchas gracias y disfruta de **${vSol.name}**!`;
 
                     const { embed: resEmbed, files: resFiles } = buildBaseEmbed(interaction.guild, null, replyMsg, 0x2ecc71);
                     await interaction.channel.send({ embeds: [resEmbed], files: resFiles }).catch(() => {});
@@ -1819,7 +1896,7 @@ module.exports = function initAsistenteTickets(client) {
             // Si no es un botón de Staff de este módulo, dejar que otros listeners (como el panel de valoración en index.js) lo procesen
             if (!isAsistenteStaffButton) return;
 
-            const isStaff = interaction.member?.roles.cache.has(ROLE_STAFF_ID) || interaction.member?.permissions.has(PermissionFlagsBits.Administrator);
+            const isStaff = isGuildStaffMember(interaction.member);
 
             if (!isStaff) {
                 return interaction.reply({
@@ -1833,10 +1910,11 @@ module.exports = function initAsistenteTickets(client) {
                 const parts = customId.split('_');
                 const targetUserId = parts[3];
                 const streamUrl = decodeURIComponent(parts.slice(4).join('_'));
+                const tCfgBtn = getGuildTicketConfig(interaction.guild?.id);
 
                 const member = await interaction.guild.members.fetch(targetUserId).catch(() => null);
-                if (member) {
-                    await member.roles.add(ROLE_STREAMER_ID).catch(() => { });
+                if (member && tCfgBtn.streamerRoleId) {
+                    await member.roles.add(tCfgBtn.streamerRoleId).catch(() => { });
                 }
 
                 const isTwitch = streamUrl.includes('twitch.tv');
@@ -1850,10 +1928,10 @@ module.exports = function initAsistenteTickets(client) {
                     url: streamUrl,
                     platform: isTwitch ? 'Twitch' : (isKick ? 'Kick' : 'TikTok'),
                     name: member ? member.user.username : 'streamer'
-                });
+                }, interaction.guild?.id);
 
                 await interaction.reply({
-                    content: `🎉 **¡RANGO APROBADO!** Se ha asignado el rol de <@&${ROLE_STREAMER_ID}> a <@${targetUserId}> por <@${interaction.user.id}>.`,
+                    content: `🎉 **¡RANGO APROBADO!** ${tCfgBtn.streamerRoleId ? `Se ha asignado el rol de <@&${tCfgBtn.streamerRoleId}>` : 'Solicitud aprobada'} a <@${targetUserId}> por <@${interaction.user.id}>.`,
                     ephemeral: false
                 });
                 return;
@@ -1887,8 +1965,9 @@ module.exports = function initAsistenteTickets(client) {
             }
 
             if (customId.startsWith('btn_dona_done_')) {
+                const vDon = guildManager.resolveGuildVisuals(interaction.guild?.id);
                 await interaction.reply({
-                    content: `✅ **¡Donación completada y entregada con éxito!** Gracias por apoyar a **VALLECAS RP**. (Gestionado por <@${interaction.user.id}>).`,
+                    content: `✅ **¡Donación completada y entregada con éxito!** Gracias por apoyar a **${vDon.name}**. (Gestionado por <@${interaction.user.id}>).`,
                     ephemeral: false
                 });
                 return;
