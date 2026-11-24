@@ -3,6 +3,7 @@ const { Readable } = require('stream');
 const fs = require('fs');
 const path = require('path');
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
+const guildManager = require('./guildManager');
 const {
     joinVoiceChannel,
     createAudioPlayer,
@@ -47,6 +48,35 @@ const CANALES_SOPORTE_IDS = [
     '1517530849334136850', // SOPORTE 4
     '1517530849334136851'  // SOPORTE 5
 ];
+
+// Configuración de salas de voz por servidor (en Vallecas RP usa sus IDs intactas; en otros servidores lee de su DB)
+function getVoiceConfigForGuild(guildId) {
+    if (!guildId || guildManager.isPrimaryGuild(guildId)) {
+        return {
+            esperaId: CANAL_ESPERA_ID,
+            sancionesTextId: CANAL_SANCIONES_STAFF_ID,
+            afkId: CANAL_STAFF_AFK_ID,
+            rolId: CANAL_STAFF_ROL_ID,
+            charlaId: CANAL_SALA_CHARLA_STAFF_ID,
+            soporteIds: CANALES_SOPORTE_IDS
+        };
+    }
+    const cfg = guildManager.getGuildConfig(guildId);
+    let soporteIds = [];
+    if (Array.isArray(cfg.VOICE_SOPORTE_IDS)) {
+        soporteIds = cfg.VOICE_SOPORTE_IDS.filter(Boolean);
+    } else if (typeof cfg.VOICE_SOPORTE_IDS === 'string' && cfg.VOICE_SOPORTE_IDS.trim()) {
+        soporteIds = cfg.VOICE_SOPORTE_IDS.split(/[\s,]+/).filter(Boolean);
+    }
+    return {
+        esperaId: cfg.VOICE_ESPERA_ID || '',
+        sancionesTextId: cfg.CHANNEL_INFORME_LOCUCION_ID || cfg.CHANNEL_SANCIONES_ID || '',
+        afkId: cfg.VOICE_AFK_ID || '',
+        rolId: cfg.VOICE_ROL_ID || '',
+        charlaId: cfg.VOICE_CHARLA_ID || '',
+        soporteIds
+    };
+}
 
 // Rol de staff por defecto
 let ROLE_STAFF_ID = '1538191116610838691';
@@ -227,7 +257,9 @@ function abortPlaybackImmediately(guild, reason = 'Desconexión forzada') {
  */
 function isWaitRoomEmpty(guild) {
     if (!guild) return true;
-    const waitChannel = guild.channels.cache.get(CANAL_ESPERA_ID);
+    const vc = getVoiceConfigForGuild(guild.id);
+    if (!vc.esperaId) return true;
+    const waitChannel = guild.channels.cache.get(vc.esperaId);
     if (!waitChannel || !waitChannel.isVoiceBased()) return true;
 
     const count = waitChannel.members.filter(m => !m.user.bot).size;
@@ -398,7 +430,9 @@ async function triggerUserWaitRoomAlert(guild, reason = 'Bienvenida') {
     if (!audioUsuarioCache) await loadAudiosFromDB();
     if (!audioUsuarioCache) return;
 
-    const waitChannel = guild.channels.cache.get(CANAL_ESPERA_ID);
+    const vc = getVoiceConfigForGuild(guild?.id);
+    if (!vc.esperaId) return;
+    const waitChannel = guild.channels.cache.get(vc.esperaId);
     if (!waitChannel || !waitChannel.isVoiceBased()) return;
     if (waitChannel.members.filter(m => !m.user.bot).size === 0) return;
 
@@ -434,12 +468,13 @@ function scheduleUserWelcomeAlert(guild) {
  */
 function getTargetStaffChannel(guild) {
     if (!guild) return null;
+    const vc = getVoiceConfigForGuild(guild.id);
 
     // -------------------------------------------------------------
-    // PRIORIDAD 1: Canales de SOPORTE 1 a 5 (Soporte Libre)
+    // PRIORIDAD 1: Canales de SOPORTE (Soporte Libre)
     // -------------------------------------------------------------
     const freeSupportChannels = [];
-    for (const channelId of CANALES_SOPORTE_IDS) {
+    for (const channelId of vc.soporteIds) {
         const channel = guild.channels.cache.get(channelId);
         if (!channel || !channel.isVoiceBased()) continue;
 
@@ -478,7 +513,7 @@ function getTargetStaffChannel(guild) {
     // -------------------------------------------------------------
     // PRIORIDAD 2: SALA DE STAFFS (Solo si NO hay soportes libres)
     // -------------------------------------------------------------
-    const charlaChannel = guild.channels.cache.get(CANAL_SALA_CHARLA_STAFF_ID);
+    const charlaChannel = vc.charlaId ? guild.channels.cache.get(vc.charlaId) : null;
     const staffsEnCharla = (charlaChannel && charlaChannel.isVoiceBased())
         ? charlaChannel.members.filter(m => isMemberStaff(m) && m.voice && !m.voice.deaf && !m.voice.selfDeaf)
         : null;
@@ -494,7 +529,7 @@ function getTargetStaffChannel(guild) {
     // -------------------------------------------------------------
     // PRIORIDAD 3: STAFF EN ROL (Solo si NO hay en soporte ni en sala de staffs)
     // -------------------------------------------------------------
-    const rolChannel = guild.channels.cache.get(CANAL_STAFF_ROL_ID);
+    const rolChannel = vc.rolId ? guild.channels.cache.get(vc.rolId) : null;
     const staffsEnRol = (rolChannel && rolChannel.isVoiceBased())
         ? rolChannel.members.filter(m => isMemberStaff(m) && m.voice && !m.voice.deaf && !m.voice.selfDeaf)
         : null;
@@ -516,15 +551,17 @@ function getTargetStaffChannel(guild) {
  */
 async function sendSanctionReport(guild, { motivo, staffsInvolucrados, targetChannelId, usuariosAfectados, tiempoEsperadoMs, avisosEmitidos, client }) {
     try {
-        let canalSanciones = guild.channels.cache.get(CANAL_SANCIONES_STAFF_ID);
+        const vc = getVoiceConfigForGuild(guild?.id);
+        if (!vc.sancionesTextId) return;
+        let canalSanciones = guild.channels.cache.get(vc.sancionesTextId);
         if (!canalSanciones) {
             try {
-                canalSanciones = await guild.channels.fetch(CANAL_SANCIONES_STAFF_ID);
+                canalSanciones = await guild.channels.fetch(vc.sancionesTextId);
             } catch (e) { }
         }
         if (!canalSanciones && client) {
             try {
-                canalSanciones = await client.channels.fetch(CANAL_SANCIONES_STAFF_ID);
+                canalSanciones = await client.channels.fetch(vc.sancionesTextId);
             } catch (e) { }
         }
 
@@ -602,8 +639,8 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, targetCha
                 try {
                     if (staffMember.voice && staffMember.voice.channelId) {
                         // Comprobación de canal: NUNCA mover a un staff que esté en otro canal (como soporte atendiendo)
-                        if (!targetChannelId || staffMember.voice.channelId === targetChannelId) {
-                            await staffMember.voice.setChannel(CANAL_STAFF_AFK_ID, 'Movido a STAFF AFK tras cumplirse los 3 avisos de soporte');
+                        if (vc.afkId && (!targetChannelId || staffMember.voice.channelId === targetChannelId)) {
+                            await staffMember.voice.setChannel(vc.afkId, 'Movido a STAFF AFK tras cumplirse los 3 avisos de soporte');
                             console.log(`🔀 [SOPORTE ALERT] Staff ${staffMember.user ? staffMember.user.tag : staffMember.id} movido a STAFF AFK tras los 3 avisos en su canal.`);
                         }
                     }
@@ -623,7 +660,9 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, targetCha
 async function checkWaitRoom(guild, client) {
     if (!sistemaActivo || isPlayingVoice) return;
 
-    const waitChannel = guild.channels.cache.get(CANAL_ESPERA_ID);
+    const vc = getVoiceConfigForGuild(guild?.id);
+    if (!vc.esperaId) return;
+    const waitChannel = guild.channels.cache.get(vc.esperaId);
     if (!waitChannel || !waitChannel.isVoiceBased()) return;
 
     const waitingUsers = waitChannel.members.filter(m => !m.user.bot);
@@ -786,14 +825,18 @@ function initSoporteAlert(client) {
         } catch (e) { }
     }, 60 * 1000); // Cada 1 minuto exacto
 
-    // 4. Evento voiceStateUpdate para gestionar entradas y salidas
+    // 4. Evento voiceStateUpdate para gestionar entradas y salidas (multi-servidor)
     client.on('voiceStateUpdate', async (oldState, newState) => {
         const userId = newState.id;
         const member = newState.member || oldState.member;
         if (member && member.user && member.user.bot) return;
 
+        const guild = newState.guild || oldState.guild;
+        const vc = getVoiceConfigForGuild(guild?.id);
+        if (!vc.esperaId) return;
+
         // Entró al canal de espera
-        if (newState.channelId === CANAL_ESPERA_ID && oldState.channelId !== CANAL_ESPERA_ID) {
+        if (newState.channelId === vc.esperaId && oldState.channelId !== vc.esperaId) {
             userJoinTimes.set(userId, {
                 joinedAt: Date.now(),
                 userTag: member ? member.user.tag : userId,
@@ -803,20 +846,18 @@ function initSoporteAlert(client) {
             nextAlertTurn = 'STAFF';
             staffAlertCount = 0;
             sanctionReportSent = false;
-            const guild = newState.guild;
             scheduleUserWelcomeAlert(guild);
         }
 
         // Salió del canal de espera
-        if (oldState.channelId === CANAL_ESPERA_ID && newState.channelId !== CANAL_ESPERA_ID) {
+        if (oldState.channelId === vc.esperaId && newState.channelId !== vc.esperaId) {
             const userData = userJoinTimes.get(userId);
             const timeWaitingMs = userData ? (Date.now() - userData.joinedAt) : 0;
-            const guild = oldState.guild || newState.guild;
 
             userJoinTimes.delete(userId);
 
             // ¿Fue movido a un canal de soporte por un staff o abandonó/se desconectó?
-            const fueAtendidoEnSoporte = CANALES_SOPORTE_IDS.includes(newState.channelId);
+            const fueAtendidoEnSoporte = vc.soporteIds.includes(newState.channelId);
 
             if (!fueAtendidoEnSoporte) {
                 // El usuario ABANDONÓ el canal de espera sin ser atendido
@@ -862,12 +903,84 @@ function initSoporteAlert(client) {
         } catch (e) { }
     }, 5 * 1000);
 
-    // 6. Comandos !locu
+    // 6. Comandos !locu, !setvoz y !vervoz (multi-servidor)
     client.on('messageCreate', async (message) => {
         if (message.author.bot || !message.guild) return;
 
         const content = message.content.trim();
-        if (content.toLowerCase().startsWith('!locu')) {
+        const lower = content.toLowerCase();
+
+        // Comandos !setvoz / !vervoz para configurar salas de voz en cualquier servidor (ej. VilaCityRP)
+        if (lower === '!vervoz' || lower.startsWith('!setvoz')) {
+            const isOwnerOrAdmin = message.author.id === '1308814761269395527' || message.author.id === '418558256840179722' || message.member?.permissions?.has('Administrator');
+            if (!isOwnerOrAdmin) return message.reply('❌ Solo Administradores pueden configurar las salas de voz.');
+
+            const parts = content.split(/\s+/);
+            const cmd = parts[0].toLowerCase();
+
+            if (cmd === '!vervoz') {
+                const vc = getVoiceConfigForGuild(message.guild.id);
+                const v = guildManager.resolveGuildVisuals(message.guild.id);
+                const fmt = (id) => id ? `<#${id}> (\`${id}\`)` : '`No configurado`';
+                const sopList = vc.soporteIds.length ? vc.soporteIds.map(id => `<#${id}>`).join(', ') : '`Ninguna`';
+                const emb = new EmbedBuilder()
+                    .setColor(v.color)
+                    .setTitle(`🎙️ Salas de Voz de Locución • ${v.name}`)
+                    .setDescription(
+                        `⏳ **Espera de Soporte:** ${fmt(vc.esperaId)}\n` +
+                        `🛡️ **Salas de Soporte:** ${sopList}\n` +
+                        `💬 **Sala de Charla Staff:** ${fmt(vc.charlaId)}\n` +
+                        `💤 **Staff AFK:** ${fmt(vc.afkId)}\n` +
+                        `🎭 **Staff En Rol:** ${fmt(vc.rolId)}\n` +
+                        `📋 **Canal Informes (texto):** ${fmt(vc.sancionesTextId)}`
+                    )
+                    .setTimestamp();
+                return message.reply({ embeds: [emb] });
+            }
+
+            const tipo = (parts[1] || '').toLowerCase();
+            const ids = parts.slice(2).map(x => x.replace(/[<#>]/g, '').trim()).filter(x => /^\d{17,20}$/.test(x));
+            if (!tipo || ids.length === 0) {
+                return message.reply(
+                    '❌ **Uso de `!setvoz`:**\n' +
+                    '> `!setvoz espera <ID_VOZ>`\n' +
+                    '> `!setvoz soporte <ID1> <ID2> <ID3>...`\n' +
+                    '> `!setvoz charla <ID_VOZ>`\n' +
+                    '> `!setvoz afk <ID_VOZ>`\n' +
+                    '> `!setvoz rol <ID_VOZ>`\n' +
+                    '> `!setvoz informe <#canal_texto o ID>`'
+                );
+            }
+
+            const gId = message.guild.id;
+            if (tipo === 'espera') {
+                await guildManager.setGuildConfigKey(gId, 'VOICE_ESPERA_ID', ids[0]);
+                return message.reply(`✅ **Canal de Espera de Soporte** guardado solo para este servidor: <#${ids[0]}>`);
+            }
+            if (['soporte', 'soportes', 'salas'].includes(tipo)) {
+                await guildManager.setGuildConfigKey(gId, 'VOICE_SOPORTE_IDS', ids);
+                return message.reply(`✅ **${ids.length} Sala(s) de Soporte** guardadas solo para este servidor: ${ids.map(id => `<#${id}>`).join(', ')}`);
+            }
+            if (tipo === 'charla') {
+                await guildManager.setGuildConfigKey(gId, 'VOICE_CHARLA_ID', ids[0]);
+                return message.reply(`✅ **Sala de Charla Staff** guardada solo para este servidor: <#${ids[0]}>`);
+            }
+            if (tipo === 'afk') {
+                await guildManager.setGuildConfigKey(gId, 'VOICE_AFK_ID', ids[0]);
+                return message.reply(`✅ **Canal Staff AFK** guardado solo para este servidor: <#${ids[0]}>`);
+            }
+            if (tipo === 'rol') {
+                await guildManager.setGuildConfigKey(gId, 'VOICE_ROL_ID', ids[0]);
+                return message.reply(`✅ **Canal Staff En Rol** guardado solo para este servidor: <#${ids[0]}>`);
+            }
+            if (['informe', 'informes', 'sanciones'].includes(tipo)) {
+                await guildManager.setGuildConfigKey(gId, 'CHANNEL_INFORME_LOCUCION_ID', ids[0]);
+                return message.reply(`✅ **Canal de Informes de Locución** guardado solo para este servidor: <#${ids[0]}>`);
+            }
+            return message.reply('❌ Tipo no válido. Usa: `espera`, `soporte`, `charla`, `afk`, `rol` o `informe`.');
+        }
+
+        if (lower.startsWith('!locu')) {
             const isStaff = isMemberStaff(message.member);
             if (!isStaff) {
                 return message.reply({ content: '❌ No tienes permisos para configurar la locución de soporte.' });

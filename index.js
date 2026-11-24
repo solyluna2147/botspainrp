@@ -766,21 +766,30 @@ const STREAMERS_CONFIG = {
 
 const STREAMERS_FILE = path.join(__dirname, 'streamers.json');
 
-function getStreamersData() {
-    let data = { ...STREAMERS_CONFIG };
-    if (fs.existsSync(STREAMERS_FILE)) {
+function getStreamersFileForGuild(guildId = null) {
+    if (!guildId || guildManager.isPrimaryGuild(guildId)) return STREAMERS_FILE;
+    return path.join(__dirname, `streamers_${guildId}.json`);
+}
+
+function getStreamersData(guildId = null) {
+    const isPrimary = !guildId || guildManager.isPrimaryGuild(guildId);
+    let data = isPrimary ? { ...STREAMERS_CONFIG } : {};
+    const targetFile = getStreamersFileForGuild(guildId);
+    if (fs.existsSync(targetFile)) {
         try {
-            const saved = JSON.parse(fs.readFileSync(STREAMERS_FILE, 'utf8'));
+            const saved = JSON.parse(fs.readFileSync(targetFile, 'utf8'));
             data = { ...data, ...saved };
         } catch (e) {
-            console.error('Error al leer streamers.json:', e);
+            console.error(`Error al leer ${targetFile}:`, e);
         }
     }
     return data;
 }
 
-function saveStreamer(userId, streamerObj) {
-    const current = getStreamersData();
+function saveStreamer(userId, streamerObj, guildId = null) {
+    const isPrimary = !guildId || guildManager.isPrimaryGuild(guildId);
+    const targetFile = getStreamersFileForGuild(guildId);
+    const current = getStreamersData(guildId);
     const existing = current[userId] || {};
 
     const updatedProfile = {
@@ -823,27 +832,35 @@ function saveStreamer(userId, streamerObj) {
 
     current[userId] = updatedProfile;
     try {
-        fs.writeFileSync(STREAMERS_FILE, JSON.stringify(current, null, 2), 'utf8');
+        fs.writeFileSync(targetFile, JSON.stringify(current, null, 2), 'utf8');
     } catch (e) {
-        console.error('Error al guardar en streamers.json:', e);
+        console.error(`Error al guardar en ${targetFile}:`, e);
     }
 
     if (isMongoConnected) {
-        StreamerModel.findOneAndUpdate({ userId }, { userId, data: updatedProfile }, { upsert: true }).catch(() => { });
+        const TargetModel = isPrimary
+            ? StreamerModel
+            : guildManager.getGuildModel(guildId, 'Streamer', streamerSchema);
+        TargetModel.findOneAndUpdate({ userId }, { userId, data: updatedProfile }, { upsert: true }).catch(() => { });
     }
 }
 
-function removeStreamer(userId) {
-    const current = getStreamersData();
+function removeStreamer(userId, guildId = null) {
+    const isPrimary = !guildId || guildManager.isPrimaryGuild(guildId);
+    const targetFile = getStreamersFileForGuild(guildId);
+    const current = getStreamersData(guildId);
     if (current[userId]) {
         delete current[userId];
         try {
-            fs.writeFileSync(STREAMERS_FILE, JSON.stringify(current, null, 2), 'utf8');
+            fs.writeFileSync(targetFile, JSON.stringify(current, null, 2), 'utf8');
         } catch (e) {
-            console.error('Error al eliminar de streamers.json:', e);
+            console.error(`Error al eliminar de ${targetFile}:`, e);
         }
         if (isMongoConnected) {
-            StreamerModel.deleteOne({ userId }).catch(() => { });
+            const TargetModel = isPrimary
+                ? StreamerModel
+                : guildManager.getGuildModel(guildId, 'Streamer', streamerSchema);
+            TargetModel.deleteOne({ userId }).catch(() => { });
         }
         return true;
     }
@@ -4352,20 +4369,28 @@ function buildSubmittedPostulacionEmbed({ member, text, attachments = [] }) {
 const SANCIONES_FILE = path.join(__dirname, 'sanciones.json');
 const pendingSancionesAwaitingImage = new Map(); // staffId -> { targetId, targetTag, reason, punishment, involvedStaff, channelId, expiresAt }
 
-function getSancionesData() {
-    if (fs.existsSync(SANCIONES_FILE)) {
+function getSancionesFileForGuild(guildId = null) {
+    if (!guildId || guildManager.isPrimaryGuild(guildId)) return SANCIONES_FILE;
+    return path.join(__dirname, `sanciones_${guildId}.json`);
+}
+
+function getSancionesData(guildId = null) {
+    const targetFile = getSancionesFileForGuild(guildId);
+    if (fs.existsSync(targetFile)) {
         try {
-            return JSON.parse(fs.readFileSync(SANCIONES_FILE, 'utf8'));
+            return JSON.parse(fs.readFileSync(targetFile, 'utf8'));
         } catch (e) {
-            console.error('Error al leer sanciones.json:', e);
+            console.error(`Error al leer ${targetFile}:`, e);
         }
     }
     return [];
 }
 
 async function saveSancionRecord(sancionObj) {
-    const data = getSancionesData();
-    // Clonar y guardar solo metadatos serializables (sin Buffers de AttachmentBuilder en JSON)
+    const guildId = sancionObj.guildId || null;
+    const isPrimary = !guildId || guildManager.isPrimaryGuild(guildId);
+    const targetFile = getSancionesFileForGuild(guildId);
+    const data = getSancionesData(guildId);
     const cleanRecord = {
         id: sancionObj.id,
         reporterId: sancionObj.reporterId,
@@ -4386,13 +4411,16 @@ async function saveSancionRecord(sancionObj) {
         if (data.length > 500) {
             data.splice(0, data.length - 500);
         }
-        fs.writeFileSync(SANCIONES_FILE, JSON.stringify(data, null, 2), 'utf8');
+        fs.writeFileSync(targetFile, JSON.stringify(data, null, 2), 'utf8');
     } catch (e) {
-        console.error('Error al guardar sanciones.json:', e);
+        console.error(`Error al guardar ${targetFile}:`, e);
     }
     if (isMongoConnected) {
         try {
-            await SancionModel.create(cleanRecord);
+            const TargetModel = isPrimary
+                ? SancionModel
+                : guildManager.getGuildModel(guildId, 'Sancion', sancionSchema);
+            await TargetModel.create(cleanRecord);
         } catch (e) {
             console.error('Error guardando sancion en Mongo:', e);
         }
@@ -4523,19 +4551,28 @@ function buildSancionCardEmbed({ id, reporterId, reporterTag, targetId, targetTa
 const EVENTOS_FILE = path.join(__dirname, 'eventos.json');
 const pendingEventosAwaitingImage = new Map(); // staffId -> { id, reporterId, reporterTag, title, description, hora, lugar, organiza, ping, channelId, expiresAt }
 
-function getEventosData() {
-    if (fs.existsSync(EVENTOS_FILE)) {
+function getEventosFileForGuild(guildId = null) {
+    if (!guildId || guildManager.isPrimaryGuild(guildId)) return EVENTOS_FILE;
+    return path.join(__dirname, `eventos_${guildId}.json`);
+}
+
+function getEventosData(guildId = null) {
+    const targetFile = getEventosFileForGuild(guildId);
+    if (fs.existsSync(targetFile)) {
         try {
-            return JSON.parse(fs.readFileSync(EVENTOS_FILE, 'utf8'));
+            return JSON.parse(fs.readFileSync(targetFile, 'utf8'));
         } catch (e) {
-            console.error('Error al leer eventos.json:', e);
+            console.error(`Error al leer ${targetFile}:`, e);
         }
     }
     return [];
 }
 
 async function saveEventoRecord(eventoObj) {
-    const data = getEventosData();
+    const guildId = eventoObj.guildId || null;
+    const isPrimary = !guildId || guildManager.isPrimaryGuild(guildId);
+    const targetFile = getEventosFileForGuild(guildId);
+    const data = getEventosData(guildId);
     const cleanRecord = {
         id: eventoObj.id,
         reporterId: eventoObj.reporterId,
@@ -4556,13 +4593,16 @@ async function saveEventoRecord(eventoObj) {
         if (data.length > 500) {
             data.splice(0, data.length - 500);
         }
-        fs.writeFileSync(EVENTOS_FILE, JSON.stringify(data, null, 2), 'utf8');
+        fs.writeFileSync(targetFile, JSON.stringify(data, null, 2), 'utf8');
     } catch (e) {
-        console.error('Error al guardar eventos.json:', e);
+        console.error(`Error al guardar ${targetFile}:`, e);
     }
     if (isMongoConnected) {
         try {
-            await EventoModel.create(cleanRecord);
+            const TargetModel = isPrimary
+                ? EventoModel
+                : guildManager.getGuildModel(guildId, 'Evento', eventoSchema);
+            await TargetModel.create(cleanRecord);
         } catch (e) {
             console.error('Error guardando evento en Mongo:', e);
         }
@@ -6152,7 +6192,7 @@ client.on('messageCreate', async (message) => {
                 return;
             }
 
-            const allSanciones = getSancionesData();
+            const allSanciones = getSancionesData(message.guild?.id);
             const userSanciones = allSanciones.filter(s => s.targetId === targetUser.id);
 
             let desc = '';
@@ -8450,16 +8490,18 @@ client.on('messageCreate', async (message) => {
             let fullUrl = urlArg.startsWith('http') ? urlArg : `https://twitch.tv/${urlArg.replace(/^@/, '')}`;
             const customTitle = cleanArgs.filter(a => a !== urlArg).join(' ').trim();
 
+            const gIdTw = message.guild?.id;
+            const gNameTw = guildManager.resolveGuildVisuals(gIdTw).name;
             saveStreamer(targetUser.id, {
                 twitchUrl: fullUrl,
                 twitchTitle: customTitle || null,
                 name: targetUser.username
-            });
+            }, gIdTw);
 
             const successEmbed = new EmbedBuilder()
                 .setColor(0x9146FF) // Morado Twitch
                 .setAuthor({
-                    name: 'SISTEMA DE STREAMERS | TWITCH • VALLECAS RP 🇪🇸',
+                    name: `SISTEMA DE STREAMERS | TWITCH • ${gNameTw} 🇪🇸`,
                     iconURL: client.user.displayAvatarURL()
                 })
                 .setTitle('🟣 ¡Canal de Twitch Registrado con Éxito!')
@@ -8472,7 +8514,7 @@ client.on('messageCreate', async (message) => {
                     (customTitle ? `🏷️ **Título por defecto:** *"${customTitle}"*\n` : '') +
                     `\n> 💡 *Al pulsar **"Notificar Twitch"** en el panel se publicará este canal.*`
                 )
-                .setFooter({ text: 'VALLECAS RP • Creadores de Contenido Oficiales' })
+                .setFooter({ text: `${gNameTw} • Creadores de Contenido Oficiales` })
                 .setTimestamp();
 
             const successMsg = await message.channel.send({ embeds: [successEmbed] }).catch(() => null);
@@ -8501,16 +8543,18 @@ client.on('messageCreate', async (message) => {
             let fullUrl = urlArg.startsWith('http') ? urlArg : `https://www.tiktok.com/@${urlArg.replace(/^@/, '')}`;
             const customTitle = cleanArgs.filter(a => a !== urlArg).join(' ').trim();
 
+            const gIdTk = message.guild?.id;
+            const gNameTk = guildManager.resolveGuildVisuals(gIdTk).name;
             saveStreamer(targetUser.id, {
                 tiktokUrl: fullUrl,
                 tiktokTitle: customTitle || null,
                 name: targetUser.username
-            });
+            }, gIdTk);
 
             const successEmbed = new EmbedBuilder()
                 .setColor(0xFE2C55) // Rosa TikTok
                 .setAuthor({
-                    name: 'SISTEMA DE STREAMERS | TIKTOK • VALLECAS RP 🇪🇸',
+                    name: `SISTEMA DE STREAMERS | TIKTOK • ${gNameTk} 🇪🇸`,
                     iconURL: client.user.displayAvatarURL()
                 })
                 .setTitle('🌸 ¡Canal de TikTok Registrado con Éxito!')
@@ -8523,7 +8567,7 @@ client.on('messageCreate', async (message) => {
                     (customTitle ? `🏷️ **Título por defecto:** *"${customTitle}"*\n` : '') +
                     `\n> 💡 *Al pulsar **"Notificar TikTok"** en el panel se publicará este canal.*`
                 )
-                .setFooter({ text: 'VALLECAS RP • Creadores de Contenido Oficiales' })
+                .setFooter({ text: `${gNameTk} • Creadores de Contenido Oficiales` })
                 .setTimestamp();
 
             const successMsg = await message.channel.send({ embeds: [successEmbed] }).catch(() => null);
@@ -8552,16 +8596,18 @@ client.on('messageCreate', async (message) => {
             let fullUrl = urlArg.startsWith('http') ? urlArg : `https://kick.com/${urlArg.replace(/^@/, '')}`;
             const customTitle = cleanArgs.filter(a => a !== urlArg).join(' ').trim();
 
+            const gIdKk = message.guild?.id;
+            const gNameKk = guildManager.resolveGuildVisuals(gIdKk).name;
             saveStreamer(targetUser.id, {
                 kickUrl: fullUrl,
                 kickTitle: customTitle || null,
                 name: targetUser.username
-            });
+            }, gIdKk);
 
             const successEmbed = new EmbedBuilder()
                 .setColor(0x53FC18) // Verde Kick
                 .setAuthor({
-                    name: 'SISTEMA DE STREAMERS | KICK • VALLECAS RP 🇪🇸',
+                    name: `SISTEMA DE STREAMERS | KICK • ${gNameKk} 🇪🇸`,
                     iconURL: client.user.displayAvatarURL()
                 })
                 .setTitle('🟢 ¡Canal de Kick Registrado con Éxito!')
@@ -8574,7 +8620,7 @@ client.on('messageCreate', async (message) => {
                     (customTitle ? `🏷️ **Título por defecto:** *"${customTitle}"*\n` : '') +
                     `\n> 💡 *Al pulsar **"Notificar Kick"** en el panel se publicará este canal.*`
                 )
-                .setFooter({ text: 'VALLECAS RP • Creadores de Contenido Oficiales' })
+                .setFooter({ text: `${gNameKk} • Creadores de Contenido Oficiales` })
                 .setTimestamp();
 
             const successMsg = await message.channel.send({ embeds: [successEmbed] }).catch(() => null);
@@ -8612,7 +8658,7 @@ client.on('messageCreate', async (message) => {
                 kickUrl: isKick ? fullUrl : undefined,
                 twitchUrl: isTwitch ? fullUrl : undefined,
                 name: targetUser.username
-            });
+            }, message.guild?.id);
 
             const successMsg = await message.channel.send({
                 content: `✅ **Streamer registrado:** <@${targetUser.id}> en \`${platform}\` -> <${fullUrl}>`
@@ -8638,7 +8684,7 @@ client.on('messageCreate', async (message) => {
                 return;
             }
 
-            const removed = removeStreamer(targetId);
+            const removed = removeStreamer(targetId, message.guild?.id);
             const msg = removed
                 ? `🗑️ Streamer \`${targetId}\` (<@${targetId}>) eliminado de la base de datos de directos.`
                 : `⚠️ El usuario con ID \`${targetId}\` no estaba registrado.`;
@@ -8651,7 +8697,7 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !streamers (Lista de streamers registrados)
         if (['!streamers', '!listastreamers'].includes(command)) {
             await message.delete().catch(() => { });
-            const streamers = getStreamersData();
+            const streamers = getStreamersData(message.guild?.id);
             const keys = Object.keys(streamers);
 
             if (keys.length === 0) {
@@ -9496,7 +9542,7 @@ client.on('interactionCreate', async (interaction) => {
             else if (interaction.customId === 'btn_notificar_tiktok') requestedPlatform = 'TikTok';
             else if (interaction.customId === 'btn_notificar_twitch') requestedPlatform = 'Twitch';
 
-            const streamersData = getStreamersData();
+            const streamersData = getStreamersData(interaction.guild?.id);
             let streamerInfo = streamersData[userId] || {};
 
             let targetStreamUrl = null;
