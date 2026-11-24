@@ -68,23 +68,23 @@ const PRIMARY_HINT_CHANNELS = [
     '1571567304628506855'
 ];
 
-// Mapa de tipos de banner -> clave URL + nombre de archivo esperado dentro de assets/<carpeta>/
+// Mapa de tipos de banner -> clave URL + lista de nombres de archivo aceptados dentro de assets/<carpeta>/
 const BANNER_TYPES = {
-    directos:      { key: 'BANNER_DIRECTOS_URL',     file: 'panel_directos.png' },
-    stream:        { key: 'BANNER_DIRECTOS_URL',     file: 'panel_directos.png' },
-    streamers:     { key: 'BANNER_DIRECTOS_URL',     file: 'panel_directos.png' },
-    eventos:       { key: 'BANNER_EVENTOS_URL',      file: 'panel_eventos.png' },
-    valoraciones:  { key: 'BANNER_VALORACIONES_URL', file: 'panel_valoracion.png' },
-    valoracion:    { key: 'BANNER_VALORACIONES_URL', file: 'panel_valoracion.png' },
-    tops:          { key: 'BANNER_TOPS_URL',         file: 'panel_tops.png' },
-    sanciones:     { key: 'BANNER_SANCIONES_URL',    file: 'panel_sanciones.png' },
-    plantillas:    { key: 'BANNER_PLANTILLAS_URL',   file: 'panel_postulaciones.png' },
-    postulaciones: { key: 'BANNER_PLANTILLAS_URL',   file: 'panel_postulaciones.png' },
-    bienvenida:    { key: 'BANNER_BIENVENIDA_URL',   file: 'banner_bienvenida.png' },
-    bienvenidas:   { key: 'BANNER_BIENVENIDA_URL',   file: 'banner_bienvenida.png' },
-    consultas:     { key: 'BANNER_CONSULTAS_URL',    file: 'banner_consultas.png' },
-    aprobado:      { key: 'BANNER_APROBADO_URL',     file: 'aprobado.png' },
-    denegado:      { key: 'BANNER_DENEGADO_URL',     file: 'denegado.png' }
+    directos:      { key: 'BANNER_DIRECTOS_URL',     files: ['panel_directos.png', 'directos.png', 'directo.png', 'stream.png', 'streamers.png'] },
+    stream:        { key: 'BANNER_DIRECTOS_URL',     files: ['panel_directos.png', 'directos.png', 'directo.png', 'stream.png', 'streamers.png'] },
+    streamers:     { key: 'BANNER_DIRECTOS_URL',     files: ['panel_directos.png', 'directos.png', 'directo.png', 'stream.png', 'streamers.png'] },
+    eventos:       { key: 'BANNER_EVENTOS_URL',      files: ['panel_eventos.png', 'eventos.png', 'evento.png', 'banner_eventos.png'] },
+    valoraciones:  { key: 'BANNER_VALORACIONES_URL', files: ['panel_valoracion.png', 'valoracion.png', 'valoraciones.png', 'banner_valoraciones.png'] },
+    valoracion:    { key: 'BANNER_VALORACIONES_URL', files: ['panel_valoracion.png', 'valoracion.png', 'valoraciones.png', 'banner_valoraciones.png'] },
+    tops:          { key: 'BANNER_TOPS_URL',         files: ['panel_tops.png', 'tops.png', 'top.png', 'topstaff.png'] },
+    sanciones:     { key: 'BANNER_SANCIONES_URL',    files: ['panel_sanciones.png', 'sanciones.png', 'sancion.png', 'banner_sanciones.png'] },
+    plantillas:    { key: 'BANNER_PLANTILLAS_URL',   files: ['panel_postulaciones.png', 'postulaciones.png', 'plantillas.png', 'panel_plantillas.png'] },
+    postulaciones: { key: 'BANNER_PLANTILLAS_URL',   files: ['panel_postulaciones.png', 'postulaciones.png', 'plantillas.png', 'panel_plantillas.png'] },
+    bienvenida:    { key: 'BANNER_BIENVENIDA_URL',   files: ['banner_bienvenida.png', 'bienvenida.png', 'bienvenidas.png', 'welcome.png'] },
+    bienvenidas:   { key: 'BANNER_BIENVENIDA_URL',   files: ['banner_bienvenida.png', 'bienvenida.png', 'bienvenidas.png', 'welcome.png'] },
+    consultas:     { key: 'BANNER_CONSULTAS_URL',    files: ['banner_consultas.png', 'consultas.png', 'panel_consultas.png', 'consulta.png'] },
+    aprobado:      { key: 'BANNER_APROBADO_URL',     files: ['aprobado.png', 'aprobada.png', 'wl_aprobada.png'] },
+    denegado:      { key: 'BANNER_DENEGADO_URL',     files: ['denegado.png', 'denegada.png', 'wl_denegada.png'] }
 };
 
 function normalizeSlug(str) {
@@ -274,16 +274,33 @@ function findGuildAssetsDir(guildId, cfg = {}) {
     return null;
 }
 
-function findImageInDir(dirPath, baseFilename) {
+function findImageInDir(dirPath, candidates) {
     if (!dirPath || !fs.existsSync(dirPath)) return null;
-    const exact = path.join(dirPath, baseFilename);
-    if (fs.existsSync(exact)) return { fullPath: exact, name: baseFilename };
+    const list = Array.isArray(candidates) ? candidates : [candidates];
+    const exts = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
 
-    // Probar extensiones alternativas (.png, .jpg, .jpeg, .webp, .gif)
-    const stem = baseFilename.replace(/\.[^.]+$/, '');
-    for (const ext of ['.png', '.jpg', '.jpeg', '.webp', '.gif']) {
-        const candidate = path.join(dirPath, stem + ext);
-        if (fs.existsSync(candidate)) return { fullPath: candidate, name: stem + ext };
+    let actualFiles = [];
+    try {
+        actualFiles = fs.readdirSync(dirPath);
+    } catch (e) {
+        return null;
+    }
+
+    const lowerMap = new Map(actualFiles.map(f => [f.toLowerCase(), f]));
+
+    for (const baseFilename of list) {
+        const lowerExact = baseFilename.toLowerCase();
+        if (lowerMap.has(lowerExact)) {
+            const realName = lowerMap.get(lowerExact);
+            return { fullPath: path.join(dirPath, realName), name: realName };
+        }
+        const stem = lowerExact.replace(/\.[^.]+$/, '');
+        for (const ext of exts) {
+            if (lowerMap.has(stem + ext)) {
+                const realName = lowerMap.get(stem + ext);
+                return { fullPath: path.join(dirPath, realName), name: realName };
+            }
+        }
     }
     return null;
 }
@@ -434,7 +451,7 @@ function resolveGuildVisuals(guildId, bannerType = null) {
         if (cfg[info.key] && /^https?:\/\//i.test(cfg[info.key])) {
             bannerUrl = cfg[info.key].trim();
         } else {
-            const bannerFile = findImageInDir(assetsDir, info.file);
+            const bannerFile = findImageInDir(assetsDir, info.files);
             if (bannerFile) {
                 files.push(new AttachmentBuilder(bannerFile.fullPath, { name: bannerFile.name }));
                 bannerUrl = `attachment://${bannerFile.name}`;
