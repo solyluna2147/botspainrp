@@ -368,36 +368,38 @@ function getBannerAttachment() {
     return null;
 }
 
-function buildPanelConsultasEmbed() {
-    const logoAttachment = getLogoAttachment();
-    const bannerAttachment = getBannerAttachment();
-    const logoUrl = logoAttachment ? 'attachment://logo.png' : undefined;
+function buildPanelConsultasEmbed(isStaffChannel = false, guildId = null) {
+    const v = guildManager.resolveGuildVisuals(guildId, 'consultas');
+    const logoUrl = v.logoUrl;
+    const serverName = v.name || 'VALLECAS RP';
+    const gCfg = guildManager.getGuildConfig(guildId);
+    const cleanSecs = parseInt(gCfg.AI_AUTOCLEAN_SECONDS, 10) || 90;
 
     const embed = new EmbedBuilder()
-        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
+        .setColor(v.color)
         .setAuthor({
-            name: 'SISTEMA DE CONSULTAS | VALLECAS RP',
+            name: `SISTEMA DE CONSULTAS | ${serverName}`,
             iconURL: logoUrl
         })
         .setThumbnail(logoUrl)
         .setTitle('🧠 CONSULTAS DE LA NORMATIVA OFICIAL')
         .setDescription(
-            `Bienvenido al **Canal Oficial de Consultas con Inteligencia Artificial** exclusivo de **VALLECAS RP** 🇪🇸.\n\n` +
+            `Bienvenido al **Canal Oficial de Consultas con Inteligencia Artificial** exclusivo de **${serverName}** 🇪🇸.\n\n` +
             `Este sistema resuelve al instante cualquier duda sobre la normativa general, conceptos de rol, sanciones, zonas seguras, atracos, vehículos e ilegales con base 100% oficial.\n\n` +
             `📋 **¿Cómo realizar una consulta?**\n` +
             `> 1️⃣ **Tan solo escribe tu duda en este canal** hablando normalmente, sin necesidad de usar ningún comando.\n` +
             `> 2️⃣ La IA analizará la normativa oficial y te responderá en pocos segundos.\n` +
             `> 3️⃣ Una vez leída la respuesta, pulsa el botón **"🗑️ Cerrar / Borrar"** para mantener el canal limpio y ordenado.\n\n` +
-            `💡 *El sistema cuenta con auto-borrado preventivo a los 90 segundos para que no se acumulen mensajes en el canal. Este mensaje informativo es permanente.*`
+            `💡 *El sistema cuenta con auto-borrado preventivo a los ${cleanSecs} segundos para que no se acumulen mensajes en el canal. Este mensaje informativo es permanente.*`
         )
         .setFooter({
-            text: 'VALLECAS RP • Sistema Oficial de Consultas',
+            text: `${serverName} • Sistema Oficial de Consultas`,
             iconURL: logoUrl
         })
         .setTimestamp();
 
-    if (bannerAttachment) {
-        embed.setImage('attachment://banner_consultas.png');
+    if (v.bannerUrl) {
+        embed.setImage(v.bannerUrl);
     }
 
     return embed;
@@ -696,10 +698,14 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null, guil
             ? `Eres la IA Oficial de ${serverName} (FiveM) para usuarios. Responde en español de España de forma exacta, clara, cercana y bien estructurada (citas de artículos, cifras exactas de dinero/policías/tiempos y excepciones si existen).`
             : `Eres la IA Asesora Oficial de ${serverName} (FiveM) para el Staff. Responde en español de España de forma ultra precisa, directa y completa (cita artículos exactos, cifras, tiempos, sanciones aplicables y excepciones).`;
 
+        const rpFallback = !exactNormativaText
+            ? `Todavía no se ha cargado el documento de normativa específica de ${serverName}. Responde con las definiciones reales estándar de FiveM Roleplay en español (PG = PowerGaming, MG = MetaGaming, RK = Revenge Kill, PK = Player Kill, CK = Character Kill, RDM/DM = Random Deathmatch, VDM = Vehicle Deathmatch, HK = Helicopter Kill, NVV = No Valorar Vida, CJ = Car Jacking, BH = Bunny Hop, BA = Bug Abuse, IOOC = Insultos OOC, ZS = Zona Segura) y aclara brevemente que para cifras o sanciones concretas de ${serverName} el Staff puede subir su normativa con !subirnormativa.`
+            : exactNormativaText;
+
         const systemPrompt =
             `${roleLine}${customConciencia}\n` +
-            `Entiende faltas de ortografía o jerga callejera. Si preguntan por siglas RP (RK, PK, CK, MG, PG, DM, VDM, HK, NVV, RDE, ZS, BH, CJ, BA, IOOC, etc.), defínelas y cita exactamente qué aplica en Vallecas RP. Nunca inventes cifras: básate 100% en esta normativa oficial:\n` +
-            (exactNormativaText ? exactNormativaText : 'Normativa general vigente.') +
+            `Entiende faltas de ortografía o jerga callejera. Si preguntan por siglas RP (RK, PK, CK, MG, PG, DM, VDM, HK, NVV, RDE, ZS, BH, CJ, BA, IOOC, etc.), defínelas correctamente y aplica únicamente las reglas de ${serverName} (NUNCA menciones otro servidor). Nunca inventes cifras: básate 100% en esta normativa oficial:\n` +
+            rpFallback +
             knowledgeContext;
 
         ensureTodayTokenStats();
@@ -865,6 +871,41 @@ function initConsultasAI(client) {
 
     console.log('🤖 [CONSULTAS AI] Sistema independiente cargado. Canal Staff:', CANAL_CONSULTAS_ID, '| Canal Usuarios:', CANAL_CONSULTAS_USERS_ID || 'No configurado');
 
+    // Barrido automático multi-servidor cada 60s: garantiza que en TODOS los servidores (Vallecas, VilaCity, etc.)
+    // cualquier consulta antigua (>90s) se auto-elimine incluso tras un reinicio de Railway, conservando el panel fijo.
+    setInterval(async () => {
+        try {
+            const now = Date.now();
+            for (const guild of client.guilds.cache.values()) {
+                const gChs = getChannelsForGuild(guild.id);
+                const gCfg = guildManager.getGuildConfig(guild.id);
+                const maxAgeMs = Math.max(30, Number(gCfg.AI_AUTOCLEAN_SECONDS) || 90) * 1000;
+                const channelIds = [gChs.staffId, gChs.usersId].filter(Boolean);
+
+                for (const chId of channelIds) {
+                    const ch = guild.channels.cache.get(chId);
+                    if (!ch || !ch.isTextBased()) continue;
+                    const fetched = await ch.messages.fetch({ limit: 30 }).catch(() => null);
+                    if (!fetched || fetched.size === 0) continue;
+
+                    for (const m of fetched.values()) {
+                        if (m.pinned) continue;
+                        if (now - m.createdTimestamp < maxAgeMs) continue;
+                        const isPermanentPanel = m.author.id === client.user.id && m.embeds.some(e =>
+                            e.title?.includes('CONSULTAS DE LA NORMATIVA OFICIAL') ||
+                            e.title?.includes('DUDA SOBRE LA NORMATIVA') ||
+                            e.title?.includes('ASESORÍA Y RESOLUCIÓN DE DUDAS') ||
+                            e.title?.includes('RESOLUCIÓN DE DUDAS Y NORMATIVA OFICIAL')
+                        );
+                        if (!isPermanentPanel) {
+                            await m.delete().catch(() => {});
+                        }
+                    }
+                }
+            }
+        } catch (e) { }
+    }, 60 * 1000);
+
     client.on('messageCreate', async (message) => {
         try {
             if (message.author.bot || !message.guild) return;
@@ -896,16 +937,19 @@ function initConsultasAI(client) {
 
             if (contentLower === '!limpiarconsultas') {
                 if (!isStaff) return;
-                if (message.channel.id !== CANAL_CONSULTAS_ID && message.channel.id !== CANAL_CONSULTAS_USERS_ID) {
+                const gChs = getChannelsForGuild(message.guild?.id);
+                if (message.channel.id !== gChs.staffId && message.channel.id !== gChs.usersId) {
                     return message.reply('❌ Este comando solo se puede usar en un canal de consultas.');
                 }
                 const msgs = await message.channel.messages.fetch({ limit: 100 }).catch(() => null);
                 if (msgs && msgs.size > 0) {
                     // Filtrar mensajes para no borrar nunca los paneles permanentes del bot
                     const msgsToDelete = msgs.filter(m => {
-                        const isPanel = m.author.id === client.user.id && m.embeds.some(e => 
+                        if (m.pinned) return false;
+                        const isPanel = m.author.id === client.user.id && m.embeds.some(e =>
                             e.title?.includes('CONSULTAS DE LA NORMATIVA OFICIAL') ||
-                            e.title?.includes('ASESORÍA Y RESOLUCIÓN DE DUDAS') || 
+                            e.title?.includes('DUDA SOBRE LA NORMATIVA') ||
+                            e.title?.includes('ASESORÍA Y RESOLUCIÓN DE DUDAS') ||
                             e.title?.includes('RESOLUCIÓN DE DUDAS Y NORMATIVA OFICIAL')
                         );
                         return !isPanel;
@@ -930,36 +974,9 @@ function initConsultasAI(client) {
                 const gChannels = getChannelsForGuild(gId);
                 const isTargetStaff = (gChannels.staffId && message.channel.id === gChannels.staffId);
 
-                if (guildManager.isPrimaryGuild(gId)) {
-                    const embed = buildPanelConsultasEmbed(isTargetStaff);
-                    const files = [];
-                    const logoAtt = getLogoAttachment();
-                    const bannerAtt = getBannerAttachment();
-                    if (logoAtt) files.push(logoAtt);
-                    if (bannerAtt) files.push(bannerAtt);
-
-                    await message.channel.send({ embeds: [embed], files }).catch(e => console.error('Error enviando panel consultas:', e));
-                } else {
-                    const v = guildManager.resolveGuildVisuals(gId, 'consultas');
-                    const embed = new EmbedBuilder()
-                        .setColor(v.color)
-                        .setAuthor({ name: `CONSULTAS DE LA NORMATIVA | ${v.name}`, iconURL: v.logoUrl })
-                        .setThumbnail(v.logoUrl)
-                        .setTitle('📚 ¿TIENES ALGUNA DUDA SOBRE LA NORMATIVA?')
-                        .setDescription(
-                            `¡Bienvenido al canal oficial de **Consultas Inteligentes** de **${v.name}**!\n\n` +
-                            `💬 **¿Cómo funciona?**\n` +
-                            `> • Simplemente **escribe tu duda directamente en este canal** hablando de forma normal *(sin comandos)*.\n` +
-                            `> • Nuestra Inteligencia Artificial revisará al instante la normativa del servidor para darte una respuesta exacta.\n\n` +
-                            `⚡ **Consejos rápidos:**\n` +
-                            `> • Puedes preguntar por siglas RP (\`RK\`, \`MG\`, \`PG\`, \`PK\`, \`CK\`, \`VDM\`...), atracos, bandas, zonas seguras o sanciones.\n` +
-                            `> • Tu pregunta y la respuesta se limpiarán automáticamente a los **90 segundos** *(o al pulsar el botón 🗑️ Cerrar / Borrar)*.`
-                        )
-                        .setFooter({ text: `${v.name} • Sistema Inteligente de Normativa 24/7`, iconURL: v.logoUrl })
-                        .setTimestamp();
-                    if (v.bannerUrl) embed.setImage(v.bannerUrl);
-                    await message.channel.send({ embeds: [embed], files: v.files }).catch(e => console.error('Error enviando panel consultas:', e));
-                }
+                const v = guildManager.resolveGuildVisuals(gId, 'consultas');
+                const embed = buildPanelConsultasEmbed(isTargetStaff, gId);
+                await message.channel.send({ embeds: [embed], files: v.files }).catch(e => console.error('Error enviando panel consultas:', e));
                 return;
             }
 
@@ -1021,21 +1038,27 @@ function initConsultasAI(client) {
                 }
                 if (!targetCh) targetCh = message.channel;
 
-                CANAL_CONSULTAS_LOGS_ID = targetCh.id;
-                await BotSetting.findOneAndUpdate(
-                    { key: 'CHANNEL_CONSULTAS_LOGS_ID' },
-                    { key: 'CHANNEL_CONSULTAS_LOGS_ID', value: targetCh.id },
-                    { upsert: true }
-                ).catch(() => {});
+                const gId = message.guild?.id;
+                const vLog = guildManager.resolveGuildVisuals(gId);
+                if (!gId || guildManager.isPrimaryGuild(gId)) {
+                    CANAL_CONSULTAS_LOGS_ID = targetCh.id;
+                    await BotSetting.findOneAndUpdate(
+                        { key: 'CHANNEL_CONSULTAS_LOGS_ID' },
+                        { key: 'CHANNEL_CONSULTAS_LOGS_ID', value: targetCh.id },
+                        { upsert: true }
+                    ).catch(() => {});
+                } else {
+                    await guildManager.updateGuildConfig(gId, 'CHANNEL_CONSULTAS_LOGS_ID', targetCh.id, message.guild?.name).catch(() => {});
+                }
 
                 const okEmbed = new EmbedBuilder()
-                    .setColor(0xD900FF)
+                    .setColor(vLog.color)
                     .setTitle('📜 Canal de Logs de Consultas Configurado')
                     .setDescription(
                         `✅ Todas las consultas realizadas a la IA (tanto de **Staff** como de **Usuarios**) quedarán registradas automáticamente en <#${targetCh.id}> (\`${targetCh.id}\`).\n\n` +
                         `> ℹ️ *Consume **0 tokens** adicionales: simplemente guarda cada pregunta y respuesta del bot.*`
                     )
-                    .setFooter({ text: 'VALLECAS RP • Logs de Consultas IA' })
+                    .setFooter({ text: `${vLog.name} • Logs de Consultas IA` })
                     .setTimestamp();
 
                 const confMsg = await message.channel.send({ embeds: [okEmbed] }).catch(() => null);
@@ -1242,12 +1265,13 @@ function initConsultasAI(client) {
                     components: [row]
                 }).catch(() => null);
 
-                // Auto-borrado preventivo a los 90 segundos para que no queden mensajes olvidados
+                // Auto-borrado preventivo usando el tiempo configurado de cada servidor (por defecto 90 segundos)
+                const autoCleanMs = Math.max(30, Number(gVis.config?.AI_AUTOCLEAN_SECONDS) || 90) * 1000;
                 if (responseMsg) {
                     setTimeout(async () => {
                         await responseMsg.delete().catch(() => {});
                         await message.delete().catch(() => {});
-                    }, 90 * 1000);
+                    }, autoCleanMs);
                 }
             }
 

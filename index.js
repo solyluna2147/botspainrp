@@ -4041,7 +4041,7 @@ function buildPlantillasPanelRow() {
     );
 }
 
-function buildPlantillaCardEmbed({ plantillaKey, staffId, staffMention, isTicket = false }) {
+function buildPlantillaCardEmbed({ plantillaKey, staffId, staffMention, isTicket = false, guildId = null }) {
     const data = getPlantillasData();
     const plantilla = data.plantillas?.[plantillaKey] || {
         nombre: 'Postulación',
@@ -4050,31 +4050,25 @@ function buildPlantillaCardEmbed({ plantillaKey, staffId, staffMention, isTicket
         contenido: ''
     };
 
-    const logoPath = getLogoPath();
-    const panelImgPath = path.join(__dirname, 'assets', 'panel_postulaciones.png');
-    const files = [];
+    const v = guildManager.resolveGuildVisuals(guildId, 'postulaciones');
+    const gCfg = v.config;
+    const files = [...v.files];
+    const iconUrl = v.logoUrl || client.user.displayAvatarURL();
 
-    if (fs.existsSync(logoPath)) {
-        files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-    }
-    if (fs.existsSync(panelImgPath)) {
-        files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_postulaciones.png' }));
-    }
-
-    const canalTickets = `<#${botConfig.CHANNEL_TICKETS_ID || '1517530849334136844'}>`;
-    const canalNormativas = `<#${botConfig.CHANNEL_NORMATIVAS_ID || '1517530848658849996'}>`;
+    const canalTickets = gCfg.CHANNEL_TICKETS_ID ? `<#${gCfg.CHANNEL_TICKETS_ID}>` : '`#tickets`';
+    const canalNormativas = gCfg.CHANNEL_NORMATIVAS_ID ? `<#${gCfg.CHANNEL_NORMATIVAS_ID}>` : '`#normativas`';
 
     const embed = new EmbedBuilder()
-        .setColor(0xD900FF) // Morado Magenta VALLECAS RP
+        .setColor(v.color)
         .setAuthor({
-            name: `PLANTILLA OFICIAL • ${plantilla.nombre.toUpperCase()} • VALLECAS RP`,
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            name: `PLANTILLA OFICIAL • ${plantilla.nombre.toUpperCase()} • ${v.name}`,
+            iconURL: iconUrl
         })
-        .setThumbnail('attachment://logo.png')
+        .setThumbnail(iconUrl)
         .setTitle(`${plantilla.emoji || '📋'} Formulario de ${plantilla.nombre}`)
         .setDescription(
             `\u200B\n` +
-            `👋 Estimado usuario, a continuación se te proporciona la **Plantilla Oficial** de **${plantilla.nombre}** para **VALLECAS RP** \uD83C\uDDEA\uD83C\uDDF8.\n\n` +
+            `👋 Estimado usuario, a continuación se te proporciona la **Plantilla Oficial** de **${plantilla.nombre}** para **${v.name}** \uD83C\uDDEA\uD83C\uDDF8.\n\n` +
             `📝 **| Puedes consultar la normativa en,**\n` +
             `> ${canalNormativas} ❗\n\n` +
             `📁 **| Si tienes alguna duda consulta en,**\n` +
@@ -4083,17 +4077,17 @@ function buildPlantillaCardEmbed({ plantillaKey, staffId, staffMention, isTicket
             `> 1️⃣ Haz clic en el botón **"📋 Copiar Plantilla"** abajo para obtener el texto limpio.\n` +
             `> 2️⃣ Rellena todos los apartados indicados con asterisco (\`*\`).\n` +
             `> 3️⃣ Envía tu postulación completa en este mismo canal para su revisión.\n\n` +
-            `\uD83C\uDDEA\uD83C\uDDF8 **| ¡Disfruta de VALLECAS RP! |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
+            `\uD83C\uDDEA\uD83C\uDDF8 **| ¡Disfruta de ${v.name}! |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
             `🛡️ **Generado / Enviado por:** ${staffMention || `<@${staffId}>`}`
         )
         .setFooter({
-            text: 'VALLECAS RP • Departamento de Atención y Soporte',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            text: `${v.name} • Departamento de Atención y Soporte`,
+            iconURL: iconUrl
         })
         .setTimestamp();
 
-    if (fs.existsSync(panelImgPath)) {
-        embed.setImage('attachment://panel_postulaciones.png');
+    if (v.bannerUrl) {
+        embed.setImage(v.bannerUrl);
     }
 
     const row = new ActionRowBuilder().addComponents(
@@ -4326,13 +4320,15 @@ function buildSubmittedPostulacionEmbed({ member, text, attachments = [] }) {
         formattedBody = formattedBody.slice(0, 3650) + '\n\n... *(texto truncado por longitud)*';
     }
 
+    const vSub = guildManager.resolveGuildVisuals(member?.guild?.id);
+    const subIconUrl = vSub.logoUrl || (fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL());
     const embed = new EmbedBuilder()
         .setColor(color)
         .setAuthor({
-            name: `${nombre.toUpperCase()} • VALLECAS RP`,
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            name: `${nombre.toUpperCase()} • ${vSub.name}`,
+            iconURL: subIconUrl
         })
-        .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+        .setThumbnail(subIconUrl)
         .setTitle(`${emoji} ${nombre} Presentada`)
         .setDescription(
             `\u200B\n\n` +
@@ -4342,11 +4338,11 @@ function buildSubmittedPostulacionEmbed({ member, text, attachments = [] }) {
             `\u200B\n` +
             formattedBody + '\n\n' +
             `\u200B\n` +
-            `🇪🇸 **| VALLECAS RP • Departamento de Postulaciones |** 🇪🇸`
+            `🇪🇸 **| ${vSub.name} • Departamento de Postulaciones |** 🇪🇸`
         )
         .setFooter({
-            text: `VALLECAS RP • Formulario Registrado • ID: ${member.id}`,
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+            text: `${vSub.name} • Formulario Registrado • ID: ${member.id}`,
+            iconURL: subIconUrl
         })
         .setTimestamp();
 
@@ -5498,22 +5494,25 @@ client.on('messageCreate', async (message) => {
                     }
                 }
 
-                const iconUrl = hasLogo && files.length > 0 ? 'attachment://logo.png' : (client.user ? client.user.displayAvatarURL() : null);
+                const vHelp = guildManager.resolveGuildVisuals(message.guild?.id);
+                files.length = 0;
+                files.push(...vHelp.files);
+                const iconUrl = vHelp.logoUrl || (client.user ? client.user.displayAvatarURL() : null);
 
                 let helpEmbed = new EmbedBuilder()
-                    .setColor(0xD900FF) // Morado Magenta VALLECAS RP
-                    .setFooter({ text: 'VALLECAS RP • Este mensaje se auto-eliminará automáticamente en 30 segundos' })
+                    .setColor(vHelp.color)
+                    .setFooter({ text: `${vHelp.name} • Este mensaje se auto-eliminará automáticamente en 30 segundos` })
                     .setTimestamp();
 
                 if (iconUrl) {
                     helpEmbed.setAuthor({
-                        name: isOwner ? 'GUÍA DE COMANDOS DEL PROPIETARIO • VALLECAS RP' : 'GUÍA DE COMANDOS PARA EL EQUIPO DE STAFF • VALLECAS RP',
+                        name: isOwner ? `GUÍA DE COMANDOS DEL PROPIETARIO • ${vHelp.name}` : `GUÍA DE COMANDOS PARA EL EQUIPO DE STAFF • ${vHelp.name}`,
                         iconURL: iconUrl
                     });
                     helpEmbed.setThumbnail(iconUrl);
                 } else {
                     helpEmbed.setAuthor({
-                        name: isOwner ? 'GUÍA DE COMANDOS DEL PROPIETARIO • VALLECAS RP' : 'GUÍA DE COMANDOS PARA EL EQUIPO DE STAFF • VALLECAS RP'
+                        name: isOwner ? `GUÍA DE COMANDOS DEL PROPIETARIO • ${vHelp.name}` : `GUÍA DE COMANDOS PARA EL EQUIPO DE STAFF • ${vHelp.name}`
                     });
                 }
 
@@ -5862,7 +5861,7 @@ client.on('messageCreate', async (message) => {
             try {
                 const targetChannel = message.channel;
                 await ensureStreamPanel(targetChannel.id).catch(() => { });
-                updateConfig('CHANNEL_STREAM_PANEL_ID', targetChannel.id);
+                await updateConfig('CHANNEL_STREAM_PANEL_ID', targetChannel.id, message.guild?.id);
                 console.log(`🟣 [PANEL STREAM] Panel de stream publicado en #${targetChannel.name} (${targetChannel.id})`);
                 return;
             } catch (err) {
@@ -5896,8 +5895,9 @@ client.on('messageCreate', async (message) => {
             else if (fullUrl.includes('tiktok.com')) platform = 'TikTok';
             else if (fullUrl.includes('youtube.com') || fullUrl.includes('youtu.be')) platform = 'YouTube';
 
+            const vStr = guildManager.resolveGuildVisuals(message.guild?.id);
             const titleParts = cleanArgs.filter(arg => arg !== link);
-            const defaultTitle = titleParts.length > 0 ? titleParts.join(' ') : `🔥 Directo de ${platform} en VALLECAS RP 🇪🇸`;
+            const defaultTitle = titleParts.length > 0 ? titleParts.join(' ') : `🔥 Directo de ${platform} en ${vStr.name} 🇪🇸`;
 
             const streamerData = {
                 url: fullUrl,
@@ -5910,7 +5910,7 @@ client.on('messageCreate', async (message) => {
             if (platform === 'Kick') { streamerData.kickUrl = fullUrl; streamerData.kickTitle = defaultTitle; }
             if (platform === 'TikTok') { streamerData.tiktokUrl = fullUrl; streamerData.tiktokTitle = defaultTitle; }
 
-            saveStreamer(targetUser.id, streamerData);
+            saveStreamer(targetUser.id, streamerData, message.guild?.id);
 
             let platEmoji = '🟣';
             let platColor = 0x9146FF;
@@ -5920,7 +5920,7 @@ client.on('messageCreate', async (message) => {
 
             const streamSuccessEmbed = new EmbedBuilder()
                 .setColor(platColor)
-                .setAuthor({ name: `SISTEMA DE STREAMERS | ${platform.toUpperCase()} • VALLECAS RP 🇪🇸`, iconURL: client.user.displayAvatarURL() })
+                .setAuthor({ name: `SISTEMA DE STREAMERS | ${platform.toUpperCase()} • ${vStr.name} 🇪🇸`, iconURL: vStr.logoUrl || client.user.displayAvatarURL() })
                 .setTitle(`${platEmoji} ¡Canal de ${platform} Registrado con Éxito!`)
                 .setDescription(
                     `✨ El streamer ha sido dado de alta en la base de datos oficial.\n\n` +
@@ -5930,10 +5930,10 @@ client.on('messageCreate', async (message) => {
                     `🏷️ **Título por defecto:** *"${defaultTitle}"*\n\n` +
                     `> 💡 *Al usar el panel de directos o iniciar stream se notificará automáticamente a la comunidad.*`
                 )
-                .setFooter({ text: 'VALLECAS RP • Creadores de Contenido' })
+                .setFooter({ text: `${vStr.name} • Creadores de Contenido` })
                 .setTimestamp();
 
-            return message.reply({ embeds: [streamSuccessEmbed] });
+            return message.reply({ embeds: [streamSuccessEmbed], files: vStr.files });
         }
 
         // ----------------------------------------------------
@@ -5978,15 +5978,11 @@ client.on('messageCreate', async (message) => {
             }
 
             try {
+                const gId = message.guild?.id;
                 const targetChannel = message.channel;
-                const embed = buildPlantillasPanelEmbed();
+                const embed = buildPlantillasPanelEmbed(gId);
                 const row = buildPlantillasPanelRow();
-                const files = [];
-
-                const logoPath = getLogoPath();
-                const panelImgPath = path.join(__dirname, 'assets', 'panel_postulaciones.png');
-                if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-                if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_postulaciones.png' }));
+                const files = guildManager.resolveGuildVisuals(gId, 'postulaciones').files;
 
                 await targetChannel.send({
                     embeds: [embed],
@@ -6042,7 +6038,8 @@ client.on('messageCreate', async (message) => {
                     plantillaKey: lastPlantilla.key,
                     staffId: message.author.id,
                     staffMention: `<@${message.author.id}>`,
-                    isTicket: true
+                    isTicket: true,
+                    guildId: message.guild?.id
                 });
 
                 await targetChannel.send({
@@ -6108,15 +6105,11 @@ client.on('messageCreate', async (message) => {
                 return sendDeniedAccessMessage(message);
             }
             try {
+                const gId = message.guild?.id;
                 const targetChannel = message.channel;
-                const embed = buildSancionesPanelEmbed();
+                const embed = buildSancionesPanelEmbed(gId);
                 const row = buildSancionesPanelRow();
-                const files = [];
-
-                const logoPath = getLogoPath();
-                const panelImgPath = path.join(__dirname, 'assets', 'panel_sanciones.png');
-                if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-                if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_sanciones.png' }));
+                const files = guildManager.resolveGuildVisuals(gId, 'sanciones').files;
 
                 await targetChannel.send({
                     embeds: [embed],
@@ -6124,7 +6117,7 @@ client.on('messageCreate', async (message) => {
                     files
                 });
 
-                updateConfig('CHANNEL_SANCIONES_PANEL_ID', targetChannel.id);
+                await updateConfig('CHANNEL_SANCIONES_PANEL_ID', targetChannel.id, gId);
                 console.log(`⚖️ [PANEL SANCIONES] Panel de sanciones publicado en #${targetChannel.name} (${targetChannel.id})`);
                 return;
             } catch (err) {
@@ -6156,6 +6149,8 @@ client.on('messageCreate', async (message) => {
             const imageUrl = attachment ? attachment.url : null;
             const sancionId = Date.now().toString().slice(-4);
 
+            const gIdSan = message.guild?.id;
+            const gCfgSan = guildManager.getGuildConfig(gIdSan);
             const sancionObj = {
                 id: sancionId,
                 reporterId: message.author.id,
@@ -6166,13 +6161,14 @@ client.on('messageCreate', async (message) => {
                 punishment,
                 involvedStaff: `<@${message.author.id}>`,
                 imageUrl,
-                channelId: message.channel.id
+                channelId: message.channel.id,
+                guildId: gIdSan
             };
 
-            await saveSancionRecord(sancionObj);
+            await saveSancionRecord(sancionObj, gIdSan);
 
             const { embed, files } = buildSancionCardEmbed(sancionObj);
-            const targetChannelId = botConfig.CHANNEL_SANCIONES_ID || message.channel.id;
+            const targetChannelId = gCfgSan.CHANNEL_SANCIONES_ID || message.channel.id;
             const targetChannel = await client.channels.fetch(targetChannelId).catch(() => message.channel);
 
             await targetChannel.send({ embeds: [embed], files }).catch(e => console.error('Error al enviar sancion:', e));
@@ -6209,11 +6205,12 @@ client.on('messageCreate', async (message) => {
                 });
             }
 
+            const vHist = guildManager.resolveGuildVisuals(message.guild?.id);
             const histEmbed = new EmbedBuilder()
                 .setColor(userSanciones.length > 0 ? 0xE74C3C : 0x2ECC71)
                 .setTitle(`🚨 Historial Disciplinario • <@${targetUser.id}>`)
                 .setDescription(desc)
-                .setFooter({ text: 'VALLECAS RP • Base de Datos de Moderación' })
+                .setFooter({ text: `${vHist.name} • Base de Datos de Moderación` })
                 .setTimestamp();
 
             const histMsg = await message.channel.send({ embeds: [histEmbed] }).catch(() => null);
@@ -6231,15 +6228,11 @@ client.on('messageCreate', async (message) => {
                 return sendDeniedAccessMessage(message);
             }
             try {
+                const gId = message.guild?.id;
                 const targetChannel = message.channel;
-                const embed = buildEventosPanelEmbed();
+                const embed = buildEventosPanelEmbed(gId);
                 const row = buildEventosPanelRow();
-                const files = [];
-
-                const logoPath = getLogoPath();
-                const panelImgPath = path.join(__dirname, 'assets', 'panel_eventos.png');
-                if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-                if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_eventos.png' }));
+                const files = guildManager.resolveGuildVisuals(gId, 'eventos').files;
 
                 await targetChannel.send({
                     embeds: [embed],
@@ -6247,7 +6240,7 @@ client.on('messageCreate', async (message) => {
                     files
                 });
 
-                updateConfig('CHANNEL_EVENTOS_PANEL_ID', targetChannel.id);
+                await updateConfig('CHANNEL_EVENTOS_PANEL_ID', targetChannel.id, gId);
                 console.log(`🎉 [PANEL EVENTOS] Panel de eventos publicado en #${targetChannel.name} (${targetChannel.id})`);
                 return;
             } catch (err) {
@@ -6271,11 +6264,14 @@ client.on('messageCreate', async (message) => {
                 return;
             }
 
+            const gIdEv = message.guild?.id;
+            const vEv = guildManager.resolveGuildVisuals(gIdEv);
+            const gCfgEv = vEv.config;
             const parts = fullText.split('|').map(p => p.trim());
-            const title = parts[0] || 'Evento Oficial VALLECAS RP';
+            const title = parts[0] || `Evento Oficial ${vEv.name}`;
             const hora = parts[1] || '';
             const lugar = parts[2] || '';
-            const organiza = parts[3] || 'Staff VALLECAS RP';
+            const organiza = parts[3] || `Staff ${vEv.name}`;
             const description = parts.slice(4).join(' | ') || (parts.length === 1 ? parts[0] : '');
 
             const attachment = message.attachments.first();
@@ -6293,13 +6289,14 @@ client.on('messageCreate', async (message) => {
                 organiza,
                 ping: '@everyone',
                 imageUrl,
-                channelId: message.channel.id
+                channelId: message.channel.id,
+                guildId: gIdEv
             };
 
-            await saveEventoRecord(eventoObj);
+            await saveEventoRecord(eventoObj, gIdEv);
 
             const { embeds, embed, files, pingText } = buildEventoCardEmbed(eventoObj);
-            const targetChannelId = (botConfig.CHANNEL_EVENTOS_ID && botConfig.CHANNEL_EVENTOS_ID.trim()) ? botConfig.CHANNEL_EVENTOS_ID.trim() : message.channel.id;
+            const targetChannelId = (gCfgEv.CHANNEL_EVENTOS_ID && gCfgEv.CHANNEL_EVENTOS_ID.trim()) ? gCfgEv.CHANNEL_EVENTOS_ID.trim() : message.channel.id;
             const targetChannel = await client.channels.fetch(targetChannelId).catch(() => message.channel);
 
             await targetChannel.send({ content: pingText || '@everyone', embeds: embeds || [embed], files }).catch(e => console.error('Error al enviar evento:', e));
@@ -6492,24 +6489,21 @@ client.on('messageCreate', async (message) => {
                 await msg.delete().catch(() => { });
 
                 const logoPath = getLogoPath();
-                const files = [];
-                let iconURL = client.user.displayAvatarURL();
-                if (fs.existsSync(logoPath)) {
-                    files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-                    iconURL = 'attachment://logo.png';
-                }
+                const vDen = guildManager.resolveGuildVisuals(msg.guild?.id);
+                const files = [...vDen.files];
+                const iconURL = vDen.logoUrl || client.user.displayAvatarURL();
 
                 const deniedEmbed = new EmbedBuilder()
                     .setColor(0xE74C3C)
                     .setAuthor({
-                        name: 'ACCESO DENEGADO • SEGURIDAD VALLECAS RP',
+                        name: `ACCESO DENEGADO • SEGURIDAD ${vDen.name}`,
                         iconURL: iconURL
                     })
                     .setDescription(
                         `⛔ <@${msg.author.id}>, este comando de administración y configuración es de uso **exclusivo para el Propietario / Owner** del bot.\n\n` +
                         `> 🔒 *Tu solicitud ha sido bloqueada y registrada por el sistema de seguridad.*`
                     )
-                    .setFooter({ text: 'VALLECAS RP • Mensaje temporal (se auto-eliminará en 5s)' })
+                    .setFooter({ text: `${vDen.name} • Mensaje temporal (se auto-eliminará en 5s)` })
                     .setTimestamp();
 
                 const sent = await msg.channel.send({ embeds: [deniedEmbed], files }).catch(() => null);
@@ -8726,11 +8720,12 @@ client.on('messageCreate', async (message) => {
                 desc += `> 👤 <@${uid}>\n> ${platformsText.join('\n> ')}\n\n`;
             }
 
+            const vLs = guildManager.resolveGuildVisuals(message.guild?.id);
             const listEmbed = new EmbedBuilder()
-                .setColor(0xD900FF)
-                .setTitle('🟣 Base de Datos de Creadores y Streamers (VALLECAS RP)')
+                .setColor(vLs.color)
+                .setTitle(`🟣 Base de Datos de Creadores y Streamers (${vLs.name})`)
                 .setDescription(desc)
-                .setFooter({ text: 'VALLECAS RP • Usa !addtwitch, !addkick o !addtiktok' })
+                .setFooter({ text: `${vLs.name} • Usa !addtwitch, !addkick o !addtiktok` })
                 .setTimestamp();
 
             const listMsg = await message.channel.send({ embeds: [listEmbed] }).catch(() => null);
@@ -9433,17 +9428,17 @@ client.on('interactionCreate', async (interaction) => {
         lastGeneratedPlantillaByStaff.set(interaction.user.id, plantillaSession);
 
         // Crear un Embed estético tipo contenedor para el Staff
-        const logoPath = getLogoPath();
-        const files = [];
-        if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+        const vPl = guildManager.resolveGuildVisuals(interaction.guild?.id);
+        const files = [...vPl.files];
+        const plIconUrl = vPl.logoUrl || client.user.displayAvatarURL();
 
         const staffGuideEmbed = new EmbedBuilder()
             .setColor(0xF1C40F) // Amarillo dorado
             .setAuthor({
-                name: 'SISTEMA DE PLANTILLAS • VALLECAS RP',
-                iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                name: `SISTEMA DE PLANTILLAS • ${vPl.name}`,
+                iconURL: plIconUrl
             })
-            .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
+            .setThumbnail(plIconUrl)
             .setTitle(`📂 Plantilla Seleccionada: ${plantilla.emoji || '📋'} ${plantilla.nombre}`)
             .setDescription(
                 `👤 **Staff Activo:** <@${interaction.user.id}>\n` +
@@ -9453,7 +9448,7 @@ client.on('interactionCreate', async (interaction) => {
                 `> 2️⃣ Escribe en este chat: \`!enviar <#canal_ticket o ID>\`\n\n` +
                 `⏱️ *Esta sesión expirará en **30 segundos** y se cerrará automáticamente para mantener el panel limpio.*`
             )
-            .setFooter({ text: 'VALLECAS RP • Gestión de Postulaciones' })
+            .setFooter({ text: `${vPl.name} • Gestión de Postulaciones` })
             .setTimestamp();
 
         // Actualizar el mensaje efímero con el contenedor decorado
@@ -9901,10 +9896,11 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
-        const topEmbed = new EmbedBuilder().setColor(0xD900FF)
-            .setTitle('🏆 Ranking de Atención de Staff • VALLECAS RP')
+        const vTop = guildManager.resolveGuildVisuals(interaction.guild?.id);
+        const topEmbed = new EmbedBuilder().setColor(vTop.color)
+            .setTitle(`🏆 Ranking de Atención de Staff • ${vTop.name}`)
             .setDescription(desc)
-            .setFooter({ text: 'VALLECAS RP • Calidad de Soporte' })
+            .setFooter({ text: `${vTop.name} • Calidad de Soporte` })
             .setTimestamp();
 
         return interaction.reply({ embeds: [topEmbed], ephemeral: true });
@@ -10144,6 +10140,14 @@ client.on('interactionCreate', async (interaction) => {
                 await interaction.editReply({
                     content: `📸 **¡Datos del expediente #${sancionId} registrados!**\n\n` +
                         `👉 **Ahora pega o sube la captura de prueba en este chat** en los próximos **60 segundos** para publicarla automáticamente.\n` +
+                    expiresAt: Date.now() + 60000 // 60 segundos
+                });
+
+                console.log(`\n⏳ [SANCIÓN EN ESPERA DE FOTO] Staff ${interaction.user.tag} (${interaction.user.id}) ha rellenado el formulario #${sancionId}. Esperando captura en el chat...`);
+
+                await interaction.editReply({
+                    content: `📸 **¡Datos del expediente #${sancionId} registrados!**\n\n` +
+                        `👉 **Ahora pega o sube la captura de prueba en este chat** en los próximos **60 segundos** para publicarla automáticamente.\n` +
                         `*(Si no tienes captura, escribe \`sin foto\` y se publicará sin imagen).*`
                 }).catch(() => { });
 
@@ -10291,8 +10295,9 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
             }
         }
 
+        const vPres = guildManager.resolveGuildVisuals(newPresence.guild?.id);
         const streamUrl = streamingActivity.url || `https://twitch.tv/${streamingActivity.name || ''}`;
-        const streamTitle = streamingActivity.details || streamingActivity.name || 'Roleplay en directo en VALLECAS RP \uD83C\uDDEA\uD83C\uDDF8';
+        const streamTitle = streamingActivity.details || streamingActivity.name || `Roleplay en directo en ${vPres.name} \uD83C\uDDEA\uD83C\uDDF8`;
 
         // Detectar plataforma
         let platform = 'Twitch';
@@ -10308,7 +10313,8 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
             streamUrl,
             streamTitle,
             platform,
-            avatarUrl
+            avatarUrl,
+            guildId: newPresence.guild?.id
         });
 
         if (result && result.success) {

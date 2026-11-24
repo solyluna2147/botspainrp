@@ -584,20 +584,15 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, targetCha
             : '⚠️ LLAMADAS DE SOPORTE DESATENDIDAS (3er AVISO)';
         const embedColor = isAbandono ? 0xE74C3C : 0xE67E22;
 
-        const logoPath = path.join(__dirname, 'assets', 'logo.png');
-        const files = [];
-        let logoAttachment = null;
-        if (fs.existsSync(logoPath)) {
-            logoAttachment = new AttachmentBuilder(logoPath, { name: 'logo.png' });
-            files.push(logoAttachment);
-        }
-
-        const iconUrl = logoAttachment ? 'attachment://logo.png' : (guild.iconURL() || undefined);
+        const v = guildManager.resolveGuildVisuals(guild?.id);
+        const files = [...v.files];
+        const iconUrl = v.logoUrl || guild.iconURL() || undefined;
+        const serverName = v.name || 'VALLECAS RP';
 
         const embed = new EmbedBuilder()
             .setColor(embedColor)
             .setAuthor({
-                name: 'SISTEMA DE CONTROL Y RENDIMIENTO | VALLECAS RP',
+                name: `SISTEMA DE CONTROL Y RENDIMIENTO | ${serverName}`,
                 iconURL: iconUrl
             })
             .setTitle(badgeTitle)
@@ -611,10 +606,10 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, targetCha
                 `🛡️ **| Staffs Sancionados:**\n` +
                 `${staffLines}\n\n` +
                 `⏱️ **| Tiempo de Espera:** \`${formatDuration(tiempoEsperadoMs)}\` • 📢 **Avisos Emitidos:** \`${avisosEmitidos} avisos\`\n\n` +
-                `⚖️ **Informe remitido automáticamente a la Administración de VALLECAS RP**`
+                `⚖️ **Informe remitido automáticamente a la Administración de ${serverName}**`
             )
             .setFooter({
-                text: 'VALLECAS RP • Supervisión de Soporte',
+                text: `${serverName} • Supervisión de Soporte`,
                 iconURL: iconUrl
             })
             .setTimestamp();
