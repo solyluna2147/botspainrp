@@ -1,5 +1,5 @@
 // ==========================================
-// MÓDULO INDEPENDIENTE: ASISTENTE INFORMATIVO POR DM (VALLECAS RP)
+// MÓDULO INDEPENDIENTE: ASISTENTE INFORMATIVO POR DM (VANTEX)
 // ==========================================
 // Actúa ÚNICAMENTE por Mensajes Directos (DM) al bot.
 // - Si alguien pregunta qué puede hacer / qué sistemas tiene / funciones -> envía el catálogo completo.
@@ -31,9 +31,9 @@ const dmHistories = new Map(); // userId -> { messages: [{role, content}], lastA
 const dmCooldown = new Map();  // userId -> timestamp (anti-spam suave 2s)
 
 function getLogoAttachment() {
-    const p = path.join(__dirname, 'assets', 'logo.png');
+    const p = path.join(__dirname, 'assets', 'vantex_logo.png');
     if (fs.existsSync(p)) {
-        return new AttachmentBuilder(p, { name: 'logo.png' });
+        return new AttachmentBuilder(p, { name: 'vantex_logo.png' });
     }
     return null;
 }
@@ -128,18 +128,18 @@ function isAskingForFullCatalog(text) {
 
 function buildCatalogEmbeds() {
     const logoAtt = getLogoAttachment();
-    const logoUrl = logoAtt ? 'attachment://logo.png' : undefined;
+    const logoUrl = logoAtt ? 'attachment://vantex_logo.png' : undefined;
 
     const embed1 = new EmbedBuilder()
         .setColor(0xD900FF)
         .setAuthor({
-            name: 'ASISTENTE INTELIGENTE',
+            name: 'VANTEX • ASISTENTE INTELIGENTE',
             iconURL: logoUrl
         })
         .setThumbnail(logoUrl)
         .setTitle('✨ ¿QUÉ PUEDO HACER POR TU SERVIDOR?')
         .setDescription(
-            `¡Hola! Soy un **Asistente Inteligente avanzado para servidores de FiveM Roleplay**, **100% personalizable** con tu logo, colores, banners, roles, canales y tu propia normativa.\n\n` +
+            `¡Hola! Soy **VANTEX**, un **Asistente Inteligente avanzado para servidores de FiveM Roleplay**, **100% personalizable** con tu logo, colores, banners, roles, canales y tu propia normativa.\n\n` +
             `### 🧠 INTELIGENCIA ARTIFICIAL Y ATENCIÓN\n` +
             `📚 **1. Consultas de Normativa con IA**\n` +
             `> • Canales independientes para **Usuarios** y **Staff**, entrenados con la normativa de tu servidor *(General, Ilegales y siglas RP)*.\n` +
@@ -1198,19 +1198,19 @@ async function updateDemoMessage(interaction, payload) {
 
 function buildDemoMenuPayload() {
     const logoAtt = getLogoAttachment();
-    const logoUrl = logoAtt ? 'attachment://logo.png' : undefined;
+    const logoUrl = logoAtt ? 'attachment://vantex_logo.png' : undefined;
 
     const embed = new EmbedBuilder()
         .setColor(0xD900FF)
-        .setAuthor({ name: 'ZONA DE PRUEBAS EN VIVO', iconURL: logoUrl })
+        .setAuthor({ name: 'VANTEX • ZONA DE PRUEBAS EN VIVO', iconURL: logoUrl })
         .setThumbnail(logoUrl)
         .setTitle('🎮 PRUEBA VISUALMENTE CADA SISTEMA')
         .setDescription(
             `Selecciona abajo **cualquier sistema** para ver primero cómo funciona y luego pulsar **👁️ Ver Prueba** para probar el **panel real interactivo** con sus botones y formularios.\n\n` +
             `✨ *Todo es **100% personalizable** con el nombre, logo, banners, colores y normativa de **tu servidor**.*\n` +
-            `📩 *Si quieres tener este bot en tu servidor, escribe directamente por DM a <@1308814761269395527>.*`
+            `📩 *Si quieres tener **VANTEX** en tu servidor, escribe directamente por DM a <@1308814761269395527>.*`
         )
-        .setFooter({ text: 'Elige un sistema en el menú desplegable de abajo', iconURL: logoUrl })
+        .setFooter({ text: 'VANTEX • Elige un sistema en el menú desplegable de abajo', iconURL: logoUrl })
         .setTimestamp();
 
     const menu = new StringSelectMenuBuilder()
@@ -1236,15 +1236,15 @@ function buildDemoExplainPayload(sysKey) {
     const sys = DEMO_SYSTEMS[sysKey];
     if (!sys) return null;
     const logoAtt = getLogoAttachment();
-    const logoUrl = logoAtt ? 'attachment://logo.png' : undefined;
+    const logoUrl = logoAtt ? 'attachment://vantex_logo.png' : undefined;
 
     const embed = new EmbedBuilder()
         .setColor(0xD900FF)
-        .setAuthor({ name: 'EXPLICACIÓN DEL SISTEMA', iconURL: logoUrl })
+        .setAuthor({ name: 'VANTEX • EXPLICACIÓN DEL SISTEMA', iconURL: logoUrl })
         .setThumbnail(logoUrl)
         .setTitle(sys.explainTitle)
         .setDescription(sys.explainText)
-        .setFooter({ text: 'Pulsa "Ver Prueba" para abrir el diseño real interactivo', iconURL: logoUrl })
+        .setFooter({ text: 'VANTEX • Pulsa "Ver Prueba" para abrir el diseño real interactivo', iconURL: logoUrl })
         .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
@@ -1311,7 +1311,7 @@ async function fetchLiveWeatherContext(userMessage) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 3500);
         const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=es`, {
-            headers: { 'User-Agent': 'VallecasRP-Bot/1.0' },
+            headers: { 'User-Agent': 'VantexBot/1.0' },
             signal: controller.signal
         });
         clearTimeout(timer);
@@ -1530,12 +1530,12 @@ module.exports = function initDmAssistant(client) {
             // 3. Cualquier duda específica o conversación -> Respuesta interactiva con IA
             const aiReply = await queryDmAI(message.author.id, text);
             const logoAtt = getLogoAttachment();
-            const logoUrl = logoAtt ? 'attachment://logo.png' : undefined;
+            const logoUrl = logoAtt ? 'attachment://vantex_logo.png' : undefined;
 
             const embed = new EmbedBuilder()
                 .setColor(0xD900FF)
                 .setAuthor({
-                    name: 'ASISTENTE INTELIGENTE',
+                    name: 'VANTEX • ASISTENTE INTELIGENTE',
                     iconURL: logoUrl
                 })
                 .setThumbnail(logoUrl)
@@ -1544,7 +1544,7 @@ module.exports = function initDmAssistant(client) {
                     'Ahora mismo no he podido procesar tu consulta. Si quieres ver todo lo que puedo hacer por tu servidor, escríbeme **"¿qué puedes hacer?"** y te enseño el catálogo completo.'
                 )
                 .setFooter({
-                    text: 'Escribe "¿qué puedes hacer?" para ver todos los sistemas',
+                    text: 'VANTEX • Escribe "¿qué puedes hacer?" para ver todos los sistemas',
                     iconURL: logoUrl
                 })
                 .setTimestamp();
