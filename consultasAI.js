@@ -215,10 +215,10 @@ function makeProgressBar(used, total, size = 10) {
     return fillChar.repeat(filled) + '⬛'.repeat(size - filled);
 }
 
-function buildTokensPanelEmbed() {
+function buildTokensPanelEmbed(guildId = null) {
     ensureTodayTokenStats();
-    const logoAttachment = getLogoAttachment();
-    const logoUrl = logoAttachment ? 'attachment://logo.png' : undefined;
+    const vTok = guildManager.resolveGuildVisuals(guildId);
+    const logoUrl = vTok.logoUrl || undefined;
 
     const apiKeys = getConfiguredApiKeys();
     const keyCount = Math.max(1, apiKeys.length);
@@ -279,18 +279,23 @@ function buildTokensPanelEmbed() {
     const resetM = Math.floor((diffMs % 3600000) / 60000);
 
     const activeNucleusName = activeCycleIdx === 1 ? `Núcleo IA 1/${keyCount} (Principal)` : `Núcleo IA ${activeCycleIdx}/${keyCount} (Respaldo)`;
-    const loadedSections = (memoriaNormativaPages || []).length;
-    const staffChText = CANAL_CONSULTAS_ID ? `<#${CANAL_CONSULTAS_ID}>` : '`No configurado`';
-    const usersChText = CANAL_CONSULTAS_USERS_ID ? `<#${CANAL_CONSULTAS_USERS_ID}>` : '`No configurado`';
+    const gChannels = getChannelsForGuild(guildId);
+    const isPrimary = !guildId || guildManager.isPrimaryGuild(guildId);
+    const loadedSections = isPrimary
+        ? (memoriaNormativaPages || []).length
+        : ((guildNormativaCache.get(String(guildId)) || []).length);
+    const staffChText = gChannels.staffId ? `<#${gChannels.staffId}>` : '`No configurado`';
+    const usersChText = gChannels.usersId ? `<#${gChannels.usersId}>` : '`No configurado`';
+    const serverName = vTok.name || 'VALLECAS RP';
 
     return new EmbedBuilder()
-        .setColor(0xD900FF)
+        .setColor(vTok.color)
         .setAuthor({
-            name: 'MONITOR DE TOKENS IA EN VIVO | VALLECAS RP',
+            name: `MONITOR DE TOKENS IA EN VIVO | ${serverName}`,
             iconURL: logoUrl
         })
         .setThumbnail(logoUrl)
-        .setTitle('📊 CONSUMO Y LÍMITES DE IA (VALLECAS AI)')
+        .setTitle(`📊 CONSUMO Y LÍMITES DE IA (${serverName} AI)`)
         .setDescription(
             `🔌 **Núcleo activo:** \`${activeNucleusName}\`\n\n` +
             `🔄 **Cambio automático:** Activado *(si un núcleo se agota, salta al siguiente solo)*\n\n` +
@@ -311,7 +316,7 @@ function buildTokensPanelEmbed() {
             `> ⏳ **Reinicio de cupos:** en \`${resetH}h ${resetM}m\``
         )
         .setFooter({
-            text: 'VALLECAS RP • Se actualiza automáticamente tras cada consulta',
+            text: `${serverName} • Se actualiza automáticamente tras cada consulta`,
             iconURL: logoUrl
         })
         .setTimestamp();
@@ -328,20 +333,33 @@ function buildTokensPanelRow() {
 }
 
 async function updateTokensPanel(client) {
-    if (!client || !tokensPanelRef || !tokensPanelRef.channelId || !tokensPanelRef.messageId) return;
-    try {
-        const ch = client.channels.cache.get(tokensPanelRef.channelId) || await client.channels.fetch(tokensPanelRef.channelId).catch(() => null);
-        if (!ch || !ch.isTextBased()) return;
-        const msg = await ch.messages.fetch(tokensPanelRef.messageId).catch(() => null);
-        if (!msg) return;
+    if (!client) return;
+    const refsToUpdate = [];
+    if (tokensPanelRef && tokensPanelRef.channelId && tokensPanelRef.messageId) {
+        refsToUpdate.push({ ref: tokensPanelRef, guildId: null });
+    }
+    for (const guild of client.guilds.cache.values()) {
+        if (guildManager.isPrimaryGuild(guild.id)) continue;
+        const gCfg = guildManager.getGuildConfig(guild.id);
+        if (gCfg.DASH_PANEL_TOKENS?.channelId && gCfg.DASH_PANEL_TOKENS?.messageId) {
+            refsToUpdate.push({ ref: gCfg.DASH_PANEL_TOKENS, guildId: guild.id });
+        }
+    }
 
-        const embed = buildTokensPanelEmbed();
-        // Sin re-subir logo.png al editar para ahorrar tráfico de red
-        await msg.edit({
-            embeds: [embed],
-            components: [buildTokensPanelRow()]
-        }).catch(() => {});
-    } catch (e) { }
+    for (const item of refsToUpdate) {
+        try {
+            const ch = client.channels.cache.get(item.ref.channelId) || await client.channels.fetch(item.ref.channelId).catch(() => null);
+            if (!ch || !ch.isTextBased()) continue;
+            const msg = await ch.messages.fetch(item.ref.messageId).catch(() => null);
+            if (!msg) continue;
+
+            const embed = buildTokensPanelEmbed(item.guildId || ch.guild?.id);
+            await msg.edit({
+                embeds: [embed],
+                components: [buildTokensPanelRow()]
+            }).catch(() => {});
+        } catch (e) { }
+    }
 }
 
 // Helper para obtener el logo oficial
@@ -990,24 +1008,27 @@ function initConsultasAI(client) {
                 if (!isStaff) return;
                 await message.delete().catch(() => {});
 
-                const embed = buildTokensPanelEmbed();
-                const logoAtt = getLogoAttachment();
+                const gId = message.guild?.id;
+                const vTokPanel = guildManager.resolveGuildVisuals(gId);
+                const embed = buildTokensPanelEmbed(gId);
                 const sentPanel = await message.channel.send({
                     embeds: [embed],
-                    files: logoAtt ? [logoAtt] : [],
+                    files: vTokPanel.files,
                     components: [buildTokensPanelRow()]
                 }).catch(e => {
                     console.error('Error enviando panel de tokens:', e);
                     return null;
                 });
 
-                if (sentPanel) {
+                if (sentPanel && guildManager.isPrimaryGuild(gId)) {
                     tokensPanelRef = { channelId: sentPanel.channel.id, messageId: sentPanel.id };
                     await BotSetting.findOneAndUpdate(
                         { key: 'groq_tokens_panel' },
                         { key: 'groq_tokens_panel', value: tokensPanelRef },
                         { upsert: true }
                     ).catch(() => {});
+                } else if (sentPanel) {
+                    await guildManager.updateGuildConfig(gId, 'DASH_PANEL_TOKENS', { channelId: sentPanel.channel.id, messageId: sentPanel.id }, message.guild?.name).catch(() => {});
                 }
                 return;
             }
@@ -1294,7 +1315,7 @@ function initConsultasAI(client) {
                 if (!isStaff) {
                     return interaction.reply({ content: '⛔ Solo el Staff puede actualizar este panel.', ephemeral: true });
                 }
-                const embed = buildTokensPanelEmbed();
+                const embed = buildTokensPanelEmbed(interaction.guild?.id);
                 await interaction.update({
                     embeds: [embed],
                     components: [buildTokensPanelRow()]

@@ -384,18 +384,30 @@ async function buildTicketsEmbed(guild) {
     let knowledgeCount = 0;
 
     try {
+        const gId = guild?.id;
+        const isPrimary = !gId || guildManager.isPrimaryGuild(gId);
         if (mongoose.models.TicketConfig) {
             const aSet = await mongoose.models.TicketConfig.findOne({ key: 'asistente_activo' });
             if (aSet && aSet.value !== undefined) asistenteOn = !!aSet.value;
         }
-        if (mongoose.models.TicketSession) {
-            [totalSummarized, totalSolved] = await Promise.all([
-                mongoose.models.TicketSession.countDocuments({ status: 'summarized' }),
-                mongoose.models.TicketSession.countDocuments({ status: 'solved' })
+        if (isPrimary) {
+            if (mongoose.models.TicketSession) {
+                [totalSummarized, totalSolved] = await Promise.all([
+                    mongoose.models.TicketSession.countDocuments({ status: 'summarized' }),
+                    mongoose.models.TicketSession.countDocuments({ status: 'solved' })
+                ]);
+            }
+            if (mongoose.models.TicketKnowledge) {
+                knowledgeCount = await mongoose.models.TicketKnowledge.countDocuments({});
+            }
+        } else if (mongoose.connection.readyState === 1) {
+            const GuildSessionModel = guildManager.getGuildModel(gId, 'TicketSession', new mongoose.Schema({ status: String }, { strict: false }));
+            const GuildKnowledgeModel = guildManager.getGuildModel(gId, 'TicketKnowledge', new mongoose.Schema({ response: String }, { strict: false }));
+            [totalSummarized, totalSolved, knowledgeCount] = await Promise.all([
+                GuildSessionModel.countDocuments({ status: 'summarized' }).catch(() => 0),
+                GuildSessionModel.countDocuments({ status: 'solved' }).catch(() => 0),
+                GuildKnowledgeModel.countDocuments({}).catch(() => 0)
             ]);
-        }
-        if (mongoose.models.TicketKnowledge) {
-            knowledgeCount = await mongoose.models.TicketKnowledge.countDocuments({});
         }
     } catch (e) { }
 
@@ -454,8 +466,7 @@ function buildRefreshRow(customId) {
     );
 }
 
-async function editSavedPanel(client, type) {
-    const ref = panelRefs[type];
+async function editPanelByRef(client, type, ref) {
     if (!ref || !ref.channelId || !ref.messageId) return;
     try {
         const ch = client.channels.cache.get(ref.channelId) || await client.channels.fetch(ref.channelId).catch(() => null);
@@ -476,7 +487,6 @@ async function editSavedPanel(client, type) {
             btnId = 'btn_dash_refresh_tickets';
         }
 
-        // Al editar, NO re-subimos logo.png (3.5 MB) para ahorrar tráfico en Railway; Discord conserva el adjunto existente
         await msg.edit({
             embeds: [built.embed],
             components: [buildRefreshRow(btnId)]
@@ -484,43 +494,74 @@ async function editSavedPanel(client, type) {
     } catch (e) { }
 }
 
+async function editSavedPanel(client, type, targetGuildId = null) {
+    const cfgKey = type === 'servicios'
+        ? 'DASH_PANEL_SERVICIOS'
+        : (type === 'locucion' ? 'DASH_PANEL_LOCUCION' : 'DASH_PANEL_TICKETS');
+
+    if (targetGuildId) {
+        if (guildManager.isPrimaryGuild(targetGuildId)) {
+            await editPanelByRef(client, type, panelRefs[type]);
+        } else {
+            const gCfg = guildManager.getGuildConfig(targetGuildId);
+            await editPanelByRef(client, type, gCfg[cfgKey]);
+        }
+        return;
+    }
+
+    // Actualizar Vallecas RP (principal)
+    await editPanelByRef(client, type, panelRefs[type]);
+
+    // Actualizar TODOS los servidores secundarios que tengan este panel fijado
+    for (const guild of client.guilds.cache.values()) {
+        if (guildManager.isPrimaryGuild(guild.id)) continue;
+        const gCfg = guildManager.getGuildConfig(guild.id);
+        if (gCfg[cfgKey]) {
+            await editPanelByRef(client, type, gCfg[cfgKey]);
+        }
+    }
+}
+
 const debounceTimers = new Map();
-function schedulePanelUpdate(client, type, delayMs = 2000) {
-    if (debounceTimers.has(type)) clearTimeout(debounceTimers.get(type));
-    debounceTimers.set(type, setTimeout(() => {
-        debounceTimers.delete(type);
-        if (client.isReady()) editSavedPanel(client, type);
+function schedulePanelUpdate(client, type, delayMs = 2000, guildId = null) {
+    const timerKey = `${type}:${guildId || 'all'}`;
+    if (debounceTimers.has(timerKey)) clearTimeout(debounceTimers.get(timerKey));
+    debounceTimers.set(timerKey, setTimeout(() => {
+        debounceTimers.delete(timerKey);
+        if (client.isReady()) editSavedPanel(client, type, guildId);
     }, delayMs));
 }
 
 module.exports = function initStatusDashboards(client) {
     loadPanelRefs();
-    console.log('📊 [DASHBOARDS] Sistema de paneles en tiempo real cargado (!panel-servicios, !panel-locucion, !panel-tickets).');
+    console.log('📊 [DASHBOARDS] Sistema de paneles en tiempo real multi-servidor cargado (!panel-servicios, !panel-locucion, !panel-tickets).');
 
-    const watchedVoiceIds = new Set([CANAL_ESPERA_ID, ...CANALES_SOPORTE_IDS]);
-    const watchedTicketCats = new Set([
-        CATEGORIA_SOPORTE_ID,
-        CATEGORIA_APELACION_ID,
-        CATEGORIA_STREAMER_ID,
-        CATEGORIA_DONACIONES_ID
-    ]);
-
-    // Actualización INSTANTÁNEA de !panel-locucion cuando alguien entra o sale de salas de soporte / espera
+    // Actualización INSTANTÁNEA de !panel-locucion cuando alguien entra o sale de salas de soporte / espera (en cualquier servidor)
     client.on('voiceStateUpdate', (oldState, newState) => {
-        if (watchedVoiceIds.has(oldState.channelId) || watchedVoiceIds.has(newState.channelId)) {
-            schedulePanelUpdate(client, 'locucion', 1500);
+        const gId = newState.guild?.id || oldState.guild?.id;
+        if (!gId) return;
+        const { esperaId, soporteIds } = getGuildVoiceIds(gId);
+        const watched = new Set([esperaId, ...soporteIds].filter(Boolean));
+        if (watched.has(oldState.channelId) || watched.has(newState.channelId)) {
+            schedulePanelUpdate(client, 'locucion', 1500, gId);
         }
     });
 
-    // Actualización INSTANTÁNEA de !panel-tickets cuando se abre o cierra un ticket
+    // Actualización INSTANTÁNEA de !panel-tickets cuando se abre o cierra un ticket (en cualquier servidor)
     client.on('channelCreate', (channel) => {
-        if (channel && channel.type === 0 && watchedTicketCats.has(channel.parentId)) {
-            schedulePanelUpdate(client, 'tickets', 2000);
+        if (!channel || channel.type !== 0 || !channel.guild) return;
+        const cats = getGuildTicketCats(channel.guild.id);
+        const watched = new Set([cats.soporte, cats.apelacion, cats.streamer, cats.donaciones].filter(Boolean));
+        if (watched.has(channel.parentId)) {
+            schedulePanelUpdate(client, 'tickets', 2000, channel.guild.id);
         }
     });
     client.on('channelDelete', (channel) => {
-        if (channel && channel.type === 0 && watchedTicketCats.has(channel.parentId)) {
-            schedulePanelUpdate(client, 'tickets', 1500);
+        if (!channel || channel.type !== 0 || !channel.guild) return;
+        const cats = getGuildTicketCats(channel.guild.id);
+        const watched = new Set([cats.soporte, cats.apelacion, cats.streamer, cats.donaciones].filter(Boolean));
+        if (watched.has(channel.parentId)) {
+            schedulePanelUpdate(client, 'tickets', 1500, channel.guild.id);
         }
     });
 
