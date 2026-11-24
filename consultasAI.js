@@ -279,13 +279,15 @@ function buildTokensPanelEmbed(guildId = null) {
     const resetM = Math.floor((diffMs % 3600000) / 60000);
 
     const activeNucleusName = activeCycleIdx === 1 ? `Núcleo IA 1/${keyCount} (Principal)` : `Núcleo IA ${activeCycleIdx}/${keyCount} (Respaldo)`;
-    const gChannels = getChannelsForGuild(guildId);
     const isPrimary = !guildId || guildManager.isPrimaryGuild(guildId);
+    const gCfgTok = guildManager.getGuildConfig(guildId);
+    const staffIdTok = isPrimary ? CANAL_CONSULTAS_ID : (gCfgTok.CHANNEL_CONSULTAS_STAFF_ID || '');
+    const usersIdTok = isPrimary ? CANAL_CONSULTAS_USERS_ID : (gCfgTok.CHANNEL_CONSULTAS_USERS_ID || '');
     const loadedSections = isPrimary
         ? (memoriaNormativaPages || []).length
         : ((guildNormativaCache.get(String(guildId)) || []).length);
-    const staffChText = gChannels.staffId ? `<#${gChannels.staffId}>` : '`No configurado`';
-    const usersChText = gChannels.usersId ? `<#${gChannels.usersId}>` : '`No configurado`';
+    const staffChText = staffIdTok ? `<#${staffIdTok}>` : '`No configurado`';
+    const usersChText = usersIdTok ? `<#${usersIdTok}>` : '`No configurado`';
     const serverName = vTok.name || 'VALLECAS RP';
 
     return new EmbedBuilder()
