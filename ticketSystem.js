@@ -521,28 +521,32 @@ function buildTicketWelcomeEmbed(guild, ticketData) {
     const tType = TICKET_TYPE_MAP.get(ticketData.categoryKey);
     const openedTs = Math.floor(new Date(ticketData.openedAt || Date.now()).getTime() / 1000);
 
-    const safeFields = (ticketData.formFields || [])
-        .filter(f => f.value && f.value.trim())
-        .map(f => ({
-            name: `📌 ${(f.label || 'Dato').slice(0, 240)}`,
-            value: `> ${f.value.trim().slice(0, 980).replace(/\n/g, '\n> ')}`,
+    const validRawFields = (ticketData.formFields || []).filter(f => f.value && f.value.trim());
+    const safeFields = validRawFields.map((f, idx) => {
+        const isLast = idx === validRawFields.length - 1;
+        const fieldEmoji = idx === 0 ? '📌' : (idx === validRawFields.length - 1 ? '📝' : '📎');
+        return {
+            name: `${fieldEmoji}┃${(f.label || 'Dato').slice(0, 240)}`,
+            value: `> ${f.value.trim().slice(0, 970).replace(/\n/g, '\n> ')}${isLast ? '' : '\n\u200B'}`,
             inline: false
-        }));
+        };
+    });
 
     if (safeFields.length === 0) {
         safeFields.push({
-            name: '📝 Datos del Formulario',
+            name: '📝┃Datos del Formulario',
             value: '> *Sin datos adicionales.*',
             inline: false
         });
     }
 
     const claimedLine = ticketData.claimedById
-        ? `> 🟢 **Atendido por:** <@${ticketData.claimedById}>`
-        : `> 🟡 **Estado:** \`Esperando a un miembro del Staff\``;
+        ? `> 🟢┃**Atendido por:** <@${ticketData.claimedById}>`
+        : `> 🟡┃**Estado:** \`Esperando a un miembro del Staff\``;
 
-    const notifiedRolesLine = (ticketData.notifiedRoleIds && ticketData.notifiedRoleIds.length > 0)
-        ? `\n> 🔔 **Equipo notificado:** ${ticketData.notifiedRoleIds.map(id => `<@&${id}>`).join(' · ')}`
+    const validNotifiedRoles = (ticketData.notifiedRoleIds || []).filter(id => !guild || guild.roles.cache.has(id));
+    const notifiedSection = validNotifiedRoles.length > 0
+        ? `\n\n🔔┃**Equipo Notificado**\n${validNotifiedRoles.map(id => `> • <@&${id}>`).join('\n')}`
         : '';
 
     const embed = new EmbedBuilder()
@@ -552,15 +556,15 @@ function buildTicketWelcomeEmbed(guild, ticketData) {
             iconURL: iconUrl
         })
         .setThumbnail(iconUrl)
-        .setTitle(`${tType?.emoji || '🎟️'} ${tType?.label || ticketData.categoryLabel}`)
+        .setTitle(`${tType?.emoji || '🎟️'}┃${tType?.label || ticketData.categoryLabel}`)
         .setDescription(
             `\u200B\n` +
             `👋 Hola <@${ticketData.openerId}>, tu solicitud en **${tType?.label || ticketData.categoryLabel}** ha sido abierta correctamente.\n` +
             `Un miembro del equipo de Staff te atenderá lo antes posible. *(Puedes adjuntar capturas o pruebas directamente aquí)*.\n\n` +
-            `📋 **| Información del Ticket**\n` +
-            `> 👤 **Usuario:** <@${ticketData.openerId}>\n` +
-            `> 📅 **Apertura:** <t:${openedTs}:F> (<t:${openedTs}:R>)\n` +
-            `${claimedLine}${notifiedRolesLine}\n\u200B`
+            `📋┃**Información del Ticket**\n` +
+            `> 👤┃**Usuario:** <@${ticketData.openerId}>\n\n` +
+            `> 📅┃**Apertura:** <t:${openedTs}:F> (<t:${openedTs}:R>)\n\n` +
+            `${claimedLine}${notifiedSection}\n\u200B`
         )
         .addFields(...safeFields)
         .setFooter({
@@ -582,23 +586,23 @@ function buildTicketControlRow(isClaimed = false) {
             .setCustomId('tkt_btn_claim')
             .setLabel(isClaimed ? 'Reclamado' : 'Reclamar Ticket')
             .setStyle(ButtonStyle.Secondary)
-            .setEmoji(isClaimed ? '✅' : '🟡')
+            .setEmoji(isClaimed ? '✅' : '🙋')
             .setDisabled(isClaimed),
         new ButtonBuilder()
             .setCustomId('tkt_btn_adduser')
             .setLabel('Añadir Usuario')
             .setStyle(ButtonStyle.Secondary)
-            .setEmoji('🟠'),
+            .setEmoji('👥'),
         new ButtonBuilder()
             .setCustomId('tkt_btn_rename')
             .setLabel('Renombrar')
             .setStyle(ButtonStyle.Secondary)
-            .setEmoji('🔥'),
+            .setEmoji('✏️'),
         new ButtonBuilder()
             .setCustomId('tkt_btn_close')
             .setLabel('Cerrar Ticket')
-            .setStyle(ButtonStyle.Danger)
-            .setEmoji('🔴')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('🔒')
     );
 }
 
@@ -1403,16 +1407,16 @@ function initTicketSystem(client) {
                             iconURL: clIcon
                         })
                         .setThumbnail(clIcon)
-                        .setTitle('🛡️ Ticket Reclamado por el Equipo de Staff')
+                        .setTitle('🛡️┃Ticket Reclamado por el Equipo de Staff')
                         .setDescription(
                             `\u200B\n` +
                             `👋 Hola <@${ticket.openerId}>, tu solicitud ya ha sido asignada y está siendo atendida personalmente.\n\n` +
-                            `📋 **| Detalles de la Atención**\n` +
-                            `> 🛡️ **Staff encargado:** <@${interaction.user.id}>\n` +
-                            `> 👤 **Usuario atendido:** <@${ticket.openerId}>\n` +
-                            `> 📂 **Departamento:** \`${ticket.categoryLabel}\`\n` +
-                            `> ⏱️ **Hora de atención:** <t:${nowTs}:t>\n\n` +
-                            `💬 **| Aviso importante**\n` +
+                            `📋┃**Detalles de la Atención**\n` +
+                            `> 🛡️┃**Staff encargado:** <@${interaction.user.id}>\n\n` +
+                            `> 👤┃**Usuario atendido:** <@${ticket.openerId}>\n\n` +
+                            `> 📂┃**Departamento:** \`${ticket.categoryLabel}\`\n\n` +
+                            `> ⏱️┃**Hora de atención:** <t:${nowTs}:t>\n\n` +
+                            `💬┃**Aviso importante**\n` +
                             `> Puedes continuar explicando tu caso y adjuntar cualquier captura o prueba adicional que necesites. ¡Gracias por tu paciencia!`
                         )
                         .setFooter({
@@ -1432,8 +1436,8 @@ function initTicketSystem(client) {
                         return interaction.reply({ content: '⛔ Solo el equipo de **Staff** puede añadir usuarios.', ephemeral: true }).catch(() => {});
                     }
                     const modal = new ModalBuilder()
-                        .setCustomId('tkt_modal_adduser')
-                        .setTitle('➕ Añadir usuario al ticket')
+                        .setCustomId(`tkt_modal_adduser_${Date.now()}`)
+                        .setTitle('👥 Añadir usuario al ticket')
                         .addComponents(
                             new ActionRowBuilder().addComponents(
                                 new TextInputBuilder()
@@ -1447,20 +1451,20 @@ function initTicketSystem(client) {
                     return interaction.showModal(modal).catch(() => {});
                 }
 
-                // Renombrar ticket (solo Staff)
+                // Renombrar ticket (solo Staff) — ID único cada vez para que Discord nunca guarde el texto anterior
                 if (interaction.customId === 'tkt_btn_rename') {
                     if (!staff) {
                         return interaction.reply({ content: '⛔ Solo el equipo de **Staff** puede renombrar tickets.', ephemeral: true }).catch(() => {});
                     }
                     const modal = new ModalBuilder()
-                        .setCustomId('tkt_modal_rename')
+                        .setCustomId(`tkt_modal_rename_${Date.now()}`)
                         .setTitle('✏️ Renombrar canal del ticket')
                         .addComponents(
                             new ActionRowBuilder().addComponents(
                                 new TextInputBuilder()
                                     .setCustomId('new_name')
                                     .setLabel('Nuevo nombre del canal')
-                                    .setPlaceholder('Ej: soporte-1-pendiente')
+                                    .setPlaceholder('Ej: pendiente-revision')
                                     .setStyle(TextInputStyle.Short)
                                     .setRequired(true)
                                     .setMaxLength(50)
@@ -1476,7 +1480,7 @@ function initTicketSystem(client) {
                         return interaction.reply({ content: '⛔ Solo el **Staff** o el creador del ticket pueden cerrarlo.', ephemeral: true }).catch(() => {});
                     }
                     const modal = new ModalBuilder()
-                        .setCustomId('tkt_modal_close')
+                        .setCustomId(`tkt_modal_close_${Date.now()}`)
                         .setTitle('🔒 Cerrar Ticket y Guardar Log')
                         .addComponents(
                             new ActionRowBuilder().addComponents(
@@ -1494,7 +1498,7 @@ function initTicketSystem(client) {
             }
 
             // D) MODAL AÑADIR USUARIO
-            if (interaction.isModalSubmit() && interaction.customId === 'tkt_modal_adduser') {
+            if (interaction.isModalSubmit() && interaction.customId.startsWith('tkt_modal_adduser')) {
                 const rawId = interaction.fields.getTextInputValue('user_id').replace(/[<@!>]/g, '').trim();
                 const member = await interaction.guild.members.fetch(rawId).catch(() => null);
                 if (!member) {
@@ -1508,16 +1512,37 @@ function initTicketSystem(client) {
                     EmbedLinks: true
                 }).catch(() => {});
                 const vAdd = guildManager.resolveGuildVisuals(interaction.guild.id);
+                const addIcon = vAdd.logoUrl || interaction.guild.iconURL() || undefined;
+                const addTs = Math.floor(Date.now() / 1000);
                 const addEmbed = new EmbedBuilder()
                     .setColor(vAdd.color)
-                    .setAuthor({ name: `GESTIÓN DE TICKET | ${vAdd.name}`, iconURL: vAdd.logoUrl })
-                    .setDescription(`➕ <@${member.id}> ha sido añadido a este ticket por <@${interaction.user.id}>.`)
+                    .setAuthor({
+                        name: `SISTEMA DE TICKETS | ${vAdd.name}`,
+                        iconURL: addIcon
+                    })
+                    .setThumbnail(addIcon)
+                    .setTitle('👥┃Nuevo Participante Añadido al Ticket')
+                    .setDescription(
+                        `\u200B\n` +
+                        `👋 Se ha concedido acceso a este ticket privado a un nuevo participante.\n\n` +
+                        `📋┃**Detalles del Acceso**\n` +
+                        `> 👤┃**Usuario añadido:** <@${member.id}>\n\n` +
+                        `> 🛡️┃**Añadido por:** <@${interaction.user.id}>\n\n` +
+                        `> ⏱️┃**Fecha y hora:** <t:${addTs}:F> (<t:${addTs}:R>)\n\n` +
+                        `> 🔓┃**Permisos otorgados:** \`Leer, escribir y adjuntar pruebas\`\n\n` +
+                        `💬┃**Aviso**\n` +
+                        `> Ya puedes leer el historial de este ticket y participar en la conversación.`
+                    )
+                    .setFooter({
+                        text: `${vAdd.name} • Departamento de Atención y Soporte`,
+                        iconURL: addIcon
+                    })
                     .setTimestamp();
-                return interaction.reply({ embeds: [addEmbed] }).catch(() => {});
+                return interaction.reply({ embeds: [addEmbed], files: vAdd.files }).catch(() => {});
             }
 
             // E) MODAL RENOMBRAR CANAL (SILENCIOSO, SIN MENSAJE EN EL CHAT Y PROTEGIDO CONTRA RATE LIMIT DE DISCORD)
-            if (interaction.isModalSubmit() && interaction.customId === 'tkt_modal_rename') {
+            if (interaction.isModalSubmit() && interaction.customId.startsWith('tkt_modal_rename')) {
                 await interaction.deferReply({ ephemeral: true }).catch(() => {});
 
                 const rawName = interaction.fields.getTextInputValue('new_name')
@@ -1527,7 +1552,14 @@ function initTicketSystem(client) {
                     .replace(/^-|-$/g, '')
                     .slice(0, 45);
                 if (!rawName) {
-                    await interaction.editReply({ content: '⚠️ Nombre no válido.' }).catch(() => {});
+                    const vErr = guildManager.resolveGuildVisuals(interaction.guild.id);
+                    const errEmbed = new EmbedBuilder()
+                        .setColor(vErr.color)
+                        .setAuthor({ name: `SISTEMA DE TICKETS | ${vErr.name}`, iconURL: vErr.logoUrl })
+                        .setTitle('⚠️ Nombre no válido')
+                        .setDescription('> Introduce al menos una letra o número válido para renombrar el canal.')
+                        .setFooter({ text: `${vErr.name} • Este mensaje se auto-eliminará en 4s` });
+                    await interaction.editReply({ embeds: [errEmbed], files: vErr.files }).catch(() => {});
                     setTimeout(() => interaction.deleteReply().catch(() => {}), 4000);
                     return;
                 }
@@ -1536,8 +1568,6 @@ function initTicketSystem(client) {
                 const tTypeRen = activeDoc ? TICKET_TYPE_MAP.get(activeDoc.categoryKey) : null;
                 const finalName = tTypeRen ? `${tTypeRen.emoji}┃${rawName}` : rawName;
 
-                // Discord solo permite 2 cambios de nombre por canal cada 10 minutos:
-                // usamos carrera con timeout de 2.5s para no colgar el modal nunca si Discord encola el cambio.
                 let status = 'ok';
                 try {
                     const renamePromise = interaction.channel.setName(finalName).then(() => 'ok').catch(() => 'err');
@@ -1548,9 +1578,30 @@ function initTicketSystem(client) {
                 }
 
                 if (status === 'ratelimit') {
-                    await interaction.editReply({
-                        content: '⏳ **Límite de Discord alcanzado:** Discord solo permite renombrar un mismo canal **2 veces cada 10 minutos**. El cambio quedará en cola o podrás renombrarlo de nuevo en unos minutos.'
-                    }).catch(() => {});
+                    const vRl = guildManager.resolveGuildVisuals(interaction.guild.id);
+                    const rlIcon = vRl.logoUrl || interaction.guild.iconURL() || undefined;
+                    const rlEmbed = new EmbedBuilder()
+                        .setColor(vRl.color)
+                        .setAuthor({
+                            name: `SISTEMA DE TICKETS | ${vRl.name}`,
+                            iconURL: rlIcon
+                        })
+                        .setThumbnail(rlIcon)
+                        .setTitle('⏳ Límite Temporal de Renombrado')
+                        .setDescription(
+                            `\u200B\n` +
+                            `🛡️ **| Límite nativo de Discord**\n` +
+                            `> Discord solo permite cambiar el nombre de un mismo canal **2 veces cada 10 minutos**.\n\n` +
+                            `💡 **| ¿Qué ocurre ahora?**\n` +
+                            `> Tu cambio a \`${finalName}\` quedará pendiente en cola o podrás volver a renombrarlo en unos minutos.`
+                        )
+                        .setFooter({
+                            text: `${vRl.name} • Este mensaje se auto-eliminará en 6s`,
+                            iconURL: rlIcon
+                        })
+                        .setTimestamp();
+
+                    await interaction.editReply({ embeds: [rlEmbed], files: vRl.files }).catch(() => {});
                     setTimeout(() => interaction.deleteReply().catch(() => {}), 6000);
                     return;
                 }
@@ -1561,7 +1612,7 @@ function initTicketSystem(client) {
             }
 
             // F) MODAL CERRAR TICKET -> GUARDA TRANSCRIPCIÓN INTERACTIVA EN MONGODB Y ENVÍA LOG
-            if (interaction.isModalSubmit() && interaction.customId === 'tkt_modal_close') {
+            if (interaction.isModalSubmit() && interaction.customId.startsWith('tkt_modal_close')) {
                 await interaction.deferReply().catch(() => {});
                 const closeReason = interaction.fields.getTextInputValue('close_reason')?.trim() || 'Ticket cerrado sin motivo especificado';
                 const guild = interaction.guild;
