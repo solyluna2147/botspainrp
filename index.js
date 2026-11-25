@@ -6054,9 +6054,92 @@ client.on('messageCreate', async (message) => {
         }
 
         // ----------------------------------------------------
+        // COMANDO EXCLUSIVO DEL CREADOR: !clear (Elimina TODOS los mensajes del bot en cualquier canal)
+        // ----------------------------------------------------
+        if (command === '!clear') {
+            if (!isBotOwner(message.author.id)) {
+                return sendDeniedAccessMessage(message);
+            }
+            await message.delete().catch(() => { });
+            try {
+                const maxBotToDelete = parseInt(args[1], 10);
+                const limitCount = (!isNaN(maxBotToDelete) && maxBotToDelete > 0) ? maxBotToDelete : Infinity;
+                const botMsgs = [];
+                let lastId = undefined;
+
+                // Escanear hasta 500 mensajes del canal para localizar TODOS los del bot
+                for (let batch = 0; batch < 5; batch++) {
+                    const fetched = await message.channel.messages.fetch({
+                        limit: 100,
+                        ...(lastId ? { before: lastId } : {})
+                    }).catch(() => null);
+                    if (!fetched || fetched.size === 0) break;
+
+                    for (const m of fetched.values()) {
+                        if (m.author?.id === client.user.id) {
+                            botMsgs.push(m);
+                            if (botMsgs.length >= limitCount) break;
+                        }
+                    }
+                    if (botMsgs.length >= limitCount || fetched.size < 100) break;
+                    lastId = fetched.last().id;
+                }
+
+                const fourteenDaysAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
+                const recentMsgs = botMsgs.filter(m => m.createdTimestamp > fourteenDaysAgo);
+                const oldMsgs = botMsgs.filter(m => m.createdTimestamp <= fourteenDaysAgo);
+                let deletedTotal = 0;
+
+                // Borrar en bloque los recientes (<14 días) en tandas de 100
+                for (let i = 0; i < recentMsgs.length; i += 100) {
+                    const chunk = recentMsgs.slice(i, i + 100);
+                    if (chunk.length === 1) {
+                        const ok = await chunk[0].delete().then(() => true).catch(() => false);
+                        if (ok) deletedTotal += 1;
+                    } else if (chunk.length > 1) {
+                        const res = await message.channel.bulkDelete(chunk, true).catch(() => null);
+                        if (res) {
+                            deletedTotal += res.size;
+                        } else {
+                            for (const m of chunk) {
+                                const ok = await m.delete().then(() => true).catch(() => false);
+                                if (ok) deletedTotal += 1;
+                            }
+                        }
+                    }
+                }
+
+                // Borrar individualmente los antiguos (>14 días)
+                for (const m of oldMsgs) {
+                    const ok = await m.delete().then(() => true).catch(() => false);
+                    if (ok) deletedTotal += 1;
+                }
+
+                const vClr = guildManager.resolveGuildVisuals(message.guild?.id);
+                const clrIcon = (vClr.config?.LOGO_URL && /^https?:\/\//i.test(vClr.config.LOGO_URL))
+                    ? vClr.config.LOGO_URL.trim()
+                    : (message.guild?.iconURL?.({ size: 256, extension: 'png' }) || client.user.displayAvatarURL());
+                const clrEmbed = new EmbedBuilder()
+                    .setColor(vClr.color)
+                    .setAuthor({ name: `LIMPIEZA DEL BOT | ${vClr.name}`, iconURL: clrIcon })
+                    .setDescription(`🧹┃Se han eliminado **${deletedTotal}** mensaje(s) del bot en este canal.`)
+                    .setFooter({ text: `${vClr.name} • Este aviso se borra en 4s` })
+                    .setTimestamp();
+
+                const doneMsg = await message.channel.send({ embeds: [clrEmbed] }).catch(() => null);
+                if (doneMsg) setTimeout(() => doneMsg.delete().catch(() => { }), 4000);
+                guildManager.logGuild(message.guild, '🧹', `!clear ejecutado en #${message.channel.name} (${deletedTotal} mensajes del bot borrados)`);
+                return;
+            } catch (err) {
+                console.error('Error al ejecutar comando !clear:', err);
+                return;
+            }
+        }
+
+        // ----------------------------------------------------
         // COMANDO: !borrar (Elimina mensajes o el mensaje respondido)
         // ----------------------------------------------------
-        if (['!borrar', '!delete', '!clear', '!purge'].includes(command)) {
+        if (['!borrar', '!delete', '!purge'].includes(command)) {
             try {
                 // Caso 1: Si el usuario respondió a un mensaje específico con !borrar
                 if (message.reference && message.reference.messageId) {
