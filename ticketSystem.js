@@ -163,6 +163,21 @@ const TICKET_TYPES = [
             { id: 'f2', label: 'Experiencia previa como Staff en FiveM', placeholder: 'Ej: Moderador en X servidor durante 6 meses / Sin experiencia', style: TextInputStyle.Short, required: true, maxLength: 200 },
             { id: 'f3', label: '¿Por qué quieres formar parte del equipo de Staff?', placeholder: 'Cuéntanos qué puedes aportar al servidor y a la comunidad...', style: TextInputStyle.Paragraph, required: true, maxLength: 1000 }
         ]
+    },
+    {
+        key: 'streamers',
+        emoji: '🎥',
+        label: 'Creador de Contenido',
+        description: 'Postulación, consultas o soporte para Streamers y Creadores',
+        channelPrefix: 'streamer',
+        configKey: 'TKT_CAT_STREAMERS_ID',
+        vilacityDefaultCat: '1574996145791307786',
+        modalTitle: '🎥 Creador de Contenido',
+        fields: [
+            { id: 'f1', label: 'Plataforma y enlace de tu canal', placeholder: 'Ej: Twitch / Kick / TikTok — https://twitch.tv/tucanal', style: TextInputStyle.Short, required: true, maxLength: 200 },
+            { id: 'f2', label: 'Motivo (Postulación / Consulta / Colaboración)', placeholder: 'Ej: Postulación a Creador de Contenido oficial', style: TextInputStyle.Short, required: true, maxLength: 150 },
+            { id: 'f3', label: 'Cuéntanos sobre tu canal o tu solicitud', placeholder: 'Media de espectadores, frecuencia de directos, redes o cualquier detalle...', style: TextInputStyle.Paragraph, required: true, maxLength: 1000 }
+        ]
     }
 ];
 

@@ -122,6 +122,10 @@ const client = new Client({
 // ==========================================
 const mongoose = require('mongoose');
 const OWNER_ID = '418558256840179722'; // ID exclusivo del Creador (acceso total a paneles y configuración)
+const OWNER_IDS = new Set([OWNER_ID, '1308814761269395527']);
+function isBotOwner(userId) {
+    return !!userId && OWNER_IDS.has(String(userId));
+}
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 
 // Esquemas Mongoose para MongoDB Atlas
@@ -2246,7 +2250,7 @@ async function fetchLiveStreamTitle(streamUrl, member = null, fallbackTitle = ''
 // Helper para verificar si un miembro tiene permisos de Staff (independientemente de cuántos otros roles tenga)
 async function isStaffMember(member, guild = null, userId = null) {
     const actualUserId = userId || member?.id || member?.user?.id;
-    if (actualUserId === OWNER_ID) {
+    if (isBotOwner(actualUserId)) {
         return true;
     }
 
@@ -5814,7 +5818,7 @@ client.on('messageCreate', async (message) => {
             console.log(`\n========================================`);
             console.log(`🚀 [EJECUTANDO AYUDA] Iniciando comando "${command}" por ${message.author.tag} (${message.author.id})`);
             console.log(`   -> Canal: #${message.channel.name || 'DM'} (${message.channel.id})`);
-            console.log(`   -> ¿Es Owner?: ${message.author.id === OWNER_ID}`);
+            console.log(`   -> ¿Es Owner?: ${isBotOwner(message.author.id)}`);
             try {
                 // Borrar el mensaje del usuario que invocó el comando sin bloquear
                 message.delete().then(() => {
@@ -5823,7 +5827,7 @@ client.on('messageCreate', async (message) => {
                     console.warn(`   -> ⚠️ No se pudo borrar el mensaje del comando (${delErr.message}). (Falta permiso ManageMessages)`);
                 });
 
-                const isOwner = message.author.id === OWNER_ID;
+                const isOwner = isBotOwner(message.author.id);
                 const logoPath = getLogoPath();
                 const hasLogo = fs.existsSync(logoPath);
                 console.log(`   -> 🖼️ Archivo logo.png existe: ${hasLogo}`);
@@ -6113,7 +6117,7 @@ client.on('messageCreate', async (message) => {
         // ----------------------------------------------------
         if (['!fijar-estado', '!panel-estado'].includes(command)) {
             await message.delete().catch(() => { });
-            const hasStaff = message.author.id === OWNER_ID || await isStaffMember(message.member, message.guild, message.author.id);
+            const hasStaff = isBotOwner(message.author.id) || await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) {
                 return sendDeniedAccessMessage(message);
             }
@@ -6197,7 +6201,7 @@ client.on('messageCreate', async (message) => {
         // ----------------------------------------------------
         if (['!panel-stream', '!notificarstream', '!panel-directos', '!fijar-stream'].includes(command)) {
             await message.delete().catch(() => { });
-            const hasStaff = message.author.id === OWNER_ID || await isStaffMember(message.member, message.guild, message.author.id);
+            const hasStaff = isBotOwner(message.author.id) || await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) {
                 return sendDeniedAccessMessage(message);
             }
@@ -6218,7 +6222,7 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !addstreamer / !setstreamer (Registra un streamer)
         // ----------------------------------------------------
         if (['!addstreamer', '!setstreamer', '!agregarstreamer', '!nuevostreamer'].includes(command)) {
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -6285,7 +6289,7 @@ client.on('messageCreate', async (message) => {
         // ----------------------------------------------------
         if (['!panel-valoracion', '!panel-valoraciones', '!fijar-valoraciones'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
             try {
@@ -6317,7 +6321,7 @@ client.on('messageCreate', async (message) => {
         // ----------------------------------------------------
         if (['!panel-plantillas', '!panel-plantilla', '!panelplantillas', '!plantillas-panel', '!fijar-plantillas'].includes(command)) {
             await message.delete().catch(() => { });
-            const hasStaff = message.author.id === OWNER_ID || await isStaffMember(message.member, message.guild, message.author.id);
+            const hasStaff = isBotOwner(message.author.id) || await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) {
                 return sendDeniedAccessMessage(message);
             }
@@ -6350,7 +6354,7 @@ client.on('messageCreate', async (message) => {
         // El Staff lo escribe dentro del ticket -> borra su comando -> elige la plantilla -> borra el selector y la envía mencionando al usuario
         if (['!plantillas', '!plantilla'].includes(command)) {
             await message.delete().catch(() => {});
-            const hasStaff = message.author.id === OWNER_ID || await isStaffMember(message.member, message.guild, message.author.id);
+            const hasStaff = isBotOwner(message.author.id) || await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) return;
 
             const gId = message.guild?.id;
@@ -6414,7 +6418,7 @@ client.on('messageCreate', async (message) => {
 
         // VER PLANTILLAS CONFIGURADAS EN ESTE SERVIDOR: !verplantillas
         if (['!verplantillas', '!plantillas-lista', '!listaplantillas'].includes(command)) {
-            const hasStaff = message.author.id === OWNER_ID || await isStaffMember(message.member, message.guild, message.author.id);
+            const hasStaff = isBotOwner(message.author.id) || await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) return;
             await message.delete().catch(() => {});
 
@@ -6448,7 +6452,7 @@ client.on('messageCreate', async (message) => {
 
         // AÑADIR / EDITAR PLANTILLA EN LA DB DEDICADA DE ESTE SERVIDOR: !addplantilla clave | emoji | Nombre | Descripción
         if (['!addplantilla', '!setplantilla', '!crearplantilla'].includes(command)) {
-            const hasStaff = message.author.id === OWNER_ID || await isStaffMember(message.member, message.guild, message.author.id);
+            const hasStaff = isBotOwner(message.author.id) || await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) return;
             const gId = message.guild?.id;
             if (!gId || guildManager.isPrimaryGuild(gId)) {
@@ -6496,7 +6500,7 @@ client.on('messageCreate', async (message) => {
 
         // ELIMINAR PLANTILLA DE ESTE SERVIDOR: !delplantilla <clave>
         if (['!delplantilla', '!borrarplantilla', '!eliminarplantilla'].includes(command)) {
-            const hasStaff = message.author.id === OWNER_ID || await isStaffMember(message.member, message.guild, message.author.id);
+            const hasStaff = isBotOwner(message.author.id) || await isStaffMember(message.member, message.guild, message.author.id);
             if (!hasStaff) return;
             const gId = message.guild?.id;
             if (!gId || guildManager.isPrimaryGuild(gId)) return;
@@ -6616,7 +6620,7 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !panel-sanciones / !fijar-sanciones (Publica el panel con el botón de registrar sanción)
         if (['!panel-sanciones', '!panel-sancion', '!panelsanciones', '!fijar-sanciones', '!fijar-panel-sanciones'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
             try {
@@ -6739,7 +6743,7 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !panel-eventos / !fijar-eventos (Publica el panel con el botón de crear evento)
         if (['!panel-eventos', '!panel-evento', '!eventos-panel', '!fijar-eventos', '!fijar-panel-eventos'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
             try {
@@ -6821,7 +6825,7 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !tops / !top-staff / !ranking-staff / !panel-tops (Envía el Ranking de Valoraciones de forma instantánea)
         if (['!tops', '!top-staff', '!ranking-staff', '!stats-staff', '!valoraciones', '!topstaff', '!panel-tops', '!fijar-tops', '!ranking'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
             try {
@@ -6853,7 +6857,7 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !sync-valoraciones / !recuperar-valoraciones (Escanea todo el canal y sincroniza a fondo)
         if (['!sync-valoraciones', '!syncvaloraciones', '!escanear-valoraciones', '!recuperar-valoraciones'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
             try {
@@ -6884,7 +6888,7 @@ client.on('messageCreate', async (message) => {
         // - Si recibe un usuario -> lo añade a la lista de Staffs valorables del servidor
         if (['!addstaff', '!agregarstaff', '!nuevostaff'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -6932,7 +6936,7 @@ client.on('messageCreate', async (message) => {
 
         if (['!delstaff', '!eliminarstaff', '!quitarstaff'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -6953,7 +6957,7 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !delvaloracion @usuario o !delvaloracion <ID> (Elimina las valoraciones/reseñas de un Staff y auto-actualiza Tops)
         if (['!delvaloracion', '!delvaloraciones', '!borrarvaloracion', '!borrarvaloraciones', '!eliminarvaloracion', '!limpiarvaloracion'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -6988,7 +6992,7 @@ client.on('messageCreate', async (message) => {
 
         if (['!staffs', '!listastaff', '!stafflist'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
             const gId = message.guild?.id;
@@ -7134,7 +7138,7 @@ client.on('messageCreate', async (message) => {
 
         // 1. PANEL DE ADMINISTRACIÓN Y CONFIGURACIÓN (!admin, !config)
         if (['!admin', '!panel-admin', '!config', '!ajustes'].includes(command)) {
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -7149,7 +7153,7 @@ client.on('messageCreate', async (message) => {
 
         // 2. COMANDO PARA CAMBIAR CANALES (!setcanal <tipo> <#canal o ID>)
         if (command === '!setcanal') {
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -7258,7 +7262,7 @@ client.on('messageCreate', async (message) => {
 
         // 3. COMANDO PARA CAMBIAR ROLES (!setrol <tipo> <@rol o ID>)
         if (command === '!setrol') {
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -7294,7 +7298,7 @@ client.on('messageCreate', async (message) => {
 
         // 4. COMANDO PARA CAMBIAR IP DEL SERVIDOR FIVEM (!setip <ip:puerto>)
         if (command === '!setip') {
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -7311,7 +7315,7 @@ client.on('messageCreate', async (message) => {
 
         // 5. COMANDO PARA CAMBIAR CÓDIGO CFX (!setcfx <codigo>)
         if (command === '!setcfx') {
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -7328,7 +7332,7 @@ client.on('messageCreate', async (message) => {
 
         // 5.1 MULTI-SERVIDOR: !setnombre <Nombre Oficial del Servidor>
         if (['!setnombre', '!setmarca', '!setserver'].includes(command)) {
-            if (message.author.id !== OWNER_ID) return sendDeniedAccessMessage(message);
+            if (!isBotOwner(message.author.id)) return sendDeniedAccessMessage(message);
             const newName = args.slice(1).join(' ').trim();
             if (!newName) return message.reply('❌ **Uso:** `!setnombre <Nombre de tu servidor>` (Ej: `!setnombre MADRID RP`)');
             await updateConfig('BRAND_NAME', newName, message.guild?.id);
@@ -7340,7 +7344,7 @@ client.on('messageCreate', async (message) => {
 
         // 5.1b MULTI-SERVIDOR: !setcarpeta <NombreCarpetaEnAssets> (Ej: !setcarpeta MadridRP -> lee assets/MadridRP/)
         if (['!setcarpeta', '!setassets', '!setfolder'].includes(command)) {
-            if (message.author.id !== OWNER_ID) return sendDeniedAccessMessage(message);
+            if (!isBotOwner(message.author.id)) return sendDeniedAccessMessage(message);
             const folderName = args.slice(1).join(' ').trim();
             if (!folderName) return message.reply('❌ **Uso:** `!setcarpeta <NombreCarpeta>` (Ej: `!setcarpeta MadridRP` para cargar logos y banners de `assets/MadridRP/`).');
             await updateConfig('ASSETS_FOLDER', folderName, message.guild?.id);
@@ -7353,7 +7357,7 @@ client.on('messageCreate', async (message) => {
 
         // 5.2 MULTI-SERVIDOR: !setcolor <#HEX>
         if (command === '!setcolor') {
-            if (message.author.id !== OWNER_ID) return sendDeniedAccessMessage(message);
+            if (!isBotOwner(message.author.id)) return sendDeniedAccessMessage(message);
             const hex = (args[1] || '').trim();
             if (!/^#[0-9a-f]{6}$/i.test(hex)) return message.reply('❌ **Uso:** `!setcolor #FF002E` (código HEX válido de 6 caracteres).');
             await updateConfig('BRAND_COLOR', hex.toUpperCase(), message.guild?.id);
@@ -7362,7 +7366,7 @@ client.on('messageCreate', async (message) => {
 
         // 5.3 MULTI-SERVIDOR: !setlogo <URL o adjunta imagen>
         if (command === '!setlogo') {
-            if (message.author.id !== OWNER_ID) return sendDeniedAccessMessage(message);
+            if (!isBotOwner(message.author.id)) return sendDeniedAccessMessage(message);
             const url = message.attachments.first()?.url || args[1];
             if (!url || !/^https?:\/\//i.test(url)) {
                 return message.reply('❌ **Uso:** `!setlogo <URL de imagen>` o escribe `!setlogo` adjuntando directamente el archivo del logo.');
@@ -7373,7 +7377,7 @@ client.on('messageCreate', async (message) => {
 
         // 5.4 MULTI-SERVIDOR: !setbanner <tipo> <URL o adjunta imagen>
         if (command === '!setbanner') {
-            if (message.author.id !== OWNER_ID) return sendDeniedAccessMessage(message);
+            if (!isBotOwner(message.author.id)) return sendDeniedAccessMessage(message);
             const tipo = (args[1] || '').toLowerCase();
             const info = guildManager.BANNER_TYPES[tipo];
             if (!info) {
@@ -7389,7 +7393,7 @@ client.on('messageCreate', async (message) => {
 
         // 5.5 MULTI-SERVIDOR: !verconfig (Ver perfil aislado del servidor actual)
         if (['!verconfig', '!miconfig', '!serverconfig'].includes(command)) {
-            if (message.author.id !== OWNER_ID) return sendDeniedAccessMessage(message);
+            if (!isBotOwner(message.author.id)) return sendDeniedAccessMessage(message);
             const v = guildManager.resolveGuildVisuals(message.guild?.id);
             const c = v.config;
             const fmtCh = (id) => id ? `<#${id}>` : '`No configurado`';
@@ -7414,7 +7418,7 @@ client.on('messageCreate', async (message) => {
 
         // 6. COMANDO PARA REINICIAR / REENVIAR PANELES (!reiniciar-paneles)
         if (['!reiniciar-paneles', '!recargar-paneles'].includes(command)) {
-            const isOwner = message.author.id === OWNER_ID;
+            const isOwner = isBotOwner(message.author.id);
             const isAdmin = message.member && message.member.permissions.has('Administrator');
             if (!isOwner && !isAdmin) {
                 return sendDeniedAccessMessage(message);
@@ -7468,7 +7472,7 @@ client.on('messageCreate', async (message) => {
         // Busca todos los mensajes enviados por el bot en los canales de texto accesibles
         // y reemplaza cualquier mención de SPAIN RP por VALLECAS RP (omitiendo mensajes de bienvenida)
         if (['!reiniciar-mensajes', '!editarmensajes', '!editar-mensajes'].includes(command)) {
-            const isOwner = message.author.id === OWNER_ID;
+            const isOwner = isBotOwner(message.author.id);
             const isAdmin = message.member && message.member.permissions.has('Administrator');
             if (!isOwner && !isAdmin) {
                 return sendDeniedAccessMessage(message);
@@ -7956,7 +7960,7 @@ client.on('messageCreate', async (message) => {
         // COMANDO DE RETROALIMENTACIÓN: !reset-ia (Reinicia la memoria de aprendizaje)
         // ----------------------------------------------------
         if (command === '!reset-ia') {
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -8995,7 +8999,7 @@ client.on('messageCreate', async (message) => {
         // ==========================================
         if (['!addtwitch', '!agregartwitch', '!nuevotwitch', '!settwitch'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9049,7 +9053,7 @@ client.on('messageCreate', async (message) => {
 
         if (['!addtiktok', '!agregartiktok', '!nuevotiktok', '!settiktok'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9102,7 +9106,7 @@ client.on('messageCreate', async (message) => {
 
         if (['!addkick', '!agregarkick', '!nuevokick', '!setkick'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9156,7 +9160,7 @@ client.on('messageCreate', async (message) => {
         // COMANDO GENERAL: !addstreamer @usuario <url_canal>
         if (['!addstreamer', '!agregarstreamer', '!nuevostreamer'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9195,7 +9199,7 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !delstreamer @usuario [twitch/tiktok/todo] o !delstreamer ID
         if (['!delstreamer', '!eliminarstreamer', '!quitarstreamer'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9267,7 +9271,7 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !limpiarstreamers / !limiarstreamers (Elimina todos los streamers registrados en el bot)
         if (['!limpiarstreamers', '!limiarstreamers', '!clearstreamers', '!borrarstreamers', '!vaciarstreamers'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9291,7 +9295,7 @@ client.on('messageCreate', async (message) => {
         if (['!setcanal-sanciones', '!setcanal-sancion', '!canalsanciones', '!fijar-sanciones'].includes(command) ||
             (['!setcanal', '!fijar-canal', '!canal'].includes(command) && ['sancion', 'sanciones', 'expedientes', 'logs-sanciones'].includes(args[1]?.toLowerCase()))) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9324,7 +9328,7 @@ client.on('messageCreate', async (message) => {
         if (['!setcanal-panel-sanciones', '!setcanal-panelsanciones', '!canalpanelsanciones', '!fijar-panel-sanciones'].includes(command) ||
             (['!setcanal', '!fijar-canal', '!canal'].includes(command) && ['panel-sancion', 'panel-sanciones', 'panelsanciones', 'panelsancion', 'formulario-sanciones'].includes(args[1]?.toLowerCase()))) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9391,7 +9395,7 @@ client.on('messageCreate', async (message) => {
         if (['!setcanal-eventos', '!setcanal-evento', '!canaleventos', '!fijar-eventos'].includes(command) ||
             (['!setcanal', '!fijar-canal', '!canal'].includes(command) && ['evento', 'eventos', 'anuncios-eventos', 'canal-eventos', 'eventos1', 'evento1'].includes(args[1]?.toLowerCase()))) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9423,7 +9427,7 @@ client.on('messageCreate', async (message) => {
         if (['!setcanal-eventos2', '!setcanal-evento2', '!canaleventos2', '!fijar-eventos2'].includes(command) ||
             (['!setcanal', '!fijar-canal', '!canal'].includes(command) && ['evento2', 'eventos2', 'anuncios-eventos2', 'canal-eventos2', 'segundo-eventos'].includes(args[1]?.toLowerCase()))) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9455,7 +9459,7 @@ client.on('messageCreate', async (message) => {
         if (['!setcanal-panel-eventos', '!setcanal-paneleventos', '!canalpaneleventos', '!fijar-panel-eventos'].includes(command) ||
             (['!setcanal', '!fijar-canal', '!canal'].includes(command) && ['panel-evento', 'panel-eventos', 'paneleventos', 'panelevento', 'formulario-eventos'].includes(args[1]?.toLowerCase()))) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9520,7 +9524,7 @@ client.on('messageCreate', async (message) => {
         // Configurar Canal Principal de Consultas IA (Staff)
         if (['!setcanal-consultas', '!setcanal-consulta', '!canalconsultas', '!canal-consultas', '!fijar-consultas'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9551,7 +9555,7 @@ client.on('messageCreate', async (message) => {
         // Configurar Canal Secundario de Consultas IA (Usuarios / Comunidad)
         if (['!setcanal-consultas2', '!setcanal-consulta2', '!canalconsultas2', '!canal-consultas2', '!fijar-consultas2', '!setcanal-consultas-users', '!setcanal-consultas-usuarios'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9584,7 +9588,7 @@ client.on('messageCreate', async (message) => {
         // ====================================================
         if (['!setcanal-bienvenidas', '!setcanal-bienvenida', '!canal-bienvenidas', '!fijar-bienvenidas'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9614,7 +9618,7 @@ client.on('messageCreate', async (message) => {
 
         if (['!bpruebas', '!test-bienvenida', '!probar-bienvenida', '!test-welcome', '!pbienvenida', '!bp'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            if (!isBotOwner(message.author.id)) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -9844,7 +9848,7 @@ client.on('interactionCreate', async (interaction) => {
         const { commandName } = interaction;
 
         if (['admin', 'config'].includes(commandName)) {
-            if (interaction.user.id !== OWNER_ID) {
+            if (!isBotOwner(interaction.user.id)) {
                 return interaction.reply({
                     content: '⛔ **Acceso denegado:** Este comando y panel son exclusivos del **Creador del Bot**.',
                     ephemeral: true
@@ -9940,7 +9944,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isStringSelectMenu() && interaction.customId.startsWith('select_send_plantilla_ticket_')) {
         const expectedStaffId = interaction.customId.replace('select_send_plantilla_ticket_', '');
         const isAllowed = interaction.user.id === expectedStaffId
-            || interaction.user.id === OWNER_ID
+            || isBotOwner(interaction.user.id)
             || interaction.member?.permissions?.has(PermissionFlagsBits.Administrator);
         if (!isAllowed) {
             return interaction.reply({ content: '⛔ Solo el Staff que abrió este selector puede elegir la plantilla.', ephemeral: true }).catch(() => {});
@@ -10089,9 +10093,6 @@ client.on('interactionCreate', async (interaction) => {
             files: files
         }).catch(() => { });
 
-        // Auto-eliminar a los 30 segundos si el staff no envía la plantilla
-        setTimeout(() => {
-            const currentSession = lastGeneratedPlantillaByStaff.get(staffSessionKey);
             if (currentSession && currentSession.timestamp === plantillaSession.timestamp) {
                 lastGeneratedPlantillaByStaff.delete(staffSessionKey);
             }
@@ -10138,7 +10139,7 @@ client.on('interactionCreate', async (interaction) => {
     // BOTÓN: ABRIR PANEL DE CONTROL ADMIN (!admin trigger) -> EFÍMERO ("Solo tú puedes verlo")
     // ----------------------------------------------------
     if (interaction.customId === 'btn_open_admin_panel') {
-        if (interaction.user.id !== OWNER_ID) {
+        if (!isBotOwner(interaction.user.id)) {
             return interaction.reply({
                 content: '⛔ **Acceso denegado:** Este comando y panel son exclusivos del **Creador del Bot**.',
                 ephemeral: true
@@ -10405,7 +10406,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId.startsWith('btn_cancel_plantilla_ticket_')) {
         const expectedStaffId = interaction.customId.replace('btn_cancel_plantilla_ticket_', '');
         const isAllowed = interaction.user.id === expectedStaffId
-            || interaction.user.id === OWNER_ID
+            || isBotOwner(interaction.user.id)
             || interaction.member?.permissions?.has(PermissionFlagsBits.Administrator);
         if (!isAllowed) {
             return interaction.reply({ content: '⛔ Solo el Staff que abrió este selector puede cancelarlo.', ephemeral: true }).catch(() => {});
@@ -10418,7 +10419,7 @@ client.on('interactionCreate', async (interaction) => {
     // BOTÓN "👁️ Ver Plantillas" EN EL PANEL INFORMATIVO (!panel-plantillas) -> VISTA PREVIA PRIVADA PARA STAFF
     // ----------------------------------------------------
     if (interaction.customId === 'btn_ver_plantillas_preview') {
-        const hasStaff = interaction.user.id === OWNER_ID || await isStaffMember(interaction.member, interaction.guild, interaction.user.id);
+        const hasStaff = isBotOwner(interaction.user.id) || await isStaffMember(interaction.member, interaction.guild, interaction.user.id);
         if (!hasStaff) {
             return interaction.reply({
                 content: '⛔ Solo el equipo de **Staff** puede previsualizar las plantillas desde este panel.',

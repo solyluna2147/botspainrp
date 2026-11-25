@@ -238,6 +238,7 @@ const BANNER_TYPES = {
     ticket_apelacion:      { key: 'BANNER_TKT_APELACION_URL',      files: ['ticket_apelacion.png', 'ticket_apelaciones.png', 'ticket_apelar.png', 'apelacion.png', 'apelaciones.png', 'apelar.png', 'tickets.png'] },
     ticket_directiva:      { key: 'BANNER_TKT_DIRECTIVA_URL',      files: ['ticket_directiva.png', 'directiva.png', 'solicitud_directiva.png', 'tickets.png'] },
     ticket_postulacion:    { key: 'BANNER_TKT_POSTULACION_URL',    files: ['ticket_postulacion.png', 'ticket_postulaciones.png', 'postulacion_staff.png', 'postulaciones_staff.png', 'ticket_staff.png', 'tickets.png'] },
+    ticket_streamers:      { key: 'BANNER_TKT_STREAMERS_URL',      files: ['ticket_streamers.png', 'ticket_streamer.png', 'ticket_creadores.png', 'streamers.png', 'tickets.png'] },
     aprobado:              { key: 'BANNER_APROBADO_URL',           files: ['aprobado.png', 'aprobada.png', 'wl_aprobada.png'] },
     denegado:      { key: 'BANNER_DENEGADO_URL',     files: ['denegado.png', 'denegada.png', 'wl_denegada.png'] }
 };
