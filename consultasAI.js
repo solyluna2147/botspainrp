@@ -168,6 +168,7 @@ function createEmptyTokenStats() {
         activeKeyIdx: 1,
         activeModel: GROQ_MODELS[0].id,
         lastQueryTokens: 0,
+        perGuild: {}, // guildId -> { requests: 0, lastQueryTokens: 0 } (contador de consultas aislado por servidor)
         models
     };
 }
@@ -185,6 +186,7 @@ function ensureTodayTokenStats() {
         tokenStats = createEmptyTokenStats();
     } else {
         if (!tokenStats.models) tokenStats.models = {};
+        if (!tokenStats.perGuild || typeof tokenStats.perGuild !== 'object') tokenStats.perGuild = {};
         if (!tokenStats.activeKeyIdx) tokenStats.activeKeyIdx = 1;
         for (let k = 1; k <= keyCount; k++) {
             for (const m of GROQ_MODELS) {
@@ -304,6 +306,12 @@ function buildTokensPanelEmbed(guildId = null, client = null) {
     const usersChText = usersIdTok ? `<#${usersIdTok}>` : '`No configurado`';
     const serverName = vTok.name || 'VALLECAS RP';
 
+    // Contador de consultas hoy y última consulta EXCLUSIVO de este servidor (mientras los tokens siguen siendo el pool global)
+    const guildStatKey = guildId ? String(guildId) : 'primary';
+    const guildTodayStats = tokenStats.perGuild?.[guildStatKey] || { requests: 0, lastQueryTokens: 0 };
+    const guildReqsToday = Number(guildTodayStats.requests) || 0;
+    const guildLastTokens = Number(guildTodayStats.lastQueryTokens) || 0;
+
     return new EmbedBuilder()
         .setColor(vTok.color)
         .setAuthor({
@@ -319,7 +327,7 @@ function buildTokensPanelEmbed(guildId = null, client = null) {
             `${totalBar} \`${totalPct}%\`\n` +
             `> 🪙 **Gastados:** \`${formatNum(totalUsed)}\` / \`${formatNum(totalLimit)}\` tokens\n` +
             `> 🟢 **Disponibles:** \`${formatNum(totalRemaining)}\` tokens\n` +
-            `> 💬 **Consultas hoy:** \`${formatNum(totalReqs)}\` *(Última: \`+${formatNum(tokenStats.lastQueryTokens || 0)}\` tokens)*\n\n` +
+            `> 💬 **Consultas hoy (${serverName}):** \`${formatNum(guildReqsToday)}\` *(Última: \`+${formatNum(guildLastTokens)}\` tokens)*\n\n` +
             `────────────────────────────\n\n` +
             `🧠 **NÚCLEOS IA (${keyCount} conectados):**\n` +
             `${nucleiLines.join(keyCount > 6 ? '\n' : '\n\n')}\n\n` +
@@ -977,6 +985,14 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null, guil
                         tokenStats.activeKeyIdx = keyObj.idx;
                         tokenStats.activeModel = modelCfg.id;
                         tokenStats.lastQueryTokens = usedTokens;
+
+                        const gStatKey = guildId ? String(guildId) : 'primary';
+                        if (!tokenStats.perGuild || typeof tokenStats.perGuild !== 'object') tokenStats.perGuild = {};
+                        if (!tokenStats.perGuild[gStatKey]) {
+                            tokenStats.perGuild[gStatKey] = { requests: 0, lastQueryTokens: 0 };
+                        }
+                        tokenStats.perGuild[gStatKey].requests += 1;
+                        tokenStats.perGuild[gStatKey].lastQueryTokens = usedTokens;
 
                         saveTokenStats();
                         updateTokensPanel(client);
