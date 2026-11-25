@@ -327,7 +327,7 @@ function buildTokensPanelEmbed(guildId = null, client = null) {
             `${totalBar} \`${totalPct}%\`\n` +
             `> 🪙 **Gastados:** \`${formatNum(totalUsed)}\` / \`${formatNum(totalLimit)}\` tokens\n` +
             `> 🟢 **Disponibles:** \`${formatNum(totalRemaining)}\` tokens\n` +
-            `> 💬 **Consultas hoy (${serverName}):** \`${formatNum(guildReqsToday)}\` *(Última: \`+${formatNum(guildLastTokens)}\` tokens)*\n\n` +
+            `> 💬 **Consultas hoy:** \`${formatNum(guildReqsToday)}\` *(Última: \`+${formatNum(guildLastTokens)}\` tokens)*\n\n` +
             `────────────────────────────\n\n` +
             `🧠 **NÚCLEOS IA (${keyCount} conectados):**\n` +
             `${nucleiLines.join(keyCount > 6 ? '\n' : '\n\n')}\n\n` +
