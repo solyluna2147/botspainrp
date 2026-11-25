@@ -195,10 +195,14 @@ async function buildServiciosEmbed(client, guildId = null) {
     try {
         const [cSet, lSet] = await Promise.all([
             BotSetting.findOne({ key: 'consultas_ai_activo' }),
-            BotSetting.findOne({ key: 'soporte_alert_activo' })
+            BotSetting.findOne({ key: 'locucion_espera_activo' })
         ]);
         if (cSet && cSet.value !== undefined) consultasOn = !!cSet.value;
         if (lSet && lSet.value !== undefined) locucionOn = !!lSet.value;
+        if (guildId && !guildManager.isPrimaryGuild(guildId)) {
+            const gCfgSrv = guildManager.getGuildConfig(guildId);
+            if (typeof gCfgSrv.LOCUCION_ACTIVO === 'boolean') locucionOn = gCfgSrv.LOCUCION_ACTIVO;
+        }
 
         if (mongoose.models.TicketConfig) {
             const aSet = await mongoose.models.TicketConfig.findOne({ key: 'asistente_activo' });
@@ -270,11 +274,17 @@ async function buildLocucionEmbed(client, guild, forceQuota = false) {
 
     try {
         const [activoSet, tiempoSet] = await Promise.all([
-            BotSetting.findOne({ key: 'soporte_alert_activo' }),
-            BotSetting.findOne({ key: 'soporte_alert_tiempo' })
+            BotSetting.findOne({ key: 'locucion_espera_activo' }),
+            BotSetting.findOne({ key: 'locucion_espera_minutos' })
         ]);
         if (activoSet && activoSet.value !== undefined) locucionOn = !!activoSet.value;
         if (tiempoSet && tiempoSet.value !== undefined) intervaloMin = Number(tiempoSet.value) || 0.5;
+        if (guild && !guildManager.isPrimaryGuild(guild.id)) {
+            const gCfgLoc = guildManager.getGuildConfig(guild.id);
+            if (typeof gCfgLoc.LOCUCION_ACTIVO === 'boolean') locucionOn = gCfgLoc.LOCUCION_ACTIVO;
+            const gMin = Number(gCfgLoc.LOCUCION_ESPERA_MINUTOS);
+            if (!isNaN(gMin) && gMin > 0) intervaloMin = gMin;
+        }
 
         const audioNames = [
             { key: 'espera_soporte', emoji: '🔔', label: 'Aviso Staff 1 (Espera)' },

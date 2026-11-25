@@ -513,6 +513,39 @@ function buildTicketPanelPayload(guild) {
     };
 }
 
+function resolveNotifiedRoleIds(guild, parentCategory, allowedRoleIdsOverride = null) {
+    if (!guild) return [];
+    const gCfg = guildManager.getGuildConfig(guild.id);
+    const staffRoleId = gCfg.ROLE_STAFF_ID || (guildManager.isPrimaryGuild(guild.id) ? '1538191116610838691' : '');
+    let allowedRoleIds = allowedRoleIdsOverride;
+    if (!Array.isArray(allowedRoleIds)) {
+        allowedRoleIds = [];
+        if (parentCategory && parentCategory.permissionOverwrites && parentCategory.permissionOverwrites.cache) {
+            for (const ow of parentCategory.permissionOverwrites.cache.values()) {
+                if (ow.type === OverwriteType.Role && ow.id !== guild.roles.everyone.id && ow.allow.has(PermissionFlagsBits.ViewChannel)) {
+                    allowedRoleIds.push(ow.id);
+                }
+            }
+        }
+    }
+
+    const validAllowedRoles = allowedRoleIds
+        .filter(rid => {
+            if (rid === guild.roles.everyone.id) return false;
+            const roleObj = guild.roles.cache.get(rid);
+            return roleObj && !roleObj.managed;
+        })
+        .sort((a, b) => {
+            const posA = guild.roles.cache.get(a)?.position || 0;
+            const posB = guild.roles.cache.get(b)?.position || 0;
+            return posB - posA;
+        });
+
+    return (staffRoleId && validAllowedRoles.includes(staffRoleId))
+        ? [staffRoleId]
+        : validAllowedRoles;
+}
+
 function buildTicketWelcomeEmbed(guild, ticketData) {
     const bannerType = ticketData.categoryKey ? `ticket_${ticketData.categoryKey}` : 'tickets';
     const v = guildManager.resolveGuildVisuals(guild?.id, bannerType);
@@ -544,7 +577,11 @@ function buildTicketWelcomeEmbed(guild, ticketData) {
         ? `> 🟢┃**Atendido por:** <@${ticketData.claimedById}>`
         : `> 🟡┃**Estado:** \`Esperando a un miembro del Staff\``;
 
-    const validNotifiedRoles = (ticketData.notifiedRoleIds || []).filter(id => !guild || guild.roles.cache.has(id));
+    const validNotifiedRoles = (ticketData.notifiedRoleIds || []).filter(id => {
+        if (!guild) return true;
+        const r = guild.roles.cache.get(id);
+        return r && !r.managed;
+    });
     const notifiedSection = validNotifiedRoles.length > 0
         ? `\n\n🔔┃**Equipo Notificado**\n${validNotifiedRoles.map(id => `> • <@&${id}>`).join('\n')}`
         : '';
@@ -1255,22 +1292,7 @@ function initTicketSystem(client) {
                 // Determinar exactamente qué roles notificar:
                 // - Si el rol principal de Staff (ej: ⚡EQUIPO DE STAFF⚡) tiene acceso a esta categoría -> mencionar SOLO a ese rol.
                 // - Si NO tiene acceso (categoría de rangos altos) -> mencionar solo a los roles humanos autorizados en orden de jerarquía.
-                const staffRoleId = gCfg.ROLE_STAFF_ID || (guildManager.isPrimaryGuild(guild.id) ? '1538191116610838691' : '');
-                const validAllowedRoles = allowedRoleIds
-                    .filter(rid => {
-                        if (rid === guild.roles.everyone.id) return false;
-                        const roleObj = guild.roles.cache.get(rid);
-                        return roleObj && !roleObj.managed; // Excluir roles automáticos de bots
-                    })
-                    .sort((a, b) => {
-                        const posA = guild.roles.cache.get(a)?.position || 0;
-                        const posB = guild.roles.cache.get(b)?.position || 0;
-                        return posB - posA;
-                    });
-
-                const notifiedRoleIds = (staffRoleId && validAllowedRoles.includes(staffRoleId))
-                    ? [staffRoleId]
-                    : validAllowedRoles;
+                const notifiedRoleIds = resolveNotifiedRoleIds(guild, parentCategory, allowedRoleIds);
 
                 const ticketData = {
                     channelId: channel.id,
@@ -1909,9 +1931,17 @@ function initTicketSystem(client) {
         }
     });
 
-    // 4. AUTO-RENOMBRADO AL ARRANCAR: añade el prefijo (emoji┃) a tickets ya abiertos que no lo tengan
-    const syncExistingTicketChannelNames = async () => {
+    // 4. AUTO-SINCRONIZACIÓN AL ARRANCAR:
+    //    a) Añade el prefijo (emoji┃) a tickets ya abiertos que no lo tengan.
+    //    b) Actualiza el Embed, los botones y el banner de categoría en todos los tickets abiertos existentes
+    //       (solo si su diseño/botones/banner difieren de la versión actual, conservando formulario y estado reclamado).
+    const syncExistingOpenTickets = async (attempt = 0) => {
         try {
+            if (mongoose.connection.readyState !== 1 && attempt < 5) {
+                setTimeout(() => syncExistingOpenTickets(attempt + 1), 4000);
+                return;
+            }
+
             for (const guild of client.guilds.cache.values()) {
                 if (guildManager.isPrimaryGuild(guild.id)) continue;
                 const cats = getGuildTicketCategories(guild);
@@ -1921,14 +1951,13 @@ function initTicketSystem(client) {
                 }
                 if (catIdToType.size === 0) continue;
 
+                // A) Prefijo (emoji┃) en canales de tickets antiguos que aún no lo tengan
                 let renamedCount = 0;
                 for (const ch of guild.channels.cache.values()) {
                     if (ch.type !== ChannelType.GuildText || !ch.parentId) continue;
                     const tType = catIdToType.get(ch.parentId);
                     if (!tType) continue;
-                    // Si ya lleva separador ┃ o |, no tocarlo (ej: 🎫｜bandas-isernrn o 🛠️┃soporte-5)
                     if (ch.name.includes('┃') || ch.name.includes('｜') || ch.name.includes('|')) continue;
-                    // Solo renombrar tickets con prefijo del sistema (soporte-5, reporte-2, etc.)
                     if (!ch.name.toLowerCase().startsWith(`${tType.channelPrefix}-`)) continue;
 
                     const targetName = `${tType.emoji}┃${ch.name}`;
@@ -1939,14 +1968,113 @@ function initTicketSystem(client) {
                 if (renamedCount > 0) {
                     guildManager.logGuild(guild, '🏷️', `Formato (emoji┃) aplicado automáticamente a ${renamedCount} ticket(s) ya abiertos`);
                 }
+
+                // B) Refrescar Embed + Botones + Banner + Roles notificados en tickets ya abiertos
+                const models = getModelsForGuild(guild.id);
+                if (!models) continue;
+
+                const activeDocs = await models.Active.find({}).lean().catch(() => []);
+                let updatedEmbeds = 0;
+
+                for (const doc of activeDocs) {
+                    try {
+                        const ch = guild.channels.cache.get(doc.channelId);
+                        if (!ch || ch.type !== ChannelType.GuildText) continue;
+
+                        // Precargar en caché de memoria
+                        memoryActiveTickets.set(ch.id, doc);
+
+                        // Limpiar / recalcular roles notificados si había alguno borrado o faltaban
+                        const storedRoles = Array.isArray(doc.notifiedRoleIds) ? doc.notifiedRoleIds : [];
+                        const hasInvalidRole = storedRoles.some(rid => {
+                            const r = guild.roles.cache.get(rid);
+                            return !r || r.managed;
+                        });
+                        if (storedRoles.length === 0 || hasInvalidRole) {
+                            const recomputed = resolveNotifiedRoleIds(guild, ch.parent);
+                            if (recomputed.length > 0 || hasInvalidRole) {
+                                doc.notifiedRoleIds = recomputed;
+                                await models.Active.updateOne(
+                                    { channelId: ch.id },
+                                    { $set: { notifiedRoleIds: recomputed } }
+                                ).catch(() => {});
+                            }
+                        }
+
+                        // Localizar el mensaje de bienvenida del ticket
+                        let welcomeMsg = null;
+                        if (doc.welcomeMessageId) {
+                            welcomeMsg = await ch.messages.fetch(doc.welcomeMessageId).catch(() => null);
+                        }
+                        if (!welcomeMsg) {
+                            const firstMsgs = await ch.messages.fetch({ limit: 15, after: '0' }).catch(() => null);
+                            if (firstMsgs) {
+                                welcomeMsg = firstMsgs.find(m =>
+                                    m.author?.id === client.user.id &&
+                                    m.components?.some(row => row.components?.some(c => c.customId === 'tkt_btn_claim' || c.customId === 'tkt_btn_close'))
+                                ) || null;
+                                if (welcomeMsg) {
+                                    doc.welcomeMessageId = welcomeMsg.id;
+                                    await models.Active.updateOne(
+                                        { channelId: ch.id },
+                                        { $set: { welcomeMessageId: welcomeMsg.id } }
+                                    ).catch(() => {});
+                                }
+                            }
+                        }
+                        if (!welcomeMsg || !welcomeMsg.editable) continue;
+
+                        const { embed, files } = buildTicketWelcomeEmbed(guild, doc);
+                        const controlRow = buildTicketControlRow(!!doc.claimedById);
+
+                        // Comprobar si el Embed, botones o adjuntos realmente cambiaron para no re-editar en cada reinicio
+                        const curEmb = welcomeMsg.embeds?.[0];
+                        const newEmbData = embed.toJSON();
+                        const curFieldsJson = JSON.stringify((curEmb?.fields || []).map(f => ({ name: f.name, value: f.value })));
+                        const newFieldsJson = JSON.stringify((newEmbData.fields || []).map(f => ({ name: f.name, value: f.value })));
+
+                        const curBtns = (welcomeMsg.components?.[0]?.components || []).map(b => `${b.customId}|${b.label}|${b.style}|${b.emoji?.name || ''}|${!!b.disabled}`).join(';');
+                        const newBtns = controlRow.components.map(b => {
+                            const j = b.toJSON();
+                            return `${j.custom_id}|${j.label}|${j.style}|${j.emoji?.name || ''}|${!!j.disabled}`;
+                        }).join(';');
+
+                        const curAttNames = new Set([...welcomeMsg.attachments.values()].map(a => a.name));
+                        const expectedAttNames = files.map(f => f.name).filter(Boolean);
+                        const attachmentsMatch = expectedAttNames.every(name => curAttNames.has(name));
+
+                        const isAlreadyUpToDate = curEmb
+                            && curEmb.title === newEmbData.title
+                            && curEmb.description === newEmbData.description
+                            && curFieldsJson === newFieldsJson
+                            && curBtns === newBtns
+                            && attachmentsMatch;
+
+                        if (isAlreadyUpToDate) continue;
+
+                        await welcomeMsg.edit({
+                            embeds: [embed],
+                            components: [controlRow],
+                            files,
+                            attachments: []
+                        }).catch(() => {});
+
+                        updatedEmbeds++;
+                        await new Promise(res => setTimeout(res, 350));
+                    } catch (_) { }
+                }
+
+                if (updatedEmbeds > 0) {
+                    guildManager.logGuild(guild, '🔄', `Diseño y botones actualizados automáticamente en ${updatedEmbeds} ticket(s) ya abiertos`);
+                }
             }
         } catch (e) { }
     };
 
     if (client.isReady()) {
-        setTimeout(syncExistingTicketChannelNames, 3000);
+        setTimeout(() => syncExistingOpenTickets(0), 3000);
     } else {
-        client.once('ready', () => setTimeout(syncExistingTicketChannelNames, 4000));
+        client.once('ready', () => setTimeout(() => syncExistingOpenTickets(0), 4000));
     }
 }
 
