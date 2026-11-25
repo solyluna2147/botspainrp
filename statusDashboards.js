@@ -25,6 +25,7 @@ const botSettingSchema = new mongoose.Schema({
 
 const BotSetting = mongoose.models.BotSetting || mongoose.model('BotSetting', botSettingSchema);
 const guildManager = require('./guildManager');
+const ticketSystem = require('./ticketSystem');
 
 const ROLE_STAFF_ID = '1538191116610838691';
 
@@ -382,10 +383,12 @@ async function buildTicketsEmbed(guild) {
     let totalSummarized = 0;
     let totalSolved = 0;
     let knowledgeCount = 0;
+    let closedLogsCount = 0;
+
+    const gId = guild?.id;
+    const isPrimary = !gId || guildManager.isPrimaryGuild(gId);
 
     try {
-        const gId = guild?.id;
-        const isPrimary = !gId || guildManager.isPrimaryGuild(gId);
         if (mongoose.models.TicketConfig) {
             const aSet = await mongoose.models.TicketConfig.findOne({ key: 'asistente_activo' });
             if (aSet && aSet.value !== undefined) asistenteOn = !!aSet.value;
@@ -403,27 +406,65 @@ async function buildTicketsEmbed(guild) {
         } else if (mongoose.connection.readyState === 1) {
             const GuildSessionModel = guildManager.getGuildModel(gId, 'TicketSession', new mongoose.Schema({ status: String }, { strict: false }));
             const GuildKnowledgeModel = guildManager.getGuildModel(gId, 'TicketKnowledge', new mongoose.Schema({ response: String }, { strict: false }));
-            [totalSummarized, totalSolved, knowledgeCount] = await Promise.all([
+            const GuildLogModel = guildManager.getGuildModel(gId, 'AdvTicketLog', ticketSystem.ticketLogSchema);
+            [totalSummarized, totalSolved, knowledgeCount, closedLogsCount] = await Promise.all([
                 GuildSessionModel.countDocuments({ status: 'summarized' }).catch(() => 0),
                 GuildSessionModel.countDocuments({ status: 'solved' }).catch(() => 0),
-                GuildKnowledgeModel.countDocuments({}).catch(() => 0)
+                GuildKnowledgeModel.countDocuments({}).catch(() => 0),
+                GuildLogModel.countDocuments({}).catch(() => 0)
             ]);
         }
     } catch (e) { }
 
-    const cats = getGuildTicketCats(guild?.id);
-    let cSoporte = 0, cApelacion = 0, cStreamer = 0, cDonaciones = 0;
-    if (guild) {
-        const textChannels = guild.channels.cache.filter(c => c.type === 0);
-        if (cats.soporte) cSoporte = textChannels.filter(c => c.parentId === cats.soporte).size;
-        if (cats.apelacion) cApelacion = textChannels.filter(c => c.parentId === cats.apelacion).size;
-        if (cats.streamer) cStreamer = textChannels.filter(c => c.parentId === cats.streamer).size;
-        if (cats.donaciones) cDonaciones = textChannels.filter(c => c.parentId === cats.donaciones).size;
+    let totalOpen = 0;
+    let breakdownLines = '';
+
+    if (isPrimary) {
+        const cats = getGuildTicketCats(gId);
+        let cSoporte = 0, cApelacion = 0, cStreamer = 0, cDonaciones = 0;
+        if (guild) {
+            const textChannels = guild.channels.cache.filter(c => c.type === 0);
+            if (cats.soporte) cSoporte = textChannels.filter(c => c.parentId === cats.soporte).size;
+            if (cats.apelacion) cApelacion = textChannels.filter(c => c.parentId === cats.apelacion).size;
+            if (cats.streamer) cStreamer = textChannels.filter(c => c.parentId === cats.streamer).size;
+            if (cats.donaciones) cDonaciones = textChannels.filter(c => c.parentId === cats.donaciones).size;
+        }
+        totalOpen = cSoporte + cApelacion + cStreamer + cDonaciones;
+        breakdownLines =
+            `> 🛠️ **Soporte:** \`${cSoporte}\` abierto(s)\n` +
+            `> 🔨 **Apelaciones de Baneo:** \`${cApelacion}\` abierto(s)\n` +
+            `> 🎬 **Creadores de Contenido:** \`${cStreamer}\` abierto(s)\n` +
+            `> 💎 **Donaciones:** \`${cDonaciones}\` abierto(s)`;
+    } else {
+        const advCats = ticketSystem.getGuildTicketCategories(guild);
+        const textChannels = guild ? guild.channels.cache.filter(c => c.type === 0) : null;
+        const lines = [];
+        for (const t of ticketSystem.TICKET_TYPES) {
+            const catId = advCats[t.key];
+            const count = (textChannels && catId)
+                ? textChannels.filter(c => c.parentId === catId).size
+                : 0;
+            totalOpen += count;
+            lines.push(`> ${t.emoji} **${t.label}:** \`${count}\` abierto(s)`);
+        }
+        breakdownLines = lines.join('\n');
     }
 
-    const totalOpen = cSoporte + cApelacion + cStreamer + cDonaciones;
-    const vTk = guildManager.resolveGuildVisuals(guild?.id);
+    const vTk = guildManager.resolveGuildVisuals(gId);
     const tkLogoUrl = vTk.logoUrl || logoUrl;
+
+    const historyLines = isPrimary
+        ? (
+            `> 📨 **Resúmenes preparados al Staff:** \`${totalSummarized}\`\n` +
+            `> ✅ **Resueltos por el Asistente:** \`${totalSolved}\`\n` +
+            `> 🧠 **Base de conocimiento:** \`${knowledgeCount}\` entradas`
+        )
+        : (
+            `> 🔒 **Tickets cerrados (Logs):** \`${closedLogsCount}\`\n` +
+            `> 📨 **Resúmenes preparados al Staff:** \`${totalSummarized}\`\n` +
+            `> ✅ **Resueltos por el Asistente:** \`${totalSolved}\`\n` +
+            `> 🧠 **Base de conocimiento:** \`${knowledgeCount}\` entradas`
+        );
 
     const embed = new EmbedBuilder()
         .setColor(vTk.color)
@@ -437,15 +478,10 @@ async function buildTicketsEmbed(guild) {
             `🤖 **Asistente de Tickets:** ${asistenteOn ? '🟢 `ACTIVADO`' : '🔴 `PAUSADO`'}\n\n` +
             `📂 **Tickets abiertos ahora mismo:** \`${totalOpen}\` en total\n\n` +
             `📋 **DESGLOSE POR CATEGORÍA (EN VIVO):**\n` +
-            `> 🛠️ **Soporte:** \`${cSoporte}\` abierto(s)\n` +
-            `> 🔨 **Apelaciones de Baneo:** \`${cApelacion}\` abierto(s)\n` +
-            `> 🎬 **Creadores de Contenido:** \`${cStreamer}\` abierto(s)\n` +
-            `> 💎 **Donaciones:** \`${cDonaciones}\` abierto(s)\n\n` +
+            `${breakdownLines}\n\n` +
             `────────────────────────────\n\n` +
-            `📈 **HISTÓRICO DEL ASISTENTE:**\n` +
-            `> 📨 **Resúmenes preparados al Staff:** \`${totalSummarized}\`\n` +
-            `> ✅ **Resueltos por el Asistente:** \`${totalSolved}\`\n` +
-            `> 🧠 **Base de conocimiento:** \`${knowledgeCount}\` entradas`
+            `📈 **HISTÓRICO DEL ASISTENTE Y TICKETS:**\n` +
+            `${historyLines}`
         )
         .setFooter({
             text: `${vTk.name} • Actualización en tiempo real`,
@@ -547,20 +583,30 @@ module.exports = function initStatusDashboards(client) {
         }
     });
 
+    // Hook directo para que ticketSystem.js refresque el Monitor al abrir/cerrar un ticket
+    client.notifyTicketMonitor = (guildId) => {
+        schedulePanelUpdate(client, 'tickets', 1000, guildId);
+    };
+
+    const getAllWatchedTicketCats = (guild) => {
+        const legacyCats = getGuildTicketCats(guild.id);
+        const advCats = ticketSystem.getGuildTicketCategories(guild);
+        return new Set([
+            legacyCats.soporte, legacyCats.apelacion, legacyCats.streamer, legacyCats.donaciones,
+            ...Object.values(advCats)
+        ].filter(Boolean));
+    };
+
     // Actualización INSTANTÁNEA de !panel-tickets cuando se abre o cierra un ticket (en cualquier servidor)
     client.on('channelCreate', (channel) => {
         if (!channel || channel.type !== 0 || !channel.guild) return;
-        const cats = getGuildTicketCats(channel.guild.id);
-        const watched = new Set([cats.soporte, cats.apelacion, cats.streamer, cats.donaciones].filter(Boolean));
-        if (watched.has(channel.parentId)) {
-            schedulePanelUpdate(client, 'tickets', 2000, channel.guild.id);
+        if (getAllWatchedTicketCats(channel.guild).has(channel.parentId)) {
+            schedulePanelUpdate(client, 'tickets', 1500, channel.guild.id);
         }
     });
     client.on('channelDelete', (channel) => {
         if (!channel || channel.type !== 0 || !channel.guild) return;
-        const cats = getGuildTicketCats(channel.guild.id);
-        const watched = new Set([cats.soporte, cats.apelacion, cats.streamer, cats.donaciones].filter(Boolean));
-        if (watched.has(channel.parentId)) {
+        if (getAllWatchedTicketCats(channel.guild).has(channel.parentId)) {
             schedulePanelUpdate(client, 'tickets', 1500, channel.guild.id);
         }
     });
@@ -696,5 +742,12 @@ module.exports = function initStatusDashboards(client) {
         initVerificacion(client);
     } catch (verErr) {
         console.error('⚠️ [VERIFICACIÓN] Error inicializando módulo:', verErr.message);
+    }
+
+    // Cargar módulo independiente de Sistema Avanzado de Tickets Multi-Servidor (ticketSystem.js)
+    try {
+        ticketSystem.initTicketSystem(client);
+    } catch (tktErr) {
+        console.error('⚠️ [TICKETS AVANZADOS] Error inicializando módulo:', tktErr.message);
     }
 };
