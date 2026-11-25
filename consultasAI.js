@@ -1077,18 +1077,80 @@ function initConsultasAI(client) {
         }, msUntilReset);
     };
 
+    // Sincroniza el recuento real de "Consultas hoy" de un servidor leyendo su propio canal de logs (desde 00:00 UTC de hoy)
+    async function syncGuildCountFromLogChannel(guildId) {
+        if (!guildId) return;
+        try {
+            ensureTodayTokenStats();
+            const gChannels = getChannelsForGuild(guildId);
+            if (!gChannels.logsId) return;
+            const logCh = client.channels.cache.get(gChannels.logsId) || await client.channels.fetch(gChannels.logsId).catch(() => null);
+            if (!logCh || !logCh.isTextBased()) return;
+
+            const now = new Date();
+            const todayUtcStartMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0);
+
+            let logCount = 0;
+            let newestTokens = 0;
+            let newestTs = 0;
+            let beforeId = undefined;
+
+            for (let page = 0; page < 5; page++) {
+                const fetched = await logCh.messages.fetch({ limit: 100, ...(beforeId ? { before: beforeId } : {}) }).catch(() => null);
+                if (!fetched || fetched.size === 0) break;
+
+                let reachedOlderDay = false;
+                for (const m of fetched.values()) {
+                    if (m.createdTimestamp < todayUtcStartMs) {
+                        reachedOlderDay = true;
+                        continue;
+                    }
+                    if (m.author?.id !== client.user?.id) continue;
+                    const emb = m.embeds?.[0];
+                    if (!emb || !emb.author?.name?.includes('LOG DE CONSULTA IA')) continue;
+
+                    logCount++;
+                    if (m.createdTimestamp >= newestTs) {
+                        newestTs = m.createdTimestamp;
+                        const tokMatch = (emb.description || '').match(/\+([\d.,]+)\s*tokens/i);
+                        if (tokMatch) {
+                            const parsed = parseInt(tokMatch[1].replace(/[.,]/g, ''), 10);
+                            if (!isNaN(parsed) && parsed > 0) newestTokens = parsed;
+                        }
+                    }
+                }
+
+                if (reachedOlderDay || fetched.size < 100) break;
+                beforeId = fetched.last()?.id;
+                if (!beforeId) break;
+            }
+
+            const gKey = String(guildId);
+            if (!tokenStats.perGuild || typeof tokenStats.perGuild !== 'object') tokenStats.perGuild = {};
+            const cur = tokenStats.perGuild[gKey] || { requests: 0, lastQueryTokens: 0 };
+            const updatedReqs = Math.max(Number(cur.requests) || 0, logCount);
+            const updatedLast = (logCount > 0 && newestTokens > 0) ? newestTokens : (Number(cur.lastQueryTokens) || 0);
+
+            if (updatedReqs !== cur.requests || updatedLast !== cur.lastQueryTokens) {
+                tokenStats.perGuild[gKey] = { requests: updatedReqs, lastQueryTokens: updatedLast };
+                await saveTokenStats();
+            }
+        } catch (e) { }
+    }
+
     // Comprobar una vez al arrancar por si el reinicio ocurrió mientras el bot estaba reiniciando + programar 00:00:05 UTC
     const startDailyResetScheduler = () => {
         setTimeout(async () => {
-            // Precargar la caché de normativas de todos los servidores secundarios para que !panel-tokens muestre las secciones reales al instante
+            // Precargar la caché de normativas de todos los servidores secundarios y sincronizar el contador de consultas desde cada canal de logs
             for (const guild of client.guilds.cache.values()) {
                 if (!guildManager.isPrimaryGuild(guild.id)) {
                     guildNormativaCache.delete(String(guild.id));
                     await getGuildNormativaPages(guild.id).catch(() => {});
                 }
+                await syncGuildCountFromLogChannel(guild.id).catch(() => {});
             }
             await runDailyTokensPanelReset('Verificación al arrancar');
-            // Limpiar cualquier adjunto huérfano (logo gigante) en paneles existentes al arrancar
+            // Limpiar cualquier adjunto huérfano (logo gigante) y reflejar el recuento real de hoy en todos los paneles
             await updateTokensPanel(client).catch(() => {});
         }, 8000);
         scheduleNextDailyTokensReset();
@@ -1304,6 +1366,7 @@ function initConsultasAI(client) {
                 await message.delete().catch(() => {});
 
                 const gId = message.guild?.id;
+                await syncGuildCountFromLogChannel(gId).catch(() => {});
                 const { files: tokFiles } = resolveTokensPanelLogo(gId, client);
                 const embed = buildTokensPanelEmbed(gId, client);
                 const sentPanel = await message.channel.send({
@@ -1796,6 +1859,8 @@ function initConsultasAI(client) {
                         ephemeral: true
                     });
                 }
+                await interaction.deferUpdate().catch(() => {});
+                await syncGuildCountFromLogChannel(interaction.guild?.id).catch(() => {});
                 const embed = buildTokensPanelEmbed(interaction.guild?.id, client);
                 const usesAtt = JSON.stringify(embed.toJSON()).includes('attachment://');
                 const updatePayload = {
@@ -1805,7 +1870,7 @@ function initConsultasAI(client) {
                 if (!usesAtt) {
                     updatePayload.attachments = [];
                 }
-                await interaction.update(updatePayload).catch(() => {});
+                await interaction.editReply(updatePayload).catch(() => {});
                 return;
             }
 
