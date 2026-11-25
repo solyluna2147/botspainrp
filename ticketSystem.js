@@ -187,6 +187,7 @@ const activeTicketSchema = new mongoose.Schema({
     openerTag: { type: String, default: '' },
     claimedById: { type: String, default: '' },
     claimedByTag: { type: String, default: '' },
+    notifiedRoleIds: [{ type: String }],
     welcomeMessageId: { type: String, default: '' },
     formFields: [{
         label: String,
@@ -513,20 +514,36 @@ function buildTicketPanelPayload(guild) {
 }
 
 function buildTicketWelcomeEmbed(guild, ticketData) {
-    const v = guildManager.resolveGuildVisuals(guild?.id);
+    const bannerType = ticketData.categoryKey ? `ticket_${ticketData.categoryKey}` : 'tickets';
+    const v = guildManager.resolveGuildVisuals(guild?.id, bannerType);
     const serverName = v.name || guild?.name || 'SERVIDOR RP';
     const iconUrl = v.logoUrl || guild?.iconURL() || undefined;
     const tType = TICKET_TYPE_MAP.get(ticketData.categoryKey);
     const openedTs = Math.floor(new Date(ticketData.openedAt || Date.now()).getTime() / 1000);
 
-    const formLines = (ticketData.formFields || [])
+    const safeFields = (ticketData.formFields || [])
         .filter(f => f.value && f.value.trim())
-        .map(f => `📌 **${f.label}**\n> ${f.value.trim().replace(/\n/g, '\n> ')}`)
-        .join('\n\n');
+        .map(f => ({
+            name: `📌 ${(f.label || 'Dato').slice(0, 240)}`,
+            value: `> ${f.value.trim().slice(0, 980).replace(/\n/g, '\n> ')}`,
+            inline: false
+        }));
+
+    if (safeFields.length === 0) {
+        safeFields.push({
+            name: '📝 Datos del Formulario',
+            value: '> *Sin datos adicionales.*',
+            inline: false
+        });
+    }
 
     const claimedLine = ticketData.claimedById
         ? `> 🟢 **Atendido por:** <@${ticketData.claimedById}>`
         : `> 🟡 **Estado:** \`Esperando a un miembro del Staff\``;
+
+    const notifiedRolesLine = (ticketData.notifiedRoleIds && ticketData.notifiedRoleIds.length > 0)
+        ? `\n> 🔔 **Equipo notificado:** ${ticketData.notifiedRoleIds.map(id => `<@&${id}>`).join(' · ')}`
+        : '';
 
     const embed = new EmbedBuilder()
         .setColor(v.color)
@@ -540,19 +557,21 @@ function buildTicketWelcomeEmbed(guild, ticketData) {
             `\u200B\n` +
             `👋 Hola <@${ticketData.openerId}>, tu solicitud en **${tType?.label || ticketData.categoryLabel}** ha sido abierta correctamente.\n` +
             `Un miembro del equipo de Staff te atenderá lo antes posible. *(Puedes adjuntar capturas o pruebas directamente aquí)*.\n\n` +
-            `📋 **| Información del Ticket:**\n` +
+            `📋 **| Información del Ticket**\n` +
             `> 👤 **Usuario:** <@${ticketData.openerId}>\n` +
             `> 📅 **Apertura:** <t:${openedTs}:F> (<t:${openedTs}:R>)\n` +
-            `${claimedLine}\n\n` +
-            `────────────────────────────\n\n` +
-            `📝 **| Datos del Formulario:**\n\n` +
-            `${formLines || '> *Sin datos adicionales.*'}`
+            `${claimedLine}${notifiedRolesLine}\n\u200B`
         )
+        .addFields(...safeFields)
         .setFooter({
             text: `${serverName} • Departamento de Atención y Soporte`,
             iconURL: iconUrl
         })
         .setTimestamp();
+
+    if (v.bannerUrl) {
+        embed.setImage(v.bannerUrl);
+    }
 
     return { embed, files: [...v.files] };
 }
@@ -685,8 +704,7 @@ function buildTranscriptViewerPayload(guild, logDoc, page = 0, filterUserId = 'a
         })
         .setTitle(`📖 Conversación del Ticket #${logDoc.ticketCode}`)
         .setDescription(
-            `🔎 **Vista:** \`${filterLabel}\` • 💬 **Mostrando:** \`${filtered.length}\` mensaje(s)\n` +
-            `────────────────────────────\n\n` +
+            `> 🔎 **Vista:** \`${filterLabel}\` • 💬 **Mostrando:** \`${filtered.length}\` mensaje(s)\n\n` +
             body
         )
         .setFooter({
@@ -696,22 +714,27 @@ function buildTranscriptViewerPayload(guild, logDoc, page = 0, filterUserId = 'a
 
     const navRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId(`tkt_log_view_${logDoc.logId}_${Math.max(0, safePage - 1)}_${filterUserId}`)
+            .setCustomId(`tkt_log_prev_${logDoc.logId}_${Math.max(0, safePage - 1)}_${filterUserId}`)
             .setLabel('Anterior')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('⬅️')
             .setDisabled(safePage <= 0),
         new ButtonBuilder()
             .setCustomId(`tkt_log_page_info`)
-            .setLabel(`Página ${safePage + 1} / ${totalPages}`)
+            .setLabel(`Pág. ${safePage + 1} / ${totalPages}`)
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(true),
         new ButtonBuilder()
-            .setCustomId(`tkt_log_view_${logDoc.logId}_${Math.min(totalPages - 1, safePage + 1)}_${filterUserId}`)
+            .setCustomId(`tkt_log_next_${logDoc.logId}_${Math.min(totalPages - 1, safePage + 1)}_${filterUserId}`)
             .setLabel('Siguiente')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('➡️')
-            .setDisabled(safePage >= totalPages - 1)
+            .setDisabled(safePage >= totalPages - 1),
+        new ButtonBuilder()
+            .setCustomId(`tkt_log_back_${logDoc.logId}`)
+            .setLabel('Volver al Registro')
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji('↩️')
     );
 
     const components = [navRow];
@@ -740,7 +763,33 @@ function buildTranscriptViewerPayload(guild, logDoc, page = 0, filterUserId = 'a
         components.push(new ActionRowBuilder().addComponents(filterMenu));
     }
 
-    return { embeds: [embed], components };
+    return { embeds: [embed], components, files: [...v.files] };
+}
+
+// Temporizadores de auto-retorno al registro original en el canal de logs (2 minutos)
+const logRevertTimers = new Map(); // messageId -> timeout
+
+function clearLogRevertTimer(messageId) {
+    if (logRevertTimers.has(messageId)) {
+        clearTimeout(logRevertTimers.get(messageId));
+        logRevertTimers.delete(messageId);
+    }
+}
+
+function scheduleLogRevert(message, guild, logDoc, delayMs = 2 * 60 * 1000) {
+    if (!message || !guild || !logDoc) return;
+    clearLogRevertTimer(message.id);
+    const timer = setTimeout(async () => {
+        logRevertTimers.delete(message.id);
+        try {
+            const summary = buildTicketLogSummaryPayload(guild, logDoc);
+            await message.edit({
+                embeds: summary.embeds,
+                components: summary.components
+            }).catch(() => {});
+        } catch (e) { }
+    }, delayMs);
+    logRevertTimers.set(message.id, timer);
 }
 
 async function fetchTicketLog(guildId, logId) {
@@ -1198,6 +1247,26 @@ function initTicketSystem(client) {
                     }).catch(() => {});
                 }
 
+                // Determinar exactamente qué roles notificar:
+                // - Si el rol principal de Staff (ej: ⚡EQUIPO DE STAFF⚡) tiene acceso a esta categoría -> mencionar SOLO a ese rol.
+                // - Si NO tiene acceso (categoría de rangos altos) -> mencionar solo a los roles humanos autorizados en orden de jerarquía.
+                const staffRoleId = gCfg.ROLE_STAFF_ID || (guildManager.isPrimaryGuild(guild.id) ? '1538191116610838691' : '');
+                const validAllowedRoles = allowedRoleIds
+                    .filter(rid => {
+                        if (rid === guild.roles.everyone.id) return false;
+                        const roleObj = guild.roles.cache.get(rid);
+                        return roleObj && !roleObj.managed; // Excluir roles automáticos de bots
+                    })
+                    .sort((a, b) => {
+                        const posA = guild.roles.cache.get(a)?.position || 0;
+                        const posB = guild.roles.cache.get(b)?.position || 0;
+                        return posB - posA;
+                    });
+
+                const notifiedRoleIds = (staffRoleId && validAllowedRoles.includes(staffRoleId))
+                    ? [staffRoleId]
+                    : validAllowedRoles;
+
                 const ticketData = {
                     channelId: channel.id,
                     guildId: guild.id,
@@ -1209,24 +1278,29 @@ function initTicketSystem(client) {
                     openerTag: interaction.user.username || interaction.user.tag,
                     claimedById: '',
                     claimedByTag: '',
+                    notifiedRoleIds,
                     formFields,
                     openedAt: new Date()
                 };
 
                 const { embed, files } = buildTicketWelcomeEmbed(guild, ticketData);
-                // Mencionar únicamente los roles que realmente tienen permiso en ESTA categoría (sin mencionar Staffs no autorizados)
-                const pingRoles = allowedRoleIds
-                    .filter(rid => rid !== guild.roles.everyone.id)
-                    .slice(0, 6)
-                    .map(rid => `<@&${rid}>`)
-                    .join(' ');
 
+                // Enviar el Embed 100% limpio sin texto feo encima (las menciones van ordenadas dentro del Embed)
                 const welcomeMsg = await channel.send({
-                    content: `🔔 <@${interaction.user.id}> ${pingRoles}`.trim(),
                     embeds: [embed],
                     components: [buildTicketControlRow(false)],
                     files
                 }).catch(() => null);
+
+                // Ping fantasma instantáneo (se borra al instante) para que llegue la notificación real a Discord sin ensuciar el chat
+                const ghostMentions = [
+                    `<@${interaction.user.id}>`,
+                    ...notifiedRoleIds.map(rid => `<@&${rid}>`)
+                ].join(' ');
+                if (ghostMentions) {
+                    const pingMsg = await channel.send({ content: ghostMentions }).catch(() => null);
+                    if (pingMsg) pingMsg.delete().catch(() => {});
+                }
 
                 if (welcomeMsg) ticketData.welcomeMessageId = welcomeMsg.id;
 
@@ -1548,12 +1622,18 @@ function initTicketSystem(client) {
                 return;
             }
 
-            // G) BOTONES DEL VISOR INTERACTIVO DE LOGS (SIN DESCARGAR .TXT)
-            if (interaction.isButton() && interaction.customId.startsWith('tkt_log_view_')) {
+            // G) BOTONES DEL VISOR INTERACTIVO DE LOGS (EDITA EL PROPIO REGISTRO EN EL SITIO + AUTO-RETORNO 2 MIN)
+            if (interaction.isButton() && (
+                interaction.customId.startsWith('tkt_log_view_') ||
+                interaction.customId.startsWith('tkt_log_prev_') ||
+                interaction.customId.startsWith('tkt_log_next_')
+            )) {
                 if (!isGuildStaff(interaction.member)) {
                     return interaction.reply({ content: '⛔ Solo el equipo de **Staff** puede inspeccionar los logs de tickets.', ephemeral: true }).catch(() => {});
                 }
-                const rest = interaction.customId.replace('tkt_log_view_', '');
+                await interaction.deferUpdate().catch(() => {});
+
+                const rest = interaction.customId.replace(/^tkt_log_(view|prev|next)_/, '');
                 const parts = rest.split('_');
                 const logId = parts[0];
                 const page = parseInt(parts[1], 10) || 0;
@@ -1561,63 +1641,117 @@ function initTicketSystem(client) {
 
                 const logDoc = await fetchTicketLog(interaction.guild.id, logId);
                 if (!logDoc) {
-                    return interaction.reply({ content: '⚠️ No se encontró el historial de este ticket en la base de datos.', ephemeral: true }).catch(() => {});
+                    return interaction.followUp({ content: '⚠️ No se encontró el historial de este ticket en la base de datos.', ephemeral: true }).catch(() => {});
                 }
 
                 const payload = buildTranscriptViewerPayload(interaction.guild, logDoc, page, filterUserId);
+                await interaction.editReply({
+                    embeds: payload.embeds,
+                    components: payload.components
+                }).catch(e => console.error('❌ [TICKETS LOG VIEW]:', e.message));
 
-                // Si el botón viene del mensaje efímero del visor -> actualizar en el sitio; si viene del canal de logs -> responder efímero
-                if (interaction.message.flags?.has(64)) {
-                    return interaction.update(payload).catch(() => {});
-                }
-                return interaction.reply({ ...payload, ephemeral: true }).catch(() => {});
+                // Programar (o reiniciar) el auto-retorno a la tarjeta original tras 2 minutos
+                scheduleLogRevert(interaction.message, interaction.guild, logDoc);
+                return;
             }
 
-            // H) FILTRO POR PERSONA DENTRO DEL VISOR DE LOGS
+            // H) FILTRO POR PERSONA DENTRO DEL VISOR DE LOGS (EDITA EN EL SITIO + REINICIA TEMPORIZADOR 2 MIN)
             if (interaction.isStringSelectMenu() && interaction.customId.startsWith('tkt_log_filter_')) {
                 if (!isGuildStaff(interaction.member)) {
                     return interaction.reply({ content: '⛔ Solo el Staff puede filtrar logs.', ephemeral: true }).catch(() => {});
                 }
+                await interaction.deferUpdate().catch(() => {});
                 const logId = interaction.customId.replace('tkt_log_filter_', '');
                 const selectedUser = interaction.values[0] || 'all';
                 const logDoc = await fetchTicketLog(interaction.guild.id, logId);
                 if (!logDoc) {
-                    return interaction.reply({ content: '⚠️ No se encontró el historial de este ticket.', ephemeral: true }).catch(() => {});
+                    return interaction.followUp({ content: '⚠️ No se encontró el historial de este ticket.', ephemeral: true }).catch(() => {});
                 }
                 const payload = buildTranscriptViewerPayload(interaction.guild, logDoc, 0, selectedUser);
-                return interaction.update(payload).catch(() => {});
+                await interaction.editReply({
+                    embeds: payload.embeds,
+                    components: payload.components
+                }).catch(e => console.error('❌ [TICKETS LOG FILTER]:', e.message));
+
+                scheduleLogRevert(interaction.message, interaction.guild, logDoc);
+                return;
             }
 
-            // I) BOTÓN "VER FORMULARIO INICIAL" EN EL CANAL DE LOGS
+            // I) BOTÓN "VER FORMULARIO INICIAL" (EDITA EL PROPIO REGISTRO EN EL SITIO + AUTO-RETORNO 2 MIN)
             if (interaction.isButton() && interaction.customId.startsWith('tkt_log_form_')) {
                 if (!isGuildStaff(interaction.member)) {
                     return interaction.reply({ content: '⛔ Solo el equipo de **Staff** puede ver los formularios archivados.', ephemeral: true }).catch(() => {});
                 }
+                await interaction.deferUpdate().catch(() => {});
                 const logId = interaction.customId.replace('tkt_log_form_', '');
                 const logDoc = await fetchTicketLog(interaction.guild.id, logId);
                 if (!logDoc) {
-                    return interaction.reply({ content: '⚠️ No se encontró el formulario de este ticket.', ephemeral: true }).catch(() => {});
+                    return interaction.followUp({ content: '⚠️ No se encontró el formulario de este ticket.', ephemeral: true }).catch(() => {});
                 }
 
                 const v = guildManager.resolveGuildVisuals(interaction.guild.id);
-                const fieldsText = (logDoc.formFields || []).length > 0
-                    ? logDoc.formFields.map(f => `**${f.label}:**\n> ${(f.value || 'No especificado').replace(/\n/g, '\n> ')}`).join('\n\n')
-                    : '*Sin datos de formulario registrados.*';
+                const logFields = (logDoc.formFields || []).length > 0
+                    ? logDoc.formFields.map(f => ({
+                        name: `📌 ${(f.label || 'Dato').slice(0, 240)}`,
+                        value: `> ${(f.value || 'No especificado').slice(0, 980).replace(/\n/g, '\n> ')}`,
+                        inline: false
+                    }))
+                    : [{ name: '📝 Respuestas Enviadas', value: '> *Sin datos de formulario registrados.*', inline: false }];
 
                 const embed = new EmbedBuilder()
                     .setColor(v.color)
                     .setAuthor({ name: `FORMULARIO INICIAL • ${logDoc.ticketCode} | ${v.name}`, iconURL: v.logoUrl })
+                    .setThumbnail(v.logoUrl)
                     .setTitle(`📋 Formulario enviado por ${logDoc.openerTag}`)
                     .setDescription(
-                        `👤 **Usuario:** <@${logDoc.openerId}>\n` +
-                        `📂 **Categoría:** \`${logDoc.categoryLabel}\`\n\n` +
-                        `────────────────────────────\n\n` +
-                        fieldsText
+                        `> 👤 **Usuario:** <@${logDoc.openerId}>\n` +
+                        `> 📂 **Categoría:** \`${logDoc.categoryLabel}\`\n\u200B`
                     )
-                    .setFooter({ text: `${v.name} • Log ${logDoc.logId}` })
+                    .addFields(...logFields)
+                    .setFooter({ text: `${v.name} • Vuelve al registro automáticamente en 2 min` })
                     .setTimestamp();
 
-                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+                const backRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`tkt_log_view_${logDoc.logId}_0_all`)
+                        .setLabel('Ver Conversación')
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji('📖'),
+                    new ButtonBuilder()
+                        .setCustomId(`tkt_log_back_${logDoc.logId}`)
+                        .setLabel('Volver al Registro')
+                        .setStyle(ButtonStyle.Danger)
+                        .setEmoji('↩️')
+                );
+
+                await interaction.editReply({
+                    embeds: [embed],
+                    components: [backRow]
+                }).catch(e => console.error('❌ [TICKETS LOG FORM]:', e.message));
+
+                scheduleLogRevert(interaction.message, interaction.guild, logDoc);
+                return;
+            }
+
+            // J) BOTÓN "VOLVER AL REGISTRO" MANUAL (SIN ESPERAR LOS 2 MIN)
+            if (interaction.isButton() && interaction.customId.startsWith('tkt_log_back_')) {
+                if (!isGuildStaff(interaction.member)) {
+                    return interaction.reply({ content: '⛔ Solo el equipo de **Staff** puede usar este botón.', ephemeral: true }).catch(() => {});
+                }
+                await interaction.deferUpdate().catch(() => {});
+                clearLogRevertTimer(interaction.message?.id);
+
+                const logId = interaction.customId.replace('tkt_log_back_', '');
+                const logDoc = await fetchTicketLog(interaction.guild.id, logId);
+                if (!logDoc) {
+                    return interaction.followUp({ content: '⚠️ No se encontró el registro original.', ephemeral: true }).catch(() => {});
+                }
+
+                const summary = buildTicketLogSummaryPayload(interaction.guild, logDoc);
+                return interaction.editReply({
+                    embeds: summary.embeds,
+                    components: summary.components
+                }).catch(e => console.error('❌ [TICKETS LOG BACK]:', e.message));
             }
         } catch (err) {
             console.error('⚠️ [TICKETS interactionCreate Error]:', err.message);

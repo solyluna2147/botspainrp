@@ -77,10 +77,32 @@ let cleanConsoleInstalled = false;
 const rawConsoleLog = console.log.bind(console);
 const rawConsoleWarn = console.warn.bind(console);
 let lastWlSyncLogAt = 0;
+let bootSummaryPrinted = false;
 const WL_SYNC_LOG_INTERVAL_MS = 60 * 60 * 1000; // 1 hora
 
 function logGuild(guildOrId, emoji, msg) {
     rawConsoleLog(`${emoji || '📌'} [${getServerTag(guildOrId)}] ${msg}`);
+}
+
+function printCompactReadyBanner() {
+    if (bootSummaryPrinted) return;
+    bootSummaryPrinted = true;
+
+    const botTag = discordClientRef?.user?.tag || 'VANTEX';
+    const guildNames = discordClientRef?.guilds?.cache
+        ? [...discordClientRef.guilds.cache.values()].map(g => getServerTag(g))
+        : [];
+    const srvLine = guildNames.length > 0
+        ? `🏠 [VANTEX] Servidores (${guildNames.length}): ${guildNames.join(' · ')}`
+        : `🏠 [VANTEX] Servidores sincronizados`;
+
+    rawConsoleLog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    rawConsoleLog('🍃 [VANTEX] Base de datos Atlas conectada y sincronizada');
+    rawConsoleLog('🌐 [VANTEX] Panel Web 24/7 operativo');
+    rawConsoleLog('📦 [VANTEX] Sistemas activos: Tickets · Verificación · Consultas IA · Locuciones · Rangos · Dashboards · DM');
+    rawConsoleLog(srvLine);
+    rawConsoleLog(`🟢 [VANTEX] Conectado como ${botTag} — ¡LISTO PARA USAR! 🚀`);
+    rawConsoleLog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 }
 
 function installCleanConsole() {
@@ -100,12 +122,34 @@ function installCleanConsole() {
         return origEmitWarning(warning, ...args);
     };
 
-    const noisyPatterns = [
+    // Patrones ruidosos de arranque/detalle que se compactan en el resumen limpio de VANTEX
+    const suppressedPatterns = [
         /\[DISCORD DEBUG\]/i,
         /^\s*(URL:\s*wss:\/\/|compression:|Remaining:|shard id:|shard count:|Recommended Shards:|intents:|Total:\s*\d+)\s*$/i,
-        /\[DISCORD\]\s*(Longitud del Token|Intento de conexi|Promesa client\.login)/i,
-        /^={10,}$/,
-        /\[SOPORTE ALERT\]\s*Audio .* cargado/i
+        /\[DISCORD\]\s*(Conectando a la API|Longitud del Token|Intento de conexi|Promesa client\.login)/i,
+        /\[DISCORD SHARD\]/i,
+        /^={8,}$/,
+        /VALLECAS RP\s*-\s*SISTEMA DE WHITELIST/i,
+        /\[(ESTADO|CREADOR|SOLICITUDES|APROBADOS|DENEGADOS|ENTREVISTAS|FIVEM|LOGO CARGADO)\]/i,
+        /\[MONGODB ATLAS\]/i,
+        /\[WEB\]\s*Servidor web/i,
+        /\[DASHBOARD WEB\]/i,
+        /\[STREAMERS\]\s*Sincronizados/i,
+        /\[IA WHITELIST\]\s*Aprendizaje sincronizado/i,
+        /\[MULTI-SERVER\]\s*(Base de datos dedicada|Sincronizados \d+ perfiles|Servidor principal|Perfil de Vallecas RP)/i,
+        /\[MULTI-SERVER SYNC\]/i,
+        /\[SOPORTE ALERT\]\s*(Sistema robusto|Minutos de espera|Estado de la locuci|Audio .* cargado)/i,
+        /\[ASISTENTE TICKETS\]\s*(Iniciando sistema|Blindado con IDs)/i,
+        /\[CONSULTAS AI\]\s*(Sistema independiente cargado|Cargadas \d+)/i,
+        /\[STAFF RANKS\]\s*(Inicializando detector|Sistema de detecci)/i,
+        /\[DASHBOARDS\]\s*Sistema de paneles/i,
+        /\[VERIFICACIÓN\]\s*Módulo independiente/i,
+        /\[TICKETS AVANZADOS\]\s*Módulo independiente/i,
+        /\[DM ASSISTANT\]\s*Asistente informativo/i,
+        /\[AUTO-CALIBRACIÓN/i,
+        /\[AUTO-SYNC TOPS\]/i,
+        /\[SYNC VALORACIONES\]/i,
+        /\[RANKING AUTO-SYNC\]/i
     ];
 
     console.log = (...args) => {
@@ -116,10 +160,16 @@ function installCleanConsole() {
         const trimmed = first.trim();
         if (!trimmed) return;
 
-        // 1. Filtrar ruido técnico innecesario de arranque / WebSocket
-        if (noisyPatterns.some(rx => rx.test(trimmed))) return;
+        // Cuando el bot termina de arrancar, imprimir el resumen compacto "¡LISTO PARA USAR!"
+        if (trimmed.includes('[SISTEMA LISTO]')) {
+            setTimeout(() => printCompactReadyBanner(), 1500);
+            return;
+        }
 
-        // 2. Limitar el log repetitivo de sincronización WL a 1 vez por hora (el proceso sigue funcionando igual)
+        // Filtrar todo el ruido técnico de arranque y líneas duplicadas
+        if (suppressedPatterns.some(rx => rx.test(trimmed))) return;
+
+        // Limitar el log repetitivo de sincronización WL a 1 vez por hora
         if (trimmed.includes('[SINCRONIZACIÓN WL]')) {
             const now = Date.now();
             if (now - lastWlSyncLogAt < WL_SYNC_LOG_INTERVAL_MS) return;
@@ -127,24 +177,14 @@ function installCleanConsole() {
             return rawConsoleLog('🔄 [VALLECAS RP] Revisión periódica de solicitudes Whitelist activa (próximo aviso en 1h).');
         }
 
-        // 3. Formatear logs de [MULTI-SERVER <guildId>] -> ⚙️ [NOMBRE SERVIDOR]
+        // Formatear logs de [MULTI-SERVER <guildId>] -> ⚙️ [NOMBRE SERVIDOR]
         const msMatch = trimmed.match(/\[MULTI-SERVER\s+(\d{17,20})\]\s*(.+)/);
         if (msMatch) {
             const [, gId, rest] = msMatch;
             return rawConsoleLog(`⚙️ [${getServerTag(gId)}] ${rest}`);
         }
 
-        // 4. Etiquetar logs propios de Vallecas RP (Whitelist, Auto-Calibración, Sync Valoraciones)
-        if (
-            trimmed.includes('[AUTO-CALIBRACIÓN') ||
-            trimmed.includes('[SYNC VALORACIONES]') ||
-            trimmed.includes('[RANKING AUTO-SYNC]')
-        ) {
-            const cleanRest = trimmed.replace(/^[^\[]*\[[^\]]+\]\s*/, '');
-            return rawConsoleLog(`🛡️ [VALLECAS RP] ${cleanRest}`);
-        }
-
-        // 5. Limpiar IDs numéricos largos en [COMANDO RECIBIDO]
+        // Limpiar IDs numéricos largos en [COMANDO RECIBIDO]
         if (trimmed.includes('[COMANDO RECIBIDO]')) {
             const cleaned = trimmed.replace(/\s*\(\d{17,20}\)/g, '');
             return rawConsoleLog(cleaned);
@@ -186,10 +226,19 @@ const BANNER_TYPES = {
     postulaciones: { key: 'BANNER_PLANTILLAS_URL',   files: ['panel_postulaciones.png', 'postulaciones.png', 'plantillas.png', 'panel_plantillas.png'] },
     bienvenida:    { key: 'BANNER_BIENVENIDA_URL',   files: ['banner_bienvenida.png', 'bienvenida.png', 'bienvenidas.png', 'welcome.png'] },
     bienvenidas:   { key: 'BANNER_BIENVENIDA_URL',   files: ['banner_bienvenida.png', 'bienvenida.png', 'bienvenidas.png', 'welcome.png'] },
-    consultas:     { key: 'BANNER_CONSULTAS_URL',    files: ['banner_consultas.png', 'consultas.png', 'panel_consultas.png', 'consulta.png'] },
-    verificacion:  { key: 'BANNER_VERIFICACION_URL', files: ['verificacion.png', 'banner_verificacion.png', 'panel_verificacion.png', 'verify.png'] },
-    tickets:       { key: 'BANNER_TICKETS_URL',      files: ['tickets.png', 'ticket.png', 'panel_tickets.png', 'banner_tickets.png', 'soporte.png'] },
-    aprobado:      { key: 'BANNER_APROBADO_URL',     files: ['aprobado.png', 'aprobada.png', 'wl_aprobada.png'] },
+    consultas:             { key: 'BANNER_CONSULTAS_URL',          files: ['banner_consultas.png', 'consultas.png', 'panel_consultas.png', 'consulta.png'] },
+    verificacion:          { key: 'BANNER_VERIFICACION_URL',       files: ['verificacion.png', 'banner_verificacion.png', 'panel_verificacion.png', 'verify.png'] },
+    tickets:               { key: 'BANNER_TICKETS_URL',            files: ['tickets.png', 'ticket.png', 'panel_tickets.png', 'banner_tickets.png', 'soporte.png'] },
+    ticket_soporte:        { key: 'BANNER_TKT_SOPORTE_URL',        files: ['ticket_soporte_y_dudas.png', 'ticket_soporte.png', 'soporte.png', 'soporte_dudas.png', 'tickets_soporte.png', 'tickets.png'] },
+    ticket_reportar:       { key: 'BANNER_TKT_REPORTAR_URL',       files: ['ticket_reportes.png', 'ticket_reportar.png', 'ticket_reporte.png', 'reportar.png', 'reporte.png', 'reportar_jugador.png', 'tickets.png'] },
+    ticket_donaciones:     { key: 'BANNER_TKT_DONACIONES_URL',     files: ['ticket_donaciones.png', 'ticket_donacion.png', 'donaciones.png', 'donacion.png', 'tickets.png'] },
+    ticket_recompensas:    { key: 'BANNER_TKT_RECOMPENSAS_URL',    files: ['ticket_recompensas.png', 'ticket_recompensa.png', 'recompensas.png', 'recompensa.png', 'boost.png', 'tickets.png'] },
+    ticket_ck:             { key: 'BANNER_TKT_CK_URL',             files: ['ticket_ck.png', 'ticket_cks.png', 'ck.png', 'cks.png', 'solicitud_ck.png', 'tickets.png'] },
+    ticket_organizaciones: { key: 'BANNER_TKT_ORGANIZACIONES_URL', files: ['ticket_organizaciones.png', 'ticket_organizacion.png', 'organizaciones.png', 'organizacion.png', 'bandas.png', 'tickets.png'] },
+    ticket_apelacion:      { key: 'BANNER_TKT_APELACION_URL',      files: ['ticket_apelacion.png', 'ticket_apelaciones.png', 'ticket_apelar.png', 'apelacion.png', 'apelaciones.png', 'apelar.png', 'tickets.png'] },
+    ticket_directiva:      { key: 'BANNER_TKT_DIRECTIVA_URL',      files: ['ticket_directiva.png', 'directiva.png', 'solicitud_directiva.png', 'tickets.png'] },
+    ticket_postulacion:    { key: 'BANNER_TKT_POSTULACION_URL',    files: ['ticket_postulacion.png', 'ticket_postulaciones.png', 'postulacion_staff.png', 'postulaciones_staff.png', 'ticket_staff.png', 'tickets.png'] },
+    aprobado:              { key: 'BANNER_APROBADO_URL',           files: ['aprobado.png', 'aprobada.png', 'wl_aprobada.png'] },
     denegado:      { key: 'BANNER_DENEGADO_URL',     files: ['denegado.png', 'denegada.png', 'wl_denegada.png'] }
 };
 

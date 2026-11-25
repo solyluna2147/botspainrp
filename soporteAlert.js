@@ -389,7 +389,6 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
 
             // Timeout garantizado: el audio suena íntegro durante toda su duración + 1.2s de cortesía
             const timeout = setTimeout(() => {
-                console.log(`⏱️ [SOPORTE ALERT] Audio ${label} reproducido al 100% (${durationMs}ms). Desconectando limpiamente.`);
                 finish();
             }, durationMs + 1200);
 
@@ -413,7 +412,7 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
         });
 
         await forceCleanVoice(channel.guild);
-        console.log(`✅ [SOPORTE ALERT] ${label} reproducido con éxito en ${channel.name}.`);
+        guildManager.logGuild(channel.guild, '🎙️', `${label} reproducido en ${channel.name}`);
         return true;
     } catch (err) {
         console.error(`❌ [SOPORTE ALERT] Error conectando/reproduciendo (${label}):`, err.message);
@@ -627,7 +626,7 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, targetCha
             files: files
         });
 
-        console.log(`📋 [SOPORTE ALERT] Informe disciplinario publicado con éxito en el canal de sanciones.`);
+        guildManager.logGuild(guild, '📋', 'Informe disciplinario de soporte publicado');
 
         // Mover a los staffs al canal de STAFF AFK ÚNICAMENTE si ya se han emitido los 3 avisos completos
         // Y SOLO a los staffs presentes en el canal concreto donde sonó el 3er aviso
@@ -639,7 +638,7 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, targetCha
                         // Comprobación de canal: NUNCA mover a un staff que esté en otro canal (como soporte atendiendo)
                         if (vc.afkId && (!targetChannelId || staffMember.voice.channelId === targetChannelId)) {
                             await staffMember.voice.setChannel(vc.afkId, 'Movido a STAFF AFK tras cumplirse los 3 avisos de soporte');
-                            console.log(`🔀 [SOPORTE ALERT] Staff ${staffMember.user ? staffMember.user.tag : staffMember.id} movido a STAFF AFK tras los 3 avisos en su canal.`);
+                            guildManager.logGuild(guild, '🔀', `Staff ${staffMember.user ? staffMember.user.username : staffMember.id} movido a STAFF AFK tras 3 avisos`);
                         }
                     }
                 } catch (moveErr) {
