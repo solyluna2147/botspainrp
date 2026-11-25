@@ -89,11 +89,9 @@ async function getGuildNormativaPages(guildId) {
 
     const pages = [];
     try {
-        // 1. Cargar desde la DB dedicada de ESTE servidor (ej: vilacityrp_db -> normativadocs)
+        // 1. Cargar TODAS las normativas desde la DB dedicada de ESTE servidor (ej: vilacityrp_db -> normativadocs)
         const GuildNormativaModel = guildManager.getGuildModel(keyId, 'NormativaDoc', normativaDocSchema);
-        const docs = await GuildNormativaModel.find({
-            key: { $in: ['normativa_general', 'normativa_ilegales', `guild_${keyId}_general`, `guild_${keyId}_ilegales`, `guild_${keyId}_normativa`] }
-        }).lean();
+        const docs = await GuildNormativaModel.find({}).lean();
         for (const d of docs) {
             if (Array.isArray(d.pages) && d.pages.length > 0) {
                 pages.push(...d.pages.map(p => p.text).filter(Boolean));
@@ -878,6 +876,13 @@ function initConsultasAI(client) {
     // Comprobar una vez al arrancar por si el reinicio ocurrió mientras el bot estaba reiniciando + programar 00:00:05 UTC
     const startDailyResetScheduler = () => {
         setTimeout(async () => {
+            // Precargar la caché de normativas de todos los servidores secundarios para que !panel-tokens muestre las secciones reales al instante
+            for (const guild of client.guilds.cache.values()) {
+                if (!guildManager.isPrimaryGuild(guild.id)) {
+                    guildNormativaCache.delete(String(guild.id));
+                    await getGuildNormativaPages(guild.id).catch(() => {});
+                }
+            }
             await runDailyTokensPanelReset('Verificación al arrancar');
             // Limpiar cualquier adjunto huérfano (logo gigante) en paneles existentes al arrancar
             await updateTokensPanel(client).catch(() => {});
