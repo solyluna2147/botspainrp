@@ -4137,7 +4137,7 @@ function buildStaffRatingCardEmbed({ userMention, userAvatar, staffMention, staf
         badgeText = '🟡 ATENCIÓN CORRECTA';
     }
 
-    const v = guildManager.resolveGuildVisuals(guildId, 'valoraciones');
+    const v = guildManager.resolveGuildVisuals(guildId, 'valoracion_card');
     const files = [...v.files];
 
     const embed = new EmbedBuilder()

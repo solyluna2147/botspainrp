@@ -53,7 +53,8 @@ function getGuildModel(guildId, modelName, schema) {
 }
 
 const guildCache = new Map(); // guildId -> config object
-let primaryGuildId = process.env.PRIMARY_GUILD_ID || null;
+const DEFAULT_PRIMARY_GUILD_ID = '1517530847937564815'; // 𝐕𝐚𝐥𝐥𝐞𝐜𝐚𝐬 𝐑𝐏 (servidor principal oficial)
+let primaryGuildId = process.env.PRIMARY_GUILD_ID || DEFAULT_PRIMARY_GUILD_ID;
 let primaryConfigGetter = () => ({});
 let primaryConfigUpdater = async () => {};
 let discordClientRef = null;
@@ -220,6 +221,7 @@ const BANNER_TYPES = {
     eventos:       { key: 'BANNER_EVENTOS_URL',      files: ['panel_eventos.png', 'eventos.png', 'evento.png', 'banner_eventos.png'] },
     valoraciones:  { key: 'BANNER_VALORACIONES_URL', files: ['panel_valoracion.png', 'valoracion.png', 'valoraciones.png', 'banner_valoraciones.png'] },
     valoracion:    { key: 'BANNER_VALORACIONES_URL', files: ['panel_valoracion.png', 'valoracion.png', 'valoraciones.png', 'banner_valoraciones.png'] },
+    valoracion_card: { key: 'BANNER_VALORACION_CARD_URL', files: ['valoracion_card.png', 'panel_valoracion.png', 'valoracion.png', 'valoraciones.png'] },
     tops:          { key: 'BANNER_TOPS_URL',         files: ['panel_tops.png', 'tops.png', 'top.png', 'topstaff.png'] },
     sanciones:     { key: 'BANNER_SANCIONES_URL',    files: ['panel_sanciones.png', 'sanciones.png', 'sancion.png', 'banner_sanciones.png'] },
     plantillas:    { key: 'BANNER_PLANTILLAS_URL',   files: ['panel_postulaciones.png', 'panel_postulacion.png', 'panel_plantillas.png', 'panel_plantilla.png', 'postulaciones.png', 'postulacion.png', 'plantillas.png', 'plantilla.png', 'banner_plantillas.png', 'banner_postulaciones.png', 'sistema_de_plantillas.png'] },
@@ -287,8 +289,17 @@ function initGuildManager({ client, getPrimaryConfig, updatePrimaryConfig }) {
 
 function detectPrimaryGuildId() {
     if (primaryGuildId) return primaryGuildId;
-    if (!discordClientRef || !discordClientRef.guilds) return null;
+    if (!discordClientRef || !discordClientRef.guilds) return DEFAULT_PRIMARY_GUILD_ID;
 
+    // 1. Prioridad absoluta al servidor oficial de Vallecas RP (1517530847937564815)
+    if (discordClientRef.guilds.cache.has(DEFAULT_PRIMARY_GUILD_ID)) {
+        primaryGuildId = DEFAULT_PRIMARY_GUILD_ID;
+        const g = discordClientRef.guilds.cache.get(DEFAULT_PRIMARY_GUILD_ID);
+        console.log(`🏠 [MULTI-SERVER] Servidor principal (Vallecas RP) identificado: ${g?.name || 'VALLECAS RP'} (${primaryGuildId})`);
+        return primaryGuildId;
+    }
+
+    // 2. Respaldo por canales conocidos
     for (const guild of discordClientRef.guilds.cache.values()) {
         for (const chId of PRIMARY_HINT_CHANNELS) {
             if (guild.channels.cache.has(chId)) {
@@ -298,11 +309,12 @@ function detectPrimaryGuildId() {
             }
         }
     }
-    return null;
+    return DEFAULT_PRIMARY_GUILD_ID;
 }
 
 function isPrimaryGuild(guildId) {
     if (!guildId) return true;
+    if (String(guildId) === DEFAULT_PRIMARY_GUILD_ID) return true;
     const pId = detectPrimaryGuildId();
     if (!pId) return false;
     return String(guildId) === String(pId);
