@@ -173,6 +173,20 @@ async function loadPanelRefs() {
     } catch (e) { }
 }
 
+// Resuelve un logo HTTPS (evita que Discord muestre logo.png gigante encima del embed al editar paneles)
+function resolveDashboardLogo(client, guildId, guild = null) {
+    const v = guildManager.resolveGuildVisuals(guildId);
+    if (v.config?.LOGO_URL && /^https?:\/\//i.test(v.config.LOGO_URL)) {
+        return { v, logoUrl: v.config.LOGO_URL.trim(), files: [] };
+    }
+    const g = guild || (guildId && client?.guilds?.cache?.get(guildId)) || null;
+    const gIcon = g?.iconURL?.({ size: 256, extension: 'png' });
+    if (gIcon) {
+        return { v, logoUrl: gIcon, files: [] };
+    }
+    return { v, logoUrl: v.logoUrl || undefined, files: v.files || [] };
+}
+
 // ==========================================
 // 1. DASHBOARD GENERAL DE SERVICIOS (!panel-servicios)
 // ==========================================
@@ -226,8 +240,7 @@ async function buildServiciosEmbed(client, guildId = null) {
     const healthBar = makeProgressBar(okCount, services.length, 12, 'health');
     const healthPct = Math.round((okCount / services.length) * 100);
 
-    const vSrv = guildManager.resolveGuildVisuals(guildId);
-    const srvLogoUrl = vSrv.logoUrl || logoUrl;
+    const { v: vSrv, logoUrl: srvLogoUrl, files: srvFiles } = resolveDashboardLogo(client, guildId);
     const embed = new EmbedBuilder()
         .setColor(vSrv.color)
         .setAuthor({
@@ -258,7 +271,7 @@ async function buildServiciosEmbed(client, guildId = null) {
         })
         .setTimestamp();
 
-    return { embed, files: vSrv.files, logoAttachment: vSrv.files[0] || null };
+    return { embed, files: srvFiles, logoAttachment: srvFiles[0] || null };
 }
 
 // ==========================================
@@ -350,8 +363,7 @@ async function buildLocucionEmbed(client, guild, forceQuota = false) {
             `> 🔊 Usados: \`${quota.used.toLocaleString('es-ES')}\` / \`${quota.limit.toLocaleString('es-ES')}\` car. • Quedan: \`${rem.toLocaleString('es-ES')}\``;
     }
 
-    const vLoc = guildManager.resolveGuildVisuals(guild?.id);
-    const locLogoUrl = vLoc.logoUrl || logoUrl;
+    const { v: vLoc, logoUrl: locLogoUrl, files: locFiles } = resolveDashboardLogo(client, guild?.id, guild);
     const embed = new EmbedBuilder()
         .setColor(vLoc.color)
         .setAuthor({
@@ -379,7 +391,7 @@ async function buildLocucionEmbed(client, guild, forceQuota = false) {
         })
         .setTimestamp();
 
-    return { embed, files: vLoc.files, logoAttachment: vLoc.files[0] || null };
+    return { embed, files: locFiles, logoAttachment: locFiles[0] || null };
 }
 
 // ==========================================
@@ -460,8 +472,7 @@ async function buildTicketsEmbed(guild) {
         breakdownLines = lines.join('\n');
     }
 
-    const vTk = guildManager.resolveGuildVisuals(gId);
-    const tkLogoUrl = vTk.logoUrl || logoUrl;
+    const { v: vTk, logoUrl: tkLogoUrl, files: tkFiles } = resolveDashboardLogo(null, gId, guild);
 
     const historyLines = isPrimary
         ? (
@@ -499,7 +510,7 @@ async function buildTicketsEmbed(guild) {
         })
         .setTimestamp();
 
-    return { embed, files: vTk.files, logoAttachment: vTk.files[0] || null };
+    return { embed, files: tkFiles, logoAttachment: tkFiles[0] || null };
 }
 
 function buildRefreshRow(customId) {
@@ -533,10 +544,15 @@ async function editPanelByRef(client, type, ref) {
             btnId = 'btn_dash_refresh_tickets';
         }
 
-        await msg.edit({
+        const usesAtt = JSON.stringify(built.embed.toJSON()).includes('attachment://');
+        const editPayload = {
             embeds: [built.embed],
             components: [buildRefreshRow(btnId)]
-        }).catch(() => {});
+        };
+        if (!usesAtt) {
+            editPayload.attachments = [];
+        }
+        await msg.edit(editPayload).catch(() => {});
     } catch (e) { }
 }
 
@@ -737,10 +753,15 @@ module.exports = function initStatusDashboards(client) {
                 return;
             }
 
-            await interaction.update({
+            const usesAtt = JSON.stringify(built.embed.toJSON()).includes('attachment://');
+            const updatePayload = {
                 embeds: [built.embed],
                 components: [buildRefreshRow(id)]
-            }).catch(() => {});
+            };
+            if (!usesAtt) {
+                updatePayload.attachments = [];
+            }
+            await interaction.update(updatePayload).catch(() => {});
         } catch (err) {
             console.error('⚠️ [DASHBOARDS interactionCreate Error]:', err.message);
         }

@@ -216,10 +216,22 @@ function makeProgressBar(used, total, size = 10) {
     return fillChar.repeat(filled) + '⬛'.repeat(size - filled);
 }
 
-function buildTokensPanelEmbed(guildId = null) {
-    ensureTodayTokenStats();
+function resolveTokensPanelLogo(guildId, client = null) {
     const vTok = guildManager.resolveGuildVisuals(guildId);
-    const logoUrl = vTok.logoUrl || undefined;
+    if (vTok.config?.LOGO_URL && /^https?:\/\//i.test(vTok.config.LOGO_URL)) {
+        return { vTok, logoUrl: vTok.config.LOGO_URL.trim(), files: [] };
+    }
+    const guild = (guildId && client?.guilds?.cache?.get(guildId)) || null;
+    const guildIcon = guild?.iconURL?.({ size: 256, extension: 'png' });
+    if (guildIcon) {
+        return { vTok, logoUrl: guildIcon, files: [] };
+    }
+    return { vTok, logoUrl: vTok.logoUrl || undefined, files: vTok.files || [] };
+}
+
+function buildTokensPanelEmbed(guildId = null, client = null) {
+    ensureTodayTokenStats();
+    const { vTok, logoUrl } = resolveTokensPanelLogo(guildId, client);
 
     const apiKeys = getConfiguredApiKeys();
     const keyCount = Math.max(1, apiKeys.length);
@@ -354,11 +366,17 @@ async function updateTokensPanel(client) {
             const msg = await ch.messages.fetch(item.ref.messageId).catch(() => null);
             if (!msg) continue;
 
-            const embed = buildTokensPanelEmbed(item.guildId || ch.guild?.id);
-            await msg.edit({
+            const targetGId = item.guildId || ch.guild?.id;
+            const embed = buildTokensPanelEmbed(targetGId, client);
+            const usesAtt = JSON.stringify(embed.toJSON()).includes('attachment://');
+            const editPayload = {
                 embeds: [embed],
                 components: [buildTokensPanelRow()]
-            }).catch(() => {});
+            };
+            if (!usesAtt) {
+                editPayload.attachments = [];
+            }
+            await msg.edit(editPayload).catch(() => {});
         } catch (e) { }
     }
 }
@@ -858,7 +876,11 @@ function initConsultasAI(client) {
 
     // Comprobar una vez al arrancar por si el reinicio ocurrió mientras el bot estaba reiniciando + programar 00:00:05 UTC
     const startDailyResetScheduler = () => {
-        setTimeout(() => runDailyTokensPanelReset('Verificación al arrancar'), 8000);
+        setTimeout(async () => {
+            await runDailyTokensPanelReset('Verificación al arrancar');
+            // Limpiar cualquier adjunto huérfano (logo gigante) en paneles existentes al arrancar
+            await updateTokensPanel(client).catch(() => {});
+        }, 8000);
         scheduleNextDailyTokensReset();
     };
     if (client.isReady()) {
@@ -1060,11 +1082,11 @@ function initConsultasAI(client) {
                 await message.delete().catch(() => {});
 
                 const gId = message.guild?.id;
-                const vTokPanel = guildManager.resolveGuildVisuals(gId);
-                const embed = buildTokensPanelEmbed(gId);
+                const { files: tokFiles } = resolveTokensPanelLogo(gId, client);
+                const embed = buildTokensPanelEmbed(gId, client);
                 const sentPanel = await message.channel.send({
                     embeds: [embed],
-                    files: vTokPanel.files,
+                    files: tokFiles,
                     components: [buildTokensPanelRow()]
                 }).catch(e => {
                     console.error('Error enviando panel de tokens:', e);
@@ -1366,11 +1388,16 @@ function initConsultasAI(client) {
                 if (!isStaff) {
                     return interaction.reply({ content: '⛔ Solo el Staff puede actualizar este panel.', ephemeral: true });
                 }
-                const embed = buildTokensPanelEmbed(interaction.guild?.id);
-                await interaction.update({
+                const embed = buildTokensPanelEmbed(interaction.guild?.id, client);
+                const usesAtt = JSON.stringify(embed.toJSON()).includes('attachment://');
+                const updatePayload = {
                     embeds: [embed],
                     components: [buildTokensPanelRow()]
-                }).catch(() => {});
+                };
+                if (!usesAtt) {
+                    updatePayload.attachments = [];
+                }
+                await interaction.update(updatePayload).catch(() => {});
                 return;
             }
 
