@@ -99,6 +99,11 @@ function getGuildState(guildId) {
     if (!guildVoiceStates.has(key)) {
         guildVoiceStates.set(key, {
             isPlayingVoice: false,
+            playbackToken: 0,
+            activeAbortFn: null,
+            lastDisconnectAt: 0,
+            welcomePlayedForSession: false,
+            sessionStartedAt: 0,
             userJoinTimes: new Map(), // userId -> { joinedAt, userTag, memberName }
             staffAlertCount: 0,
             sanctionReportSent: false,
@@ -258,43 +263,69 @@ function isMemberStaff(member) {
 }
 
 /**
- * Desconexión forzada y limpieza total de conexiones de voz fantasmas (aislado por servidor)
+ * Desconexión forzada y limpieza total de conexiones de voz fantasmas (aislado por servidor y protegido por token)
  */
-async function forceCleanVoice(guild) {
+async function forceCleanVoice(guild, expectedToken = null) {
     const state = getGuildState(guild?.id);
+    // Si ya arrancó una sesión de voz más reciente, JAMÁS destruir la conexión nueva
+    if (expectedToken !== null && state.playbackToken !== expectedToken) return;
+
     try {
         if (state.activePlayer) {
             try { state.activePlayer.stop(true); } catch (e) { }
             state.activePlayer = null;
         }
         if (state.activeConnection) {
-            try { state.activeConnection.destroy(); } catch (e) { }
+            try {
+                if (state.activeConnection.state.status !== VoiceConnectionStatus.Destroyed) {
+                    state.activeConnection.destroy();
+                }
+            } catch (e) { }
             state.activeConnection = null;
         }
         if (guild) {
             const existing = getVoiceConnection(guild.id);
             if (existing) {
-                try { existing.destroy(); } catch (e) { }
+                try {
+                    if (existing.state.status !== VoiceConnectionStatus.Destroyed) {
+                        existing.destroy();
+                    }
+                } catch (e) { }
             }
+            if (expectedToken !== null && state.playbackToken !== expectedToken) return;
             if (guild.members.me && guild.members.me.voice && guild.members.me.voice.channelId) {
                 await guild.members.me.voice.disconnect().catch(() => {});
             }
         }
     } catch (e) { }
-    state.isPlayingVoice = false;
+
+    if (expectedToken === null || state.playbackToken === expectedToken) {
+        state.isPlayingVoice = false;
+        state.lastDisconnectAt = Date.now();
+    }
 }
 
 /**
- * Corta inmediatamente cualquier reproducción o conexión activa en este servidor
+ * Corta inmediatamente cualquier reproducción o conexión activa en este servidor sin dejar timers zombis
  */
 function abortPlaybackImmediately(guild, reason = 'Desconexión forzada') {
     const state = getGuildState(guild?.id);
+    const abortToken = ++state.playbackToken; // Invalida al instante cualquier sesión anterior en vuelo
     state.stopCurrentTour = true;
+
     if (state.userWelcomeDebounceTimer) {
         clearTimeout(state.userWelcomeDebounceTimer);
         state.userWelcomeDebounceTimer = null;
     }
-    forceCleanVoice(guild).catch(() => {});
+
+    // Resolver inmediatamente cualquier promesa de reproducción en curso (elimina timeouts colgados)
+    if (typeof state.activeAbortFn === 'function') {
+        const fn = state.activeAbortFn;
+        state.activeAbortFn = null;
+        try { fn(); } catch (_) { }
+    }
+
+    forceCleanVoice(guild, abortToken).catch(() => {});
     guildManager.logGuild(guild, '⏹️', reason);
 }
 
@@ -345,7 +376,7 @@ function getAudioDurationMs(buffer) {
 }
 
 /**
- * Reproduce un buffer de audio en un canal y se desconecta de inmediato (aislado por servidor)
+ * Reproduce un buffer de audio en un canal y se desconecta de inmediato (blindado con token único por sesión)
  */
 async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
     const guild = channel?.guild;
@@ -359,16 +390,46 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
         return false;
     }
 
+    const myToken = ++state.playbackToken;
     state.isPlayingVoice = true;
+    state.stopCurrentTour = false;
     let connection = null;
+    let tempAudioFile = null;
+
+    const cleanupTempFile = () => {
+        if (tempAudioFile) {
+            try {
+                if (fs.existsSync(tempAudioFile)) fs.unlinkSync(tempAudioFile);
+            } catch (e) { }
+            tempAudioFile = null;
+        }
+    };
 
     try {
-        state.stopCurrentTour = false; // Resetear cualquier aborto anterior
+        // Respiro mínimo de 700ms tras una desconexión reciente para que Discord Voice no rechace/corte la reconexión
+        const sinceDisconnect = Date.now() - (state.lastDisconnectAt || 0);
+        if (sinceDisconnect < 700) {
+            await new Promise(res => setTimeout(res, 700 - sinceDisconnect));
+        }
+
+        // Si mientras esperábamos se abortó o alguien salió y dejó vacía la espera, salir limpiamente
+        if (state.playbackToken !== myToken || state.stopCurrentTour) {
+            return false;
+        }
+        if (channel.members.filter(m => !m.user.bot).size === 0) {
+            return false;
+        }
 
         // Asegurar que no haya conexiones previas colgadas en este servidor
         const oldConn = getVoiceConnection(guild.id);
         if (oldConn) {
-            try { oldConn.destroy(); } catch (e) { }
+            try {
+                if (oldConn.state.status !== VoiceConnectionStatus.Destroyed) {
+                    oldConn.destroy();
+                }
+            } catch (e) { }
+            await new Promise(res => setTimeout(res, 250));
+            if (state.playbackToken !== myToken || state.stopCurrentTour) return false;
         }
 
         connection = joinVoiceChannel({
@@ -384,20 +445,20 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
         // Esperar conexión Ready con timeout prudente
         await entersState(connection, VoiceConnectionStatus.Ready, 10000);
 
-        if (state.stopCurrentTour) {
-            await forceCleanVoice(guild);
+        if (state.playbackToken !== myToken || state.stopCurrentTour) {
+            await forceCleanVoice(guild, myToken);
             return false;
         }
 
-        // Pequeño retardo para asegurar handshake WebRTC de Discord
-        await new Promise(res => setTimeout(res, 400));
+        // Pequeño retardo para asegurar handshake WebRTC de Discord (audio limpio desde el segundo 0)
+        await new Promise(res => setTimeout(res, 450));
 
-        if (state.stopCurrentTour) {
-            await forceCleanVoice(guild);
+        if (state.playbackToken !== myToken || state.stopCurrentTour) {
+            await forceCleanVoice(guild, myToken);
             return false;
         }
 
-        const tempAudioFile = path.join(__dirname, `locu_temp_${Date.now()}_${Math.floor(Math.random() * 1000)}.mp3`);
+        tempAudioFile = path.join(__dirname, `locu_temp_${Date.now()}_${Math.floor(Math.random() * 1000)}.mp3`);
         fs.writeFileSync(tempAudioFile, audioBuffer);
 
         const durationMs = getAudioDurationMs(audioBuffer);
@@ -417,20 +478,20 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
         await new Promise((resolve) => {
             let hasStartedPlaying = false;
             let resolved = false;
-
-            const cleanupTemp = () => {
-                try {
-                    if (fs.existsSync(tempAudioFile)) fs.unlinkSync(tempAudioFile);
-                } catch (e) { }
-            };
+            let idleFinishTimer = null;
 
             const finish = () => {
                 if (resolved) return;
                 resolved = true;
                 clearTimeout(timeout);
-                cleanupTemp();
+                if (idleFinishTimer) clearTimeout(idleFinishTimer);
+                if (state.activeAbortFn === finish) state.activeAbortFn = null;
+                cleanupTempFile();
                 resolve();
             };
+
+            // Registrar aborto instantáneo para que si el usuario sale, esta promesa termine al instante sin dejar timeouts zombis
+            state.activeAbortFn = finish;
 
             // Timeout garantizado: el audio suena íntegro durante toda su duración + 1.2s de cortesía
             const timeout = setTimeout(() => {
@@ -438,12 +499,16 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
             }, durationMs + 1200);
 
             player.on('stateChange', (oldState, newState) => {
+                if (state.playbackToken !== myToken) {
+                    finish();
+                    return;
+                }
                 if (newState.status === AudioPlayerStatus.Playing) {
                     hasStartedPlaying = true;
                 }
                 if (newState.status === AudioPlayerStatus.Idle && hasStartedPlaying) {
                     if (resource.playbackDuration >= (durationMs - 1500)) {
-                        setTimeout(finish, 500);
+                        idleFinishTimer = setTimeout(finish, 500);
                     }
                 }
             });
@@ -454,26 +519,36 @@ async function playAudioBufferInChannel(channel, audioBuffer, label = 'Audio') {
             });
         });
 
-        await forceCleanVoice(guild);
+        // Si esta sesión fue abortada o reemplazada mientras sonaba, NO tocar la conexión de una sesión nueva
+        if (state.playbackToken !== myToken || state.stopCurrentTour) {
+            return false;
+        }
+
+        await forceCleanVoice(guild, myToken);
         guildManager.logGuild(guild, '🎙️', `${label} reproducido en ${channel.name}`);
         return true;
     } catch (err) {
-        console.error(`❌ [SOPORTE ALERT] Error conectando/reproduciendo (${label}):`, err.message);
-        await forceCleanVoice(guild);
+        if (state.playbackToken === myToken) {
+            console.error(`❌ [SOPORTE ALERT] Error conectando/reproduciendo (${label}):`, err.message);
+            await forceCleanVoice(guild, myToken);
+        }
         return false;
     } finally {
-        state.isPlayingVoice = false;
+        cleanupTempFile();
+        if (state.playbackToken === myToken) {
+            state.isPlayingVoice = false;
+        }
     }
 }
 
 /**
- * Lanza la locución a los usuarios en la sala de espera
+ * Lanza la locución de bienvenida una única vez por sesión de espera
  */
 async function triggerUserWaitRoomAlert(guild, reason = 'Bienvenida') {
     const settings = getGuildLocucionSettings(guild?.id);
     if (!settings.active) return;
     const state = getGuildState(guild?.id);
-    if (state.isPlayingVoice) return;
+    if (state.isPlayingVoice || state.welcomePlayedForSession) return;
     if (!audioUsuarioCache) await loadAudiosFromDB();
     if (!audioUsuarioCache) return;
 
@@ -483,27 +558,45 @@ async function triggerUserWaitRoomAlert(guild, reason = 'Bienvenida') {
     if (!waitChannel || !waitChannel.isVoiceBased()) return;
     if (waitChannel.members.filter(m => !m.user.bot).size === 0) return;
 
+    // Marcar la bienvenida como emitida para esta sesión (así si entran más usuarios luego, NO se repite)
+    state.welcomePlayedForSession = true;
     const success = await playAudioBufferInChannel(waitChannel, audioUsuarioCache, `Locución Usuarios (${reason})`);
     if (success) {
         // Reiniciar el temporizador exactamente cuando termina la bienvenida para respetar al segundo el intervalo configurado
         state.lastActionAt = Date.now();
+    } else if (isWaitRoomEmpty(guild)) {
+        state.welcomePlayedForSession = false;
     }
 }
 
 /**
- * Planifica la locución de bienvenida a los 3 segundos de detectar a alguien en espera
+ * Planifica la locución de bienvenida a los 4 segundos del último usuario que entre,
+ * con un tope máximo de 12s desde el primero para agrupar entradas seguidas sin retrasarlo de más.
+ * Si ya sonó la bienvenida en esta sesión, NO la vuelve a lanzar aunque entren más personas.
  */
 function scheduleUserWelcomeAlert(guild) {
     const settings = getGuildLocucionSettings(guild?.id);
     if (!settings.active) return;
     const state = getGuildState(guild?.id);
+
+    // Si ya sonó la bienvenida para la gente que está esperando, NO repetir por nuevas entradas
+    if (state.welcomePlayedForSession || state.isPlayingVoice) return;
+
     if (state.userWelcomeDebounceTimer) {
         clearTimeout(state.userWelcomeDebounceTimer);
+        state.userWelcomeDebounceTimer = null;
     }
+
+    const now = Date.now();
+    if (!state.sessionStartedAt) state.sessionStartedAt = now;
+    const elapsedSinceFirst = now - state.sessionStartedAt;
+    const maxWaitLeft = Math.max(500, 12000 - elapsedSinceFirst);
+    const delayMs = Math.min(4000, maxWaitLeft);
+
     state.userWelcomeDebounceTimer = setTimeout(() => {
         state.userWelcomeDebounceTimer = null;
-        triggerUserWaitRoomAlert(guild, 'Bienvenida 3s');
-    }, 3000);
+        triggerUserWaitRoomAlert(guild, 'Bienvenida 4s');
+    }, delayMs);
 }
 
 /**
@@ -714,12 +807,14 @@ async function checkWaitRoom(guild, client) {
 
     const waitingUsers = waitChannel.members.filter(m => !m.user.bot);
     if (waitingUsers.size === 0) {
-        if (state.userJoinTimes.size > 0 || state.staffAlertCount > 0 || state.lastActionAt > 0) {
+        if (state.userJoinTimes.size > 0 || state.staffAlertCount > 0 || state.lastActionAt > 0 || state.welcomePlayedForSession) {
             state.userJoinTimes.clear();
             state.staffAlertCount = 0;
             state.sanctionReportSent = false;
             state.nextAlertTurn = 'STAFF';
             state.lastActionAt = 0;
+            state.welcomePlayedForSession = false;
+            state.sessionStartedAt = 0;
         }
         return;
     }
@@ -900,32 +995,49 @@ function initSoporteAlert(client) {
             });
             if (wasEmpty) {
                 state.lastActionAt = Date.now();
+                state.sessionStartedAt = Date.now();
+                state.welcomePlayedForSession = false;
                 state.nextAlertTurn = 'STAFF';
                 state.staffAlertCount = 0;
                 state.sanctionReportSent = false;
             }
-            scheduleUserWelcomeAlert(guild);
+            // Solo planificar/agrupar bienvenida si aún NO sonó en esta sesión de espera
+            if (!state.welcomePlayedForSession && !state.isPlayingVoice) {
+                scheduleUserWelcomeAlert(guild);
+            }
         }
 
         // Salió del canal de espera
         if (oldState.channelId === vc.esperaId && newState.channelId !== vc.esperaId) {
             const userData = state.userJoinTimes.get(userId);
             const timeWaitingMs = userData ? (Date.now() - userData.joinedAt) : 0;
+            const prevAlertCount = state.staffAlertCount;
 
             state.userJoinTimes.delete(userId);
 
-            // ¿Fue movido a un canal de soporte por un staff o abandonó/se desconectó?
+            // 1. Si la sala de espera de ESTE servidor queda vacía, cortar y limpiar AL INSTANTE (antes de cualquier await)
+            if (isWaitRoomEmpty(guild)) {
+                state.staffAlertCount = 0;
+                state.sanctionReportSent = false;
+                state.nextAlertTurn = 'STAFF';
+                state.lastActionAt = 0;
+                state.welcomePlayedForSession = false;
+                state.sessionStartedAt = 0;
+                abortPlaybackImmediately(guild, 'Sala de espera vacía. Desconectando bot');
+            }
+
+            // 2. ¿Fue movido a un canal de soporte por un staff o abandonó/se desconectó?
             const fueAtendidoEnSoporte = vc.soporteIds.includes(newState.channelId);
 
             if (!fueAtendidoEnSoporte) {
                 // El usuario ABANDONÓ el canal de espera sin ser atendido
                 const superoTiempo = timeWaitingMs >= (settings.minutes * 60 * 1000);
-                if (state.staffAlertCount >= 1 || superoTiempo) {
+                if (prevAlertCount >= 1 || superoTiempo) {
                     guildManager.logGuild(guild, '⚠️', `Usuario ${userData ? userData.userTag : userId} abandonó espera tras ${formatDuration(timeWaitingMs)} sin atención`);
 
                     const target = getTargetStaffChannel(guild);
                     const staffsList = target ? Array.from(target.staffs.values()) : [];
-                    await sendSanctionReport(guild, {
+                    sendSanctionReport(guild, {
                         motivo: 'El usuario se marchó de la sala de espera sin haber sido atendido tras esperar largo tiempo.',
                         staffsInvolucrados: staffsList,
                         targetChannelId: null, // No mover a nadie porque solo es reporte de abandono
@@ -935,19 +1047,10 @@ function initSoporteAlert(client) {
                             timeMs: timeWaitingMs
                         }],
                         tiempoEsperadoMs: timeWaitingMs,
-                        avisosEmitidos: state.staffAlertCount,
+                        avisosEmitidos: prevAlertCount,
                         client: client
-                    });
+                    }).catch(() => {});
                 }
-            }
-
-            // Si la sala de espera de ESTE servidor queda vacía, abortar reproducciones y resetear SOLO este servidor
-            if (isWaitRoomEmpty(guild)) {
-                state.staffAlertCount = 0;
-                state.sanctionReportSent = false;
-                state.nextAlertTurn = 'STAFF';
-                state.lastActionAt = 0;
-                abortPlaybackImmediately(guild, 'Sala de espera vacía. Desconectando bot');
             }
         }
     });
@@ -1069,6 +1172,8 @@ function initSoporteAlert(client) {
                     state.sanctionReportSent = false;
                     state.nextAlertTurn = 'STAFF';
                     state.lastActionAt = 0;
+                    state.welcomePlayedForSession = false;
+                    state.sessionStartedAt = 0;
                     abortPlaybackImmediately(message.guild, 'Locución desactivada manualmente');
                     return message.reply({ content: '🔴 **Locución DESACTIVADA:** El bot ya no entrará a avisar a los canales ni a la sala de espera en este servidor.' });
                 } catch (e) {
@@ -1082,7 +1187,7 @@ function initSoporteAlert(client) {
                     await setGuildMinutes(gId, nuevoTiempo);
                     const secs = Math.round(nuevoTiempo * 60);
                     return message.reply({
-                        content: `✅ **Tiempo de aviso actualizado:** Bienvenida a los **3s** y todas las locuciones cada **${nuevoTiempo} minutos (${secs}s)** (Estado: **${settings.active ? '🟢 ACTIVADO' : '🔴 DESACTIVADO'}**).`
+                        content: `✅ **Tiempo de aviso actualizado:** Bienvenida a los **4s** y todas las locuciones cada **${nuevoTiempo} minutos (${secs}s)** (Estado: **${settings.active ? '🟢 ACTIVADO' : '🔴 DESACTIVADO'}**).`
                     });
                 } catch (err) {
                     console.error(err);
@@ -1094,7 +1199,7 @@ function initSoporteAlert(client) {
             return message.reply({
                 content: `ℹ️ **Panel de control de la locución:**\n` +
                     `• **Estado actual:** ${settings.active ? '🟢 **ACTIVADO**' : '🔴 **DESACTIVADO**'}\n` +
-                    `• **Bienvenida inicial:** **3 segundos** tras detectar entrada\n` +
+                    `• **Bienvenida inicial:** **4 segundos** tras detectar entrada\n` +
                     `• **Intervalo de avisos:** **${settings.minutes} minutos (${curSecs}s)**\n` +
                     `• **Sala de charla staff:** ${fmtCh(vc.charlaId)}\n` +
                     `• **Canal de informes:** ${fmtCh(vc.sancionesTextId)}\n\n` +
