@@ -10093,6 +10093,9 @@ client.on('interactionCreate', async (interaction) => {
             files: files
         }).catch(() => { });
 
+        // Auto-eliminar a los 30 segundos si el staff no envía la plantilla
+        setTimeout(() => {
+            const currentSession = lastGeneratedPlantillaByStaff.get(staffSessionKey);
             if (currentSession && currentSession.timestamp === plantillaSession.timestamp) {
                 lastGeneratedPlantillaByStaff.delete(staffSessionKey);
             }
@@ -10283,22 +10286,67 @@ client.on('interactionCreate', async (interaction) => {
 
             const targetChannelId = guildManager.getGuildConfig(gIdStream).CHANNEL_STREAMERS_ID || interaction.channelId;
 
+            const vResStr = guildManager.resolveGuildVisuals(gIdStream);
+            const resStrIcon = (vResStr.config?.LOGO_URL && /^https?:\/\//i.test(vResStr.config.LOGO_URL))
+                ? vResStr.config.LOGO_URL.trim()
+                : (interaction.guild?.iconURL?.({ size: 256, extension: 'png' }) || client.user.displayAvatarURL());
+
             if (result && result.success) {
-                let platEmoji = '🟣';
-                if (activePlatform.toLowerCase().includes('kick')) platEmoji = '🟢';
-                else if (activePlatform.toLowerCase().includes('tiktok')) platEmoji = '🩷';
+                const lowPlat = activePlatform.toLowerCase();
+                const platHeart = lowPlat.includes('kick') ? '💚' : (lowPlat.includes('tiktok') ? '🩷' : '💜');
+                const platColor = lowPlat.includes('kick') ? 0x53FC18 : (lowPlat.includes('tiktok') ? 0xFE2C55 : 0x9146FF);
+
+                const okStreamEmbed = new EmbedBuilder()
+                    .setColor(platColor)
+                    .setAuthor({
+                        name: `SISTEMA DE STREAMERS | ${vResStr.name}`,
+                        iconURL: resStrIcon
+                    })
+                    .setThumbnail(interaction.user.displayAvatarURL({ size: 256 }))
+                    .setTitle(`${platHeart}┃¡Directo de ${activePlatform} Anunciado!`)
+                    .setDescription(
+                        `\u200B\n` +
+                        `✨ ¡Tu transmisión en vivo ha sido publicada con éxito en **${vResStr.name}**!\n\n` +
+                        `📋┃**Detalles del Anuncio**\n` +
+                        `> 📢┃**Canal de publicación:** <#${targetChannelId}>\n\n` +
+                        `> 🏷️┃**Título:** \`${liveTitle}\`\n\n` +
+                        `> 🔗┃**Enlace:** [${targetStreamUrl}](${targetStreamUrl})\n\n` +
+                        `🚀┃**¡Mucho éxito en tu directo, <@${userId}>!**`
+                    )
+                    .setFooter({
+                        text: `${vResStr.name} • Este mensaje se auto-eliminará en 5s`,
+                        iconURL: resStrIcon
+                    })
+                    .setTimestamp();
 
                 await interaction.editReply({
-                    content: `✅ **¡Tu directo de ${activePlatform} ${platEmoji} ha sido anunciado con éxito en <#${targetChannelId}>!**\n🏷️ **Título:** \`"${liveTitle}"\`\n🔗 **Canal:** <${targetStreamUrl}>\n¡Mucho éxito en tu transmisión! 🚀`
+                    content: '',
+                    embeds: [okStreamEmbed]
                 }).catch(() => { });
 
                 setTimeout(() => {
                     interaction.deleteReply().catch(() => { });
-                }, 3000);
+                }, 5000);
                 return;
             } else {
+                const errStreamEmbed = new EmbedBuilder()
+                    .setColor(0xE74C3C)
+                    .setAuthor({
+                        name: `SISTEMA DE STREAMERS | ${vResStr.name}`,
+                        iconURL: resStrIcon
+                    })
+                    .setTitle('❌┃No se pudo publicar el anuncio')
+                    .setDescription(
+                        `\u200B\n` +
+                        `> Hubo un error al enviar el anuncio en <#${targetChannelId}>.\n` +
+                        `> Comprueba que el bot tiene permisos para enviar mensajes en ese canal.`
+                    )
+                    .setFooter({ text: `${vResStr.name} • Este mensaje se auto-eliminará en 5s`, iconURL: resStrIcon })
+                    .setTimestamp();
+
                 await interaction.editReply({
-                    content: `❌ Hubo un error al publicar el anuncio en el canal <#${targetChannelId}>. Verifica permisos del bot.`
+                    content: '',
+                    embeds: [errStreamEmbed]
                 }).catch(() => { });
 
                 setTimeout(() => {

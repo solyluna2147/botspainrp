@@ -1129,7 +1129,7 @@ function initTicketSystem(client) {
                         `📜 **Canal de Logs:** ${gCfg.CHANNEL_TICKETS_LOGS_ID ? `<#${gCfg.CHANNEL_TICKETS_LOGS_ID}>` : '❌ Sin configurar (`!setlogs-tickets #canal`)'}\n` +
                         `🔢 **Límite por usuario:** \`${maxPerUser}\` ticket(s) a la vez *(\`!tklimites <n>\`)* • **Staff/Creador:** \`Ilimitado\`\n` +
                         `👑 **Rol Directiva:** ${gCfg.ROLE_DIRECTIVA_ID ? `<@&${gCfg.ROLE_DIRECTIVA_ID}>` : '`Administradores / Staff`'}\n\n` +
-                        `📂 **Categorías configuradas (9):**\n${catLines}`
+                        `📂 **Categorías configuradas (${TICKET_TYPES.length}):**\n${catLines}`
                     )
                     .setFooter({ text: `${v.name} • Sistema Avanzado de Tickets` })
                     .setTimestamp();
@@ -1965,6 +1965,24 @@ function initTicketSystem(client) {
                     if (cats[t.key]) catIdToType.set(cats[t.key], t);
                 }
                 if (catIdToType.size === 0) continue;
+
+                // 0) Actualizar el menú desplegable del panel fijo (!panel-soporte) para incluir cualquier categoría nueva automáticamente
+                try {
+                    const gCfgPan = guildManager.getGuildConfig(guild.id);
+                    if (gCfgPan.CHANNEL_TICKETS_ID && gCfgPan.MSG_TICKETS_PANEL_ID) {
+                        const panCh = guild.channels.cache.get(gCfgPan.CHANNEL_TICKETS_ID);
+                        if (panCh && panCh.isTextBased()) {
+                            const panMsg = await panCh.messages.fetch(gCfgPan.MSG_TICKETS_PANEL_ID).catch(() => null);
+                            if (panMsg && panMsg.editable) {
+                                const curOptCount = panMsg.components?.[0]?.components?.[0]?.options?.length || 0;
+                                if (curOptCount !== TICKET_TYPES.length) {
+                                    await panMsg.edit({ components: [buildTicketSelectRow()] }).catch(() => {});
+                                    guildManager.logGuild(guild, '🎟️', `Menú de !panel-soporte actualizado automáticamente (${TICKET_TYPES.length} categorías)`);
+                                }
+                            }
+                        }
+                    }
+                } catch (_) { }
 
                 // A) Prefijo (emoji┃) en canales de tickets antiguos que aún no lo tengan
                 let renamedCount = 0;
