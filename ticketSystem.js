@@ -581,24 +581,24 @@ function buildTicketControlRow(isClaimed = false) {
         new ButtonBuilder()
             .setCustomId('tkt_btn_claim')
             .setLabel(isClaimed ? 'Reclamado' : 'Reclamar Ticket')
-            .setStyle(isClaimed ? ButtonStyle.Secondary : ButtonStyle.Success)
-            .setEmoji('🙋')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji(isClaimed ? '✅' : '🟡')
             .setDisabled(isClaimed),
         new ButtonBuilder()
             .setCustomId('tkt_btn_adduser')
             .setLabel('Añadir Usuario')
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji('➕'),
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('🟠'),
         new ButtonBuilder()
             .setCustomId('tkt_btn_rename')
             .setLabel('Renombrar')
             .setStyle(ButtonStyle.Secondary)
-            .setEmoji('✏️'),
+            .setEmoji('🔥'),
         new ButtonBuilder()
             .setCustomId('tkt_btn_close')
             .setLabel('Cerrar Ticket')
             .setStyle(ButtonStyle.Danger)
-            .setEmoji('🔒')
+            .setEmoji('🔴')
     );
 }
 
@@ -1395,16 +1395,25 @@ function initTicketSystem(client) {
 
                     const vCl = guildManager.resolveGuildVisuals(interaction.guild.id);
                     const clIcon = vCl.logoUrl || interaction.guild.iconURL() || undefined;
+                    const nowTs = Math.floor(Date.now() / 1000);
                     const claimEmbed = new EmbedBuilder()
-                        .setColor(0x2ECC71)
+                        .setColor(vCl.color)
                         .setAuthor({
-                            name: `ATENCIÓN DE STAFF | ${vCl.name}`,
+                            name: `SISTEMA DE TICKETS | ${vCl.name}`,
                             iconURL: clIcon
                         })
-                        .setTitle('🙋 Ticket Reclamado')
+                        .setThumbnail(clIcon)
+                        .setTitle('🛡️ Ticket Reclamado por el Equipo de Staff')
                         .setDescription(
-                            `🛡️ El miembro del Staff <@${interaction.user.id}> ha reclamado este ticket y se encargará de atender a <@${ticket.openerId}>.\n\n` +
-                            `> 💬 *Ya puedes continuar explicando tu caso con total tranquilidad.*`
+                            `\u200B\n` +
+                            `👋 Hola <@${ticket.openerId}>, tu solicitud ya ha sido asignada y está siendo atendida personalmente.\n\n` +
+                            `📋 **| Detalles de la Atención**\n` +
+                            `> 🛡️ **Staff encargado:** <@${interaction.user.id}>\n` +
+                            `> 👤 **Usuario atendido:** <@${ticket.openerId}>\n` +
+                            `> 📂 **Departamento:** \`${ticket.categoryLabel}\`\n` +
+                            `> ⏱️ **Hora de atención:** <t:${nowTs}:t>\n\n` +
+                            `💬 **| Aviso importante**\n` +
+                            `> Puedes continuar explicando tu caso y adjuntar cualquier captura o prueba adicional que necesites. ¡Gracias por tu paciencia!`
                         )
                         .setFooter({
                             text: `${vCl.name} • Departamento de Atención y Soporte`,
@@ -1507,8 +1516,10 @@ function initTicketSystem(client) {
                 return interaction.reply({ embeds: [addEmbed] }).catch(() => {});
             }
 
-            // E) MODAL RENOMBRAR CANAL
+            // E) MODAL RENOMBRAR CANAL (SILENCIOSO, SIN MENSAJE EN EL CHAT Y PROTEGIDO CONTRA RATE LIMIT DE DISCORD)
             if (interaction.isModalSubmit() && interaction.customId === 'tkt_modal_rename') {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
+
                 const rawName = interaction.fields.getTextInputValue('new_name')
                     .toLowerCase()
                     .replace(/[^a-z0-9-_]/g, '-')
@@ -1516,20 +1527,37 @@ function initTicketSystem(client) {
                     .replace(/^-|-$/g, '')
                     .slice(0, 45);
                 if (!rawName) {
-                    return interaction.reply({ content: '⚠️ Nombre no válido.', ephemeral: true }).catch(() => {});
+                    await interaction.editReply({ content: '⚠️ Nombre no válido.' }).catch(() => {});
+                    setTimeout(() => interaction.deleteReply().catch(() => {}), 4000);
+                    return;
                 }
+
                 const activeDoc = await fetchActiveTicket(interaction.guild.id, interaction.channelId);
                 const tTypeRen = activeDoc ? TICKET_TYPE_MAP.get(activeDoc.categoryKey) : null;
                 const finalName = tTypeRen ? `${tTypeRen.emoji}┃${rawName}` : rawName;
 
-                await interaction.channel.setName(finalName).catch(() => {});
-                const vRen = guildManager.resolveGuildVisuals(interaction.guild.id);
-                const renEmbed = new EmbedBuilder()
-                    .setColor(vRen.color)
-                    .setAuthor({ name: `GESTIÓN DE TICKET | ${vRen.name}`, iconURL: vRen.logoUrl })
-                    .setDescription(`✏️ Canal renombrado a **#${finalName}** por <@${interaction.user.id}>.`)
-                    .setTimestamp();
-                return interaction.reply({ embeds: [renEmbed] }).catch(() => {});
+                // Discord solo permite 2 cambios de nombre por canal cada 10 minutos:
+                // usamos carrera con timeout de 2.5s para no colgar el modal nunca si Discord encola el cambio.
+                let status = 'ok';
+                try {
+                    const renamePromise = interaction.channel.setName(finalName).then(() => 'ok').catch(() => 'err');
+                    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('ratelimit'), 2500));
+                    status = await Promise.race([renamePromise, timeoutPromise]);
+                } catch (_) {
+                    status = 'err';
+                }
+
+                if (status === 'ratelimit') {
+                    await interaction.editReply({
+                        content: '⏳ **Límite de Discord alcanzado:** Discord solo permite renombrar un mismo canal **2 veces cada 10 minutos**. El cambio quedará en cola o podrás renombrarlo de nuevo en unos minutos.'
+                    }).catch(() => {});
+                    setTimeout(() => interaction.deleteReply().catch(() => {}), 6000);
+                    return;
+                }
+
+                // Éxito silencioso: eliminar la respuesta efímera sin enviar ninguna notificación pública en el canal
+                await interaction.deleteReply().catch(() => {});
+                return;
             }
 
             // F) MODAL CERRAR TICKET -> GUARDA TRANSCRIPCIÓN INTERACTIVA EN MONGODB Y ENVÍA LOG
