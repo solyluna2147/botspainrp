@@ -1588,6 +1588,26 @@ function initConsultasAI(client) {
         }
     });
 
+    const buildConsultasNoticeEmbed = (guild, { title, description, color = null }) => {
+        const gVis = guildManager.resolveGuildVisuals(guild?.id);
+        const httpsIcon = (gVis.config?.LOGO_URL && /^https?:\/\//i.test(gVis.config.LOGO_URL))
+            ? gVis.config.LOGO_URL.trim()
+            : (guild?.iconURL?.({ size: 256, extension: 'png' }) || undefined);
+        return new EmbedBuilder()
+            .setColor(color || gVis.color)
+            .setAuthor({
+                name: `SISTEMA DE CONSULTAS • ${gVis.name}`,
+                ...(httpsIcon ? { iconURL: httpsIcon } : {})
+            })
+            .setTitle(title)
+            .setDescription(description)
+            .setFooter({
+                text: `${gVis.name} • Solo tú puedes ver este aviso`,
+                ...(httpsIcon ? { iconURL: httpsIcon } : {})
+            })
+            .setTimestamp();
+    };
+
     // Evento: Botones y Modales del Sistema de Consultas IA
     client.on('interactionCreate', async (interaction) => {
         try {
@@ -1600,14 +1620,22 @@ function initConsultasAI(client) {
 
                 if (isStaffChannel && !isStaff) {
                     return interaction.reply({
-                        content: '⛔ Este canal de consultas es exclusivo para el Staff. Usa el canal de consultas de la comunidad.',
+                        embeds: [buildConsultasNoticeEmbed(interaction.guild, {
+                            title: '⛔┃Acceso Exclusivo de Staff',
+                            description: 'Este canal de consultas es exclusivo para el Staff. Usa el canal de consultas de la comunidad.',
+                            color: 0xE74C3C
+                        })],
                         ephemeral: true
                     });
                 }
 
                 if (!consultasActivas) {
                     return interaction.reply({
-                        content: '⚠️ El sistema de Consultas IA está actualmente desactivado por la Administración.',
+                        embeds: [buildConsultasNoticeEmbed(interaction.guild, {
+                            title: '⚠️┃Sistema en Pausa',
+                            description: 'El sistema de Consultas IA está actualmente desactivado por la Administración.',
+                            color: 0xF39C12
+                        })],
                         ephemeral: true
                     });
                 }
@@ -1615,7 +1643,11 @@ function initConsultasAI(client) {
                 const questionText = interaction.fields.getTextInputValue('input_consulta_privada').trim();
                 if (questionText.length < 3) {
                     return interaction.reply({
-                        content: '❌ Por favor escribe una consulta más detallada (mínimo 3 caracteres).',
+                        embeds: [buildConsultasNoticeEmbed(interaction.guild, {
+                            title: '❌┃Consulta Demasiado Corta',
+                            description: 'Por favor escribe una consulta más detallada *(mínimo 3 caracteres)*.',
+                            color: 0xE74C3C
+                        })],
                         ephemeral: true
                     });
                 }
@@ -1697,14 +1729,22 @@ function initConsultasAI(client) {
 
                 if (isStaffChannel && !isStaff) {
                     return interaction.reply({
-                        content: '⛔ Este canal de consultas es exclusivo para el Staff. Usa el canal de consultas de la comunidad.',
+                        embeds: [buildConsultasNoticeEmbed(interaction.guild, {
+                            title: '⛔┃Acceso Exclusivo de Staff',
+                            description: 'Este canal de consultas es exclusivo para el Staff. Usa el canal de consultas de la comunidad.',
+                            color: 0xE74C3C
+                        })],
                         ephemeral: true
                     });
                 }
 
                 if (!consultasActivas) {
                     return interaction.reply({
-                        content: '⚠️ El sistema de Consultas IA está actualmente desactivado por la Administración.',
+                        embeds: [buildConsultasNoticeEmbed(interaction.guild, {
+                            title: '⚠️┃Sistema en Pausa',
+                            description: 'El sistema de Consultas IA está actualmente desactivado por la Administración.',
+                            color: 0xF39C12
+                        })],
                         ephemeral: true
                     });
                 }
@@ -1731,7 +1771,14 @@ function initConsultasAI(client) {
             if (interaction.customId === 'btn_refresh_tokens_panel') {
                 const isStaff = isMemberStaff(interaction.member);
                 if (!isStaff) {
-                    return interaction.reply({ content: '⛔ Solo el Staff puede actualizar este panel.', ephemeral: true });
+                    return interaction.reply({
+                        embeds: [buildConsultasNoticeEmbed(interaction.guild, {
+                            title: '⛔┃Acceso Restringido',
+                            description: 'Solo el equipo de **Staff** puede actualizar este panel.',
+                            color: 0xE74C3C
+                        })],
+                        ephemeral: true
+                    });
                 }
                 const embed = buildTokensPanelEmbed(interaction.guild?.id, client);
                 const usesAtt = JSON.stringify(embed.toJSON()).includes('attachment://');
@@ -1756,7 +1803,11 @@ function initConsultasAI(client) {
                 const isAllowed = interaction.user.id === targetUserId || isStaff;
                 if (!isAllowed) {
                     return interaction.reply({
-                        content: '⛔ Solo la persona que hizo esta consulta o un Staff puede borrarla.',
+                        embeds: [buildConsultasNoticeEmbed(interaction.guild, {
+                            title: '⛔┃Acción Restringida',
+                            description: 'Solo la persona que hizo esta consulta o un miembro del **Staff** puede borrarla.',
+                            color: 0xE74C3C
+                        })],
                         ephemeral: true
                     });
                 }

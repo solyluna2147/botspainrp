@@ -533,14 +533,55 @@ function removeStaffMemberFromRating(staffId, guildId = null) {
     return true;
 }
 
-// Sincronización automática de Staffs valorables y Top Staff basada en el ROLE_STAFF_ID del servidor
+// Helper global para responder avisos/confirmaciones con Embed corporativo del servidor (sin texto plano feo)
+function buildBrandedNoticeEmbed(guild, { title, description, color = null, category = 'SISTEMA OFICIAL', footerText = null } = {}) {
+    const gId = guild?.id || null;
+    const gVis = guildManager.resolveGuildVisuals(gId);
+    const httpsIcon = (gVis.config?.LOGO_URL && /^https?:\/\//i.test(gVis.config.LOGO_URL))
+        ? gVis.config.LOGO_URL.trim()
+        : (guild?.iconURL?.({ size: 256, extension: 'png' }) || undefined);
+
+    const embed = new EmbedBuilder()
+        .setColor(color || gVis.color)
+        .setAuthor({
+            name: `${category} • ${gVis.name}`,
+            ...(httpsIcon ? { iconURL: httpsIcon } : {})
+        })
+        .setDescription(description || '\u200B')
+        .setFooter({
+            text: footerText || `${gVis.name} • Sistema Oficial`,
+            ...(httpsIcon ? { iconURL: httpsIcon } : {})
+        })
+        .setTimestamp();
+
+    if (title) embed.setTitle(title);
+    return embed;
+}
+
+// Resuelve el ID del rol principal de Staff ("EQUIPO DE STAFF" / ROLE_STAFF_ID) de forma aislada por servidor
+function resolveMainStaffRoleId(guild) {
+    if (!guild || !guild.id) return '';
+    const gId = guild.id;
+    const gCfg = guildManager.getGuildConfig(gId);
+    if (gCfg.ROLE_STAFF_ID) return String(gCfg.ROLE_STAFF_ID);
+    if (guildManager.isPrimaryGuild(gId)) return String(botConfig.ROLE_STAFF_ID || '1538191116610838691');
+
+    // Auto-detección de respaldo por ID conocido o nombre "EQUIPO DE(L) STAFF"
+    if (guild.roles.cache.has('1506768698143408319')) return '1506768698143408319';
+    const byName = guild.roles.cache.find(r => {
+        const clean = (r.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return /equipo\s+de(l)?\s+staff/.test(clean);
+    });
+    return byName ? byName.id : '';
+}
+
+// Sincronización automática de Staffs valorables y Top Staff basada en el rol principal EQUIPO DEL STAFF (ROLE_STAFF_ID)
 // Añade nuevos miembros con el rol y elimina automáticamente a los que perdieron el rol o fueron expulsados/salieron.
 async function syncStaffListFromRole(guild, force = false) {
     if (!guild || !guild.id) return { added: 0, removed: 0, total: 0 };
     const gId = guild.id;
-    const gCfg = guildManager.getGuildConfig(gId);
-    const staffRoleId = gCfg.ROLE_STAFF_ID;
-    if (!staffRoleId || (!force && !gCfg.AUTO_SYNC_STAFF_ROLE)) {
+    const staffRoleId = resolveMainStaffRoleId(guild);
+    if (!staffRoleId) {
         return { added: 0, removed: 0, total: 0 };
     }
 
@@ -557,7 +598,7 @@ async function syncStaffListFromRole(guild, force = false) {
         let added = 0;
         let removed = 0;
 
-        // 1. Añadir miembros nuevos que tienen el rol de Staff
+        // 1. Añadir miembros nuevos que tienen el rol principal de Staff
         for (const [, member] of roleMembers) {
             if (!data.staffList.includes(member.id)) {
                 data.staffList.push(member.id);
@@ -6981,7 +7022,15 @@ client.on('messageCreate', async (message) => {
 
             const rawTarget = args[1]?.replace(/[<@!&>]/g, '').trim();
             if (!rawTarget) {
-                const helpMsg = await message.channel.send('⚠️ **Uso:** `!addstaff <ID_Rol_Staff>` *(permisos Staff)* o `!addstaff @usuario` *(lista valoraciones)*').catch(() => null);
+                const helpEmbed = buildBrandedNoticeEmbed(message.guild, {
+                    category: 'GESTIÓN DE STAFF',
+                    title: '⚠️┃Uso Correcto de !addstaff',
+                    description:
+                        `> 🛡️ \`!addstaff <ID_Rol_Staff>\` ➔ Configura y sincroniza el rol principal de Staff.\n` +
+                        `> 👤 \`!addstaff @usuario\` ➔ Añade manualmente un miembro al menú de valoraciones.`,
+                    color: 0xF1C40F
+                });
+                const helpMsg = await message.channel.send({ embeds: [helpEmbed] }).catch(() => null);
                 if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 6000);
                 return;
             }
@@ -6996,17 +7045,16 @@ client.on('messageCreate', async (message) => {
                 await updateConfig('AUTO_SYNC_STAFF_ROLE', true, message.guild?.id);
                 const syncRes = await syncStaffListFromRole(message.guild, true);
                 const vSt = guildManager.resolveGuildVisuals(message.guild?.id);
-                const roleEmbed = new EmbedBuilder()
-                    .setColor(vSt.color)
-                    .setTitle('🛡️ Rol de Staff Configurado y Sincronizado')
-                    .setDescription(
+                const roleEmbed = buildBrandedNoticeEmbed(message.guild, {
+                    category: 'SISTEMA DE VALORACIONES',
+                    title: '🛡️┃Rol de Staff Configurado y Sincronizado',
+                    description:
                         `✅ El rol <@&${targetRole.id}> (\`${targetRole.id}\`) ha sido configurado como **Rol Oficial de Staff** en **${vSt.name}**.\n\n` +
                         `👥 **Staffs sincronizados automáticamente:** \`${syncRes.total}\` activos *(+${syncRes.added} añadidos, -${syncRes.removed} retirados)*\n\n` +
                         `> 🔑 *Todos los miembros con este rol tienen acceso a las funciones de Staff del bot.*\n` +
-                        `> 🔄 *Auto-actualización activada: si entra un nuevo Staff, pierde el rol o sale del servidor, se actualizará solo en el menú de valoraciones y en el panel de Tops.*`
-                    )
-                    .setFooter({ text: `${vSt.name} • Permisos y Sincronización Automática de Staff` })
-                    .setTimestamp();
+                        `> 🔄 *Auto-actualización activa: si entra un nuevo Staff, pierde el rol o sale del servidor, se actualizará solo en el menú de valoraciones y en el panel de Tops.*`,
+                    footerText: `${vSt.name} • Permisos y Sincronización Automática de Staff`
+                });
                 const okMsg = await message.channel.send({ embeds: [roleEmbed] }).catch(() => null);
                 if (okMsg) setTimeout(() => okMsg.delete().catch(() => { }), 10000);
                 return;
@@ -7016,7 +7064,13 @@ client.on('messageCreate', async (message) => {
             const targetUser = message.mentions.users.first() || { id: rawTarget };
             const tag = targetUser.tag || targetUser.username || 'Staff';
             addStaffMemberToRating(targetUser.id, tag, message.guild?.id);
-            const successMsg = await message.channel.send(`✅ Staff <@${targetUser.id}> (\`${targetUser.id}\`) añadido a la lista del menú de valoraciones de este servidor.`).catch(() => null);
+            const addedEmbed = buildBrandedNoticeEmbed(message.guild, {
+                category: 'SISTEMA DE VALORACIONES',
+                title: '✅┃Staff Añadido a Valoraciones',
+                description: `👤 <@${targetUser.id}> (\`${targetUser.id}\`) ha sido añadido correctamente al menú de valoraciones de este servidor.`,
+                color: 0x2ECC71
+            });
+            const successMsg = await message.channel.send({ embeds: [addedEmbed] }).catch(() => null);
             if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 6000);
             return;
         }
@@ -7030,13 +7084,27 @@ client.on('messageCreate', async (message) => {
             const rawTarget = args[1]?.replace(/[<@!>]/g, '').trim();
             const targetUser = message.mentions.users.first() || (rawTarget ? { id: rawTarget } : null);
             if (!targetUser || !targetUser.id) {
-                const helpMsg = await message.channel.send('⚠️ **Uso:** `!delstaff @usuario` o `!delstaff <ID>`').catch(() => null);
+                const helpEmbed = buildBrandedNoticeEmbed(message.guild, {
+                    category: 'GESTIÓN DE STAFF',
+                    title: '⚠️┃Uso Correcto de !delstaff',
+                    description: `> 🗑️ \`!delstaff @usuario\` o \`!delstaff <ID>\` para retirar un miembro del menú de valoraciones.`,
+                    color: 0xF1C40F
+                });
+                const helpMsg = await message.channel.send({ embeds: [helpEmbed] }).catch(() => null);
                 if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 5000);
                 return;
             }
 
             removeStaffMemberFromRating(targetUser.id, message.guild?.id);
-            const successMsg = await message.channel.send(`🗑️ Staff <@${targetUser.id}> (\`${targetUser.id}\`) retirado del menú y **todas sus valoraciones han sido eliminadas por completo**.\n🏆 *El ranking de Tops se ha actualizado automáticamente.*`).catch(() => null);
+            const delEmbed = buildBrandedNoticeEmbed(message.guild, {
+                category: 'SISTEMA DE VALORACIONES',
+                title: '🗑️┃Staff Retirado del Sistema',
+                description:
+                    `👤 <@${targetUser.id}> (\`${targetUser.id}\`) ha sido retirado del menú y **todas sus valoraciones han sido eliminadas por completo**.\n\n` +
+                    `> 🏆 *El ranking de Tops se ha actualizado automáticamente.*`,
+                color: 0xE74C3C
+            });
+            const successMsg = await message.channel.send({ embeds: [delEmbed] }).catch(() => null);
             if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 7000);
             return;
         }
@@ -7053,7 +7121,13 @@ client.on('messageCreate', async (message) => {
             const targetId = targetUser ? targetUser.id : (rawIdArg ? rawIdArg.replace(/[<@!>]/g, '') : null);
 
             if (!targetId) {
-                const helpMsg = await message.channel.send('⚠️ **Uso:** `!delvaloracion @usuario` o `!delvaloracion <ID_Staff>`').catch(() => null);
+                const helpEmbed = buildBrandedNoticeEmbed(message.guild, {
+                    category: 'SISTEMA DE VALORACIONES',
+                    title: '⚠️┃Uso Correcto de !delvaloracion',
+                    description: `> 🗑️ \`!delvaloracion @usuario\` o \`!delvaloracion <ID_Staff>\` para purgar sus valoraciones.`,
+                    color: 0xF1C40F
+                });
+                const helpMsg = await message.channel.send({ embeds: [helpEmbed] }).catch(() => null);
                 if (helpMsg) setTimeout(() => helpMsg.delete().catch(() => { }), 5000);
                 return;
             }
@@ -7070,9 +7144,15 @@ client.on('messageCreate', async (message) => {
             saveStaffRatingsData(currentData, gId);
             await updateStaffTopRankingPanel(gId).catch(() => { });
 
-            const successMsg = await message.channel.send({
-                content: `🗑️ **Valoraciones eliminadas:** Se han purgado las **${prevRatingsCount}** reseña(s) de <@${targetId}> (\`${targetId}\`).\n🏆 *El ranking de Tops ha sido actualizado automáticamente.*`
-            }).catch(() => null);
+            const purgeEmbed = buildBrandedNoticeEmbed(message.guild, {
+                category: 'SISTEMA DE VALORACIONES',
+                title: '🗑️┃Valoraciones Eliminadas',
+                description:
+                    `Se han purgado **${prevRatingsCount}** reseña(s) de <@${targetId}> (\`${targetId}\`).\n\n` +
+                    `> 🏆 *El ranking de Tops ha sido actualizado automáticamente.*`,
+                color: 0xE74C3C
+            });
+            const successMsg = await message.channel.send({ embeds: [purgeEmbed] }).catch(() => null);
             if (successMsg) setTimeout(() => successMsg.delete().catch(() => { }), 7000);
             return;
         }
@@ -10034,7 +10114,15 @@ client.on('interactionCreate', async (interaction) => {
             || isBotOwner(interaction.user.id)
             || interaction.member?.permissions?.has(PermissionFlagsBits.Administrator);
         if (!isAllowed) {
-            return interaction.reply({ content: '⛔ Solo el Staff que abrió este selector puede elegir la plantilla.', ephemeral: true }).catch(() => {});
+            return interaction.reply({
+                embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                    category: 'SISTEMA DE PLANTILLAS',
+                    title: '⛔┃Acción Restringida',
+                    description: 'Solo el Staff que abrió este selector puede elegir la plantilla.',
+                    color: 0xE74C3C
+                })],
+                ephemeral: true
+            }).catch(() => {});
         }
 
         const plantillaKey = interaction.values[0];
@@ -10042,7 +10130,15 @@ client.on('interactionCreate', async (interaction) => {
         const data = getPlantillasData(gId);
         const plantilla = data.plantillas?.[plantillaKey];
         if (!plantilla) {
-            return interaction.reply({ content: '❌ No se encontró la plantilla seleccionada.', ephemeral: true }).catch(() => {});
+            return interaction.reply({
+                embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                    category: 'SISTEMA DE PLANTILLAS',
+                    title: '❌┃Plantilla No Encontrada',
+                    description: 'No se encontró la plantilla seleccionada. Inténtalo de nuevo.',
+                    color: 0xE74C3C
+                })],
+                ephemeral: true
+            }).catch(() => {});
         }
 
         await interaction.deferUpdate().catch(() => {});
@@ -10444,7 +10540,12 @@ client.on('interactionCreate', async (interaction) => {
         } catch (err) {
             console.error('Error al procesar botón de stream:', err);
             await interaction.editReply({
-                content: '⚠️ Ocurrió un problema al enviar la notificación. Por favor inténtalo de nuevo.'
+                embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                    category: 'SISTEMA DE DIRECTOS',
+                    title: '⚠️┃Error al Anunciar Directo',
+                    description: 'Ocurrió un problema al enviar la notificación. Por favor inténtalo de nuevo en unos segundos.',
+                    color: 0xE74C3C
+                })]
             }).catch(() => { });
 
             setTimeout(() => {
@@ -10460,28 +10561,60 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId === 'btn_abrir_valoracion_staff') {
         const gId = interaction.guild?.id;
         const gVis = guildManager.resolveGuildVisuals(gId);
-        const ratingsData = getStaffRatingsData(gId);
-        const staffIds = ratingsData.staffList || [];
+        const staffRoleId = resolveMainStaffRoleId(interaction.guild);
+
+        // Sincronización automática en vivo con el rol principal EQUIPO DEL STAFF
+        let ratingsData = getStaffRatingsData(gId);
+        let staffIds = ratingsData.staffList || [];
+        if (staffRoleId && interaction.guild) {
+            // Si aún no hay lista o faltan miembros en caché, sincronizar al instante
+            if (staffIds.length === 0) {
+                await syncStaffListFromRole(interaction.guild, true).catch(() => {});
+                ratingsData = getStaffRatingsData(gId);
+                staffIds = ratingsData.staffList || [];
+            } else {
+                // Filtrado rápido contra la caché real del rol para reflejar altas/bajas al segundo
+                const cachedRoleMembers = interaction.guild.members.cache.filter(m => !m.user.bot && m.roles.cache.has(staffRoleId));
+                if (cachedRoleMembers.size > 0) {
+                    const liveIds = Array.from(cachedRoleMembers.keys());
+                    const currentSet = new Set(staffIds);
+                    const needsSync = liveIds.length !== staffIds.length || liveIds.some(id => !currentSet.has(id));
+                    if (needsSync) {
+                        await syncStaffListFromRole(interaction.guild, true).catch(() => {});
+                        ratingsData = getStaffRatingsData(gId);
+                        staffIds = ratingsData.staffList || [];
+                    }
+                }
+            }
+        }
 
         if (staffIds.length === 0) {
+            const emptyEmbed = buildBrandedNoticeEmbed(interaction.guild, {
+                category: 'SISTEMA DE VALORACIONES',
+                title: '⚠️┃Sin Staffs Disponibles',
+                description:
+                    `Todavía no hay miembros activos con el rol principal de Staff${staffRoleId ? ` (<@&${staffRoleId}>)` : ''} en **${gVis.name}**.\n\n` +
+                    `> 🔄 *En cuanto un miembro reciba el rol oficial de Staff, aparecerá automáticamente en este menú.*`,
+                color: 0xF39C12,
+                footerText: `${gVis.name} • Solo tú puedes ver este aviso`
+            });
             return interaction.reply({
-                content: `⚠️ Todavía no hay miembros de Staff registrados en **${gVis.name}**. Un administrador debe añadirlos con \`!addstaff @usuario\`.`,
+                embeds: [emptyEmbed],
                 ephemeral: true
             }).catch(() => {});
         }
 
         const options = [];
         for (const sId of staffIds) {
-            let label = `Staff (${sId})`;
-            let description = `Equipo de Staff • ${gVis.name}`;
             let member = interaction.guild?.members?.cache?.get(sId);
             if (!member && interaction.guild) {
                 member = await interaction.guild.members.fetch(sId).catch(() => null);
             }
-            if (member) {
-                label = member.displayName || member.user.username;
-                description = `@${member.user.tag || member.user.username}`;
-            }
+            if (member?.user?.bot) continue;
+            if (staffRoleId && member && !member.roles.cache.has(staffRoleId)) continue;
+
+            const label = member ? (member.displayName || member.user.username) : `Staff (${sId})`;
+            const description = member ? `@${member.user.tag || member.user.username}` : `Equipo de Staff • ${gVis.name}`;
 
             options.push({
                 label: label.slice(0, 100),
@@ -10491,27 +10624,36 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
-        if (options.length === 0) {
-            options.push({
-                label: 'Staff General',
-                description: 'Valoración para el equipo de soporte',
-                value: '418558256840179722',
-                emoji: '🛡️'
+        options.sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
+        const finalOptions = options.slice(0, 25);
+
+        if (finalOptions.length === 0) {
+            const noActiveEmbed = buildBrandedNoticeEmbed(interaction.guild, {
+                category: 'SISTEMA DE VALORACIONES',
+                title: '⚠️┃Sin Staffs Activos',
+                description: `No se encontraron miembros activos con el rol principal de Staff en **${gVis.name}** en este momento.`,
+                color: 0xF39C12,
+                footerText: `${gVis.name} • Solo tú puedes ver este aviso`
             });
+            return interaction.reply({ embeds: [noActiveEmbed], ephemeral: true }).catch(() => {});
         }
 
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('select_staff_to_rate')
             .setPlaceholder('🛡️ Elige al miembro de Staff que te atendió...')
-            .addOptions(options);
+            .addOptions(finalOptions);
 
         const row = new ActionRowBuilder().addComponents(selectMenu);
+        const httpsIcon = (gVis.config?.LOGO_URL && /^https?:\/\//i.test(gVis.config.LOGO_URL))
+            ? gVis.config.LOGO_URL.trim()
+            : (interaction.guild?.iconURL?.({ size: 256, extension: 'png' }) || gVis.logoUrl);
+        const selectFiles = (httpsIcon && /^https?:\/\//i.test(httpsIcon)) ? [] : gVis.files;
 
         const selectEmbed = new EmbedBuilder()
             .setColor(gVis.color)
             .setAuthor({
                 name: `SISTEMA DE VALORACIONES • ${gVis.name}`,
-                iconURL: gVis.logoUrl
+                iconURL: httpsIcon
             })
             .setDescription(
                 `👤 **Selecciona en el menú de abajo al Staff que deseas valorar:**\n\n` +
@@ -10519,13 +10661,13 @@ client.on('interactionCreate', async (interaction) => {
             )
             .setFooter({
                 text: `${gVis.name} • Solo tú puedes ver este menú`,
-                iconURL: gVis.logoUrl
+                iconURL: httpsIcon
             });
 
         await interaction.reply({
             embeds: [selectEmbed],
             components: [row],
-            files: gVis.files,
+            files: selectFiles,
             ephemeral: true
         }).catch(() => { });
 
@@ -10544,7 +10686,15 @@ client.on('interactionCreate', async (interaction) => {
             || isBotOwner(interaction.user.id)
             || interaction.member?.permissions?.has(PermissionFlagsBits.Administrator);
         if (!isAllowed) {
-            return interaction.reply({ content: '⛔ Solo el Staff que abrió este selector puede cancelarlo.', ephemeral: true }).catch(() => {});
+            return interaction.reply({
+                embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                    category: 'SISTEMA DE PLANTILLAS',
+                    title: '⛔┃Acción Restringida',
+                    description: 'Solo el Staff que abrió este selector puede cancelarlo.',
+                    color: 0xE74C3C
+                })],
+                ephemeral: true
+            }).catch(() => {});
         }
         await interaction.deferUpdate().catch(() => {});
         await interaction.message.delete().catch(() => {});
@@ -10557,7 +10707,12 @@ client.on('interactionCreate', async (interaction) => {
         const hasStaff = isBotOwner(interaction.user.id) || await isStaffMember(interaction.member, interaction.guild, interaction.user.id);
         if (!hasStaff) {
             return interaction.reply({
-                content: '⛔ Solo el equipo de **Staff** puede previsualizar las plantillas desde este panel.',
+                embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                    category: 'SISTEMA DE PLANTILLAS',
+                    title: '⛔┃Acceso Exclusivo de Staff',
+                    description: 'Solo el equipo de **Staff** puede previsualizar las plantillas desde este panel.',
+                    color: 0xE74C3C
+                })],
                 ephemeral: true
             }).catch(() => {});
         }
@@ -10569,7 +10724,15 @@ client.on('interactionCreate', async (interaction) => {
         const data = getPlantillasData(gId);
         const entries = Object.entries(data.plantillas || {});
         if (entries.length === 0) {
-            return interaction.reply({ content: '⚠️ No hay plantillas configuradas todavía en este servidor.', ephemeral: true }).catch(() => {});
+            return interaction.reply({
+                embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                    category: 'SISTEMA DE PLANTILLAS',
+                    title: '⚠️┃Sin Plantillas Configuradas',
+                    description: 'No hay plantillas configuradas todavía en este servidor.',
+                    color: 0xF39C12
+                })],
+                ephemeral: true
+            }).catch(() => {});
         }
 
         const vPrev = guildManager.resolveGuildVisuals(gId);
@@ -10844,9 +11007,15 @@ client.on('interactionCreate', async (interaction) => {
 
             if (isNaN(numRating) || numRating < 1 || numRating > 10) {
                 await interaction.editReply({
-                    content: '⚠️ **Puntuación no válida.** Por favor, introduce un número del **1 al 10**.'
+                    embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                        category: 'SISTEMA DE VALORACIONES',
+                        title: '⚠️┃Puntuación No Válida',
+                        description: 'Por favor, introduce un número entero del **1 al 10** para valorar al Staff.',
+                        color: 0xF39C12,
+                        footerText: `${guildManager.resolveGuildVisuals(interaction.guild?.id).name} • Solo tú puedes ver este aviso`
+                    })]
                 }).catch(() => { });
-                setTimeout(() => interaction.deleteReply().catch(() => { }), 3500);
+                setTimeout(() => interaction.deleteReply().catch(() => { }), 4000);
                 return;
             }
 
@@ -10865,9 +11034,15 @@ client.on('interactionCreate', async (interaction) => {
             // Evitar auto-valoraciones
             if (staffId === interaction.user.id) {
                 await interaction.editReply({
-                    content: '⚠️ **No puedes valorarte a ti mismo.** La valoración debe ser para otro miembro del equipo de Staff.'
+                    embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                        category: 'SISTEMA DE VALORACIONES',
+                        title: '⛔┃Acción No Permitida',
+                        description: 'No puedes valorarte a ti mismo. La valoración debe ser para otro miembro del equipo de Staff.',
+                        color: 0xE74C3C,
+                        footerText: `${guildManager.resolveGuildVisuals(interaction.guild?.id).name} • Solo tú puedes ver este aviso`
+                    })]
                 }).catch(() => { });
-                setTimeout(() => interaction.deleteReply().catch(() => { }), 3000);
+                setTimeout(() => interaction.deleteReply().catch(() => { }), 4000);
                 return;
             }
 
@@ -10915,21 +11090,36 @@ client.on('interactionCreate', async (interaction) => {
             updateStaffTopRankingPanel(gId).catch(() => { });
 
             await interaction.editReply({
-                content: `✅ **¡Gracias por tu valoración!** Tu nota de **${numRating}/10 ⭐** para ${staffMention} ha sido publicada correctamente.`
+                embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                    category: 'SISTEMA DE VALORACIONES',
+                    title: '⭐┃¡Valoración Publicada con Éxito!',
+                    description:
+                        `¡Gracias por ayudar a mejorar la calidad del equipo!\n\n` +
+                        `> 🛡️ **Staff valorado:** ${staffMention}\n` +
+                        `> ⭐ **Puntuación enviada:** \`${numRating}/10\`\n` +
+                        `> 📢 **Publicada en:** <#${targetChannelId}>`,
+                    color: 0x2ECC71,
+                    footerText: `${guildManager.resolveGuildVisuals(gId).name} • Solo tú puedes ver esta confirmación`
+                })]
             }).catch(() => { });
 
             setTimeout(() => {
                 interaction.deleteReply().catch(() => { });
-            }, 3500);
+            }, 5000);
             return;
         } catch (err) {
             console.error('Error al procesar modal de valoración:', err);
             await interaction.editReply({
-                content: '❌ Ocurrió un error al registrar tu valoración.'
+                embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                    category: 'SISTEMA DE VALORACIONES',
+                    title: '❌┃Error al Registrar Valoración',
+                    description: 'Ocurrió un error inesperado al registrar tu valoración. Por favor, inténtalo de nuevo.',
+                    color: 0xE74C3C
+                })]
             }).catch(() => { });
             setTimeout(() => {
                 interaction.deleteReply().catch(() => { });
-            }, 3000);
+            }, 4000);
             return;
         }
     }
@@ -10980,9 +11170,13 @@ client.on('interactionCreate', async (interaction) => {
                 console.log(`\n⏳ [SANCIÓN EN ESPERA DE FOTO] Staff ${interaction.user.tag} (${interaction.user.id}) ha rellenado el formulario #${sancionId}. Esperando captura en el chat...`);
 
                 await interaction.editReply({
-                    content: `📸 **¡Datos del expediente #${sancionId} registrados!**\n\n` +
-                        `👉 **Ahora pega o sube la captura de prueba en este chat** en los próximos **60 segundos** para publicarla automáticamente.\n` +
-                        `*(Si no tienes captura, escribe \`sin foto\` y se publicará sin imagen).*`
+                    embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                        category: 'SISTEMA DE SANCIONES',
+                        title: `📸┃Expediente #${sancionId} Registrado`,
+                        description:
+                            `👉 **Pega o sube la captura de prueba en este chat** en los próximos **60 segundos** para publicarla automáticamente.\n\n` +
+                            `> ℹ️ *Si no tienes captura, escribe \`sin foto\` y el acta se publicará sin imagen.*`
+                    })]
                 }).catch(() => { });
 
                 setTimeout(() => {
@@ -11016,21 +11210,31 @@ client.on('interactionCreate', async (interaction) => {
             await targetChannel.send({ embeds: embeds || [embed], files }).catch(e => console.error('Error al enviar sancion:', e));
 
             await interaction.editReply({
-                content: `✅ **Expediente de sanción #${sancionId} registrado y publicado con éxito.**`
+                embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                    category: 'SISTEMA DE SANCIONES',
+                    title: `✅┃Expediente #${sancionId} Publicado`,
+                    description: `El acta de sanción ha sido registrada y publicada correctamente en <#${targetChannelId}>.`,
+                    color: 0x2ECC71
+                })]
             }).catch(() => { });
 
             setTimeout(() => {
                 interaction.deleteReply().catch(() => { });
-            }, 3000);
+            }, 4000);
             return;
         } catch (err) {
             console.error('Error al procesar modal de sancion:', err);
             await interaction.editReply({
-                content: '❌ Ocurrió un error al procesar el acta de sanción.'
+                embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                    category: 'SISTEMA DE SANCIONES',
+                    title: '❌┃Error al Procesar Sanción',
+                    description: 'Ocurrió un error al procesar el acta de sanción. Inténtalo de nuevo.',
+                    color: 0xE74C3C
+                })]
             }).catch(() => { });
             setTimeout(() => {
                 interaction.deleteReply().catch(() => { });
-            }, 3000);
+            }, 4000);
             return;
         }
     }
@@ -11060,9 +11264,13 @@ client.on('interactionCreate', async (interaction) => {
             console.log(`\n⏳ [EVENTO EN ESPERA DE FLYER] Staff ${interaction.user.tag} (${interaction.user.id}) ha rellenado el formulario de evento #${eventoId}. Esperando cartel en el chat...`);
 
             await interaction.editReply({
-                content: `🚗 **¡Mensaje del evento registrado!**\n\n` +
-                    `👉 **Ahora pega o sube el cartel / flyer / foto del evento en este chat** en los próximos **60 segundos** para publicarlo automáticamente.\n` +
-                    `*(Si no tienes cartel, escribe \`sin foto\` y se publicará de inmediato).*`
+                embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                    category: 'SISTEMA DE EVENTOS',
+                    title: '🎉┃Mensaje del Evento Registrado',
+                    description:
+                        `👉 **Pega o sube el cartel / flyer / foto del evento en este chat** en los próximos **60 segundos** para publicarlo automáticamente.\n\n` +
+                        `> ℹ️ *Si no tienes cartel, escribe \`sin foto\` y se publicará de inmediato.*`
+                })]
             }).catch(() => { });
 
             setTimeout(() => {
@@ -11072,11 +11280,16 @@ client.on('interactionCreate', async (interaction) => {
         } catch (err) {
             console.error('Error al procesar modal de evento:', err);
             await interaction.editReply({
-                content: '❌ Ocurrió un error al procesar el evento.'
+                embeds: [buildBrandedNoticeEmbed(interaction.guild, {
+                    category: 'SISTEMA DE EVENTOS',
+                    title: '❌┃Error al Procesar Evento',
+                    description: 'Ocurrió un error al procesar el evento. Inténtalo de nuevo.',
+                    color: 0xE74C3C
+                })]
             }).catch(() => { });
             setTimeout(() => {
                 interaction.deleteReply().catch(() => { });
-            }, 3000);
+            }, 4000);
             return;
         }
     }
@@ -11406,6 +11619,39 @@ async function startBot() {
         await guildManager.ensurePrimaryGuildProfileInMongo().catch(() => {});
         await syncSecondaryGuildsFromMongo().catch(() => {});
         await syncAllGuildPlantillasFromMongo().catch(() => {});
+
+        // Auto-sincronizar Staffs valorables desde el rol principal (EQUIPO DEL STAFF) en todos los servidores al arrancar
+        for (const guild of client.guilds.cache.values()) {
+            await syncStaffListFromRole(guild, true).catch(() => {});
+        }
+    });
+
+    // Auto-sincronización en tiempo real: cuando alguien recibe o pierde el rol principal de Staff (EQUIPO DEL STAFF)
+    client.on('guildMemberUpdate', async (oldMember, newMember) => {
+        try {
+            if (!newMember?.guild || newMember.user?.bot) return;
+            const staffRoleId = resolveMainStaffRoleId(newMember.guild);
+            if (!staffRoleId) return;
+            const hadRole = oldMember.roles?.cache?.has(staffRoleId);
+            const hasRole = newMember.roles?.cache?.has(staffRoleId);
+            if (hadRole !== hasRole) {
+                await syncStaffListFromRole(newMember.guild, true).catch(() => {});
+            }
+        } catch (e) { }
+    });
+
+    // Auto-sincronización en tiempo real: cuando un Staff sale o es expulsado del servidor
+    client.on('guildMemberRemove', async (member) => {
+        try {
+            if (!member?.guild || member.user?.bot) return;
+            const staffRoleId = resolveMainStaffRoleId(member.guild);
+            const data = getStaffRatingsData(member.guild.id);
+            const wasInList = (data.staffList || []).includes(member.id);
+            const hadRole = staffRoleId && member.roles?.cache?.has(staffRoleId);
+            if (wasInList || hadRole) {
+                await syncStaffListFromRole(member.guild, true).catch(() => {});
+            }
+        } catch (e) { }
     });
 
     // Sistema independiente de Web Dashboard Prémium (OAuth2 + Selector de Servidores + Configuración en Vivo)
