@@ -1216,6 +1216,7 @@ function initTicketSystem(client) {
 
                 const nextNum = await getNextTicketNumber(guild.id, catKey);
                 const ticketCode = `${tType.channelPrefix}-${nextNum}`;
+                const formattedChannelName = `${tType.emoji}┃${ticketCode}`;
 
                 // Heredar ESTRICTAMENTE los permisos de la categoría en Discord + creador del ticket + bot
                 // Así ningún Staff sin permiso en esa categoría podrá ver el ticket
@@ -1231,7 +1232,7 @@ function initTicketSystem(client) {
                 );
 
                 const channel = await guild.channels.create({
-                    name: ticketCode,
+                    name: formattedChannelName,
                     type: ChannelType.GuildText,
                     parent: categoryId || undefined,
                     topic: `Ticket ${ticketCode} | Categoría: ${tType.label} | Usuario: ${interaction.user.tag} (${interaction.user.id})`,
@@ -1508,20 +1509,25 @@ function initTicketSystem(client) {
 
             // E) MODAL RENOMBRAR CANAL
             if (interaction.isModalSubmit() && interaction.customId === 'tkt_modal_rename') {
-                const newName = interaction.fields.getTextInputValue('new_name')
+                const rawName = interaction.fields.getTextInputValue('new_name')
                     .toLowerCase()
                     .replace(/[^a-z0-9-_]/g, '-')
                     .replace(/-+/g, '-')
-                    .slice(0, 50);
-                if (!newName) {
+                    .replace(/^-|-$/g, '')
+                    .slice(0, 45);
+                if (!rawName) {
                     return interaction.reply({ content: '⚠️ Nombre no válido.', ephemeral: true }).catch(() => {});
                 }
-                await interaction.channel.setName(newName).catch(() => {});
+                const activeDoc = await fetchActiveTicket(interaction.guild.id, interaction.channelId);
+                const tTypeRen = activeDoc ? TICKET_TYPE_MAP.get(activeDoc.categoryKey) : null;
+                const finalName = tTypeRen ? `${tTypeRen.emoji}┃${rawName}` : rawName;
+
+                await interaction.channel.setName(finalName).catch(() => {});
                 const vRen = guildManager.resolveGuildVisuals(interaction.guild.id);
                 const renEmbed = new EmbedBuilder()
                     .setColor(vRen.color)
                     .setAuthor({ name: `GESTIÓN DE TICKET | ${vRen.name}`, iconURL: vRen.logoUrl })
-                    .setDescription(`✏️ Canal renombrado a **#${newName}** por <@${interaction.user.id}>.`)
+                    .setDescription(`✏️ Canal renombrado a **#${finalName}** por <@${interaction.user.id}>.`)
                     .setTimestamp();
                 return interaction.reply({ embeds: [renEmbed] }).catch(() => {});
             }
@@ -1823,6 +1829,46 @@ function initTicketSystem(client) {
             console.error('⚠️ [TICKETS channelUpdate Error]:', err.message);
         }
     });
+
+    // 4. AUTO-RENOMBRADO AL ARRANCAR: añade el prefijo (emoji┃) a tickets ya abiertos que no lo tengan
+    const syncExistingTicketChannelNames = async () => {
+        try {
+            for (const guild of client.guilds.cache.values()) {
+                if (guildManager.isPrimaryGuild(guild.id)) continue;
+                const cats = getGuildTicketCategories(guild);
+                const catIdToType = new Map();
+                for (const t of TICKET_TYPES) {
+                    if (cats[t.key]) catIdToType.set(cats[t.key], t);
+                }
+                if (catIdToType.size === 0) continue;
+
+                let renamedCount = 0;
+                for (const ch of guild.channels.cache.values()) {
+                    if (ch.type !== ChannelType.GuildText || !ch.parentId) continue;
+                    const tType = catIdToType.get(ch.parentId);
+                    if (!tType) continue;
+                    // Si ya lleva separador ┃ o |, no tocarlo (ej: 🎫｜bandas-isernrn o 🛠️┃soporte-5)
+                    if (ch.name.includes('┃') || ch.name.includes('｜') || ch.name.includes('|')) continue;
+                    // Solo renombrar tickets con prefijo del sistema (soporte-5, reporte-2, etc.)
+                    if (!ch.name.toLowerCase().startsWith(`${tType.channelPrefix}-`)) continue;
+
+                    const targetName = `${tType.emoji}┃${ch.name}`;
+                    await ch.setName(targetName, 'Formato automático de emoji por categoría de ticket').catch(() => {});
+                    renamedCount++;
+                }
+
+                if (renamedCount > 0) {
+                    guildManager.logGuild(guild, '🏷️', `Formato (emoji┃) aplicado automáticamente a ${renamedCount} ticket(s) ya abiertos`);
+                }
+            }
+        } catch (e) { }
+    };
+
+    if (client.isReady()) {
+        setTimeout(syncExistingTicketChannelNames, 3000);
+    } else {
+        client.once('ready', () => setTimeout(syncExistingTicketChannelNames, 4000));
+    }
 }
 
 module.exports = {
