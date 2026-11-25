@@ -3702,10 +3702,20 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
     }
 
     const baseDir = v.assetsDir || path.join(__dirname, 'assets');
-    const imgDirectoPath = path.join(baseDir, 'directo.png');
-    const imgTiktokPath = path.join(baseDir, 'tiktok.png');
-    const imgKickPath = path.join(baseDir, 'kick.png');
-    const imgTwitchPath = path.join(baseDir, 'stream.png');
+    const findPlatformBanner = (stems) => {
+        const exts = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+        for (const st of stems) {
+            for (const ext of exts) {
+                const candidate = path.join(baseDir, st + ext);
+                if (fs.existsSync(candidate)) return { fullPath: candidate, name: st + ext };
+            }
+        }
+        return null;
+    };
+    const imgKickFile = findPlatformBanner(['kick', 'directo_kick', 'banner_kick']);
+    const imgTiktokFile = findPlatformBanner(['tiktok', 'directo_tiktok', 'banner_tiktok']);
+    const imgTwitchFile = findPlatformBanner(['stream', 'twitch', 'directo_twitch', 'banner_twitch']);
+    const imgDirectoFile = findPlatformBanner(['directo', 'panel_directos']);
     const files = v.files.filter(f => f.name.toLowerCase().startsWith('logo'));
 
     const normPlatform = (platform || 'Twitch').toLowerCase();
@@ -3714,18 +3724,18 @@ async function sendStreamerNotification({ userMention, streamUrl, streamTitle, p
     const isTwitch = !isKick && !isTikTok;
 
     let streamBannerUrl = null;
-    if (isKick && fs.existsSync(imgKickPath)) {
-        files.push(new AttachmentBuilder(imgKickPath, { name: 'kick.png' }));
-        streamBannerUrl = 'attachment://kick.png';
-    } else if (isTikTok && fs.existsSync(imgTiktokPath)) {
-        files.push(new AttachmentBuilder(imgTiktokPath, { name: 'tiktok.png' }));
-        streamBannerUrl = 'attachment://tiktok.png';
-    } else if (isTwitch && fs.existsSync(imgTwitchPath)) {
-        files.push(new AttachmentBuilder(imgTwitchPath, { name: 'twitch.png' }));
-        streamBannerUrl = 'attachment://twitch.png';
-    } else if (fs.existsSync(imgDirectoPath)) {
-        files.push(new AttachmentBuilder(imgDirectoPath, { name: 'directo.png' }));
-        streamBannerUrl = 'attachment://directo.png';
+    if (isKick && imgKickFile) {
+        files.push(new AttachmentBuilder(imgKickFile.fullPath, { name: imgKickFile.name }));
+        streamBannerUrl = `attachment://${imgKickFile.name}`;
+    } else if (isTikTok && imgTiktokFile) {
+        files.push(new AttachmentBuilder(imgTiktokFile.fullPath, { name: imgTiktokFile.name }));
+        streamBannerUrl = `attachment://${imgTiktokFile.name}`;
+    } else if (isTwitch && imgTwitchFile) {
+        files.push(new AttachmentBuilder(imgTwitchFile.fullPath, { name: imgTwitchFile.name }));
+        streamBannerUrl = `attachment://${imgTwitchFile.name}`;
+    } else if (imgDirectoFile) {
+        files.push(new AttachmentBuilder(imgDirectoFile.fullPath, { name: imgDirectoFile.name }));
+        streamBannerUrl = `attachment://${imgDirectoFile.name}`;
     } else if (v.bannerUrl) {
         const extraBanner = v.files.find(f => !f.name.toLowerCase().startsWith('logo'));
         if (extraBanner) files.push(extraBanner);
