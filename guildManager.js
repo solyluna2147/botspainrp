@@ -222,8 +222,8 @@ const BANNER_TYPES = {
     valoracion:    { key: 'BANNER_VALORACIONES_URL', files: ['panel_valoracion.png', 'valoracion.png', 'valoraciones.png', 'banner_valoraciones.png'] },
     tops:          { key: 'BANNER_TOPS_URL',         files: ['panel_tops.png', 'tops.png', 'top.png', 'topstaff.png'] },
     sanciones:     { key: 'BANNER_SANCIONES_URL',    files: ['panel_sanciones.png', 'sanciones.png', 'sancion.png', 'banner_sanciones.png'] },
-    plantillas:    { key: 'BANNER_PLANTILLAS_URL',   files: ['panel_postulaciones.png', 'panel_plantillas.png', 'postulaciones.png', 'plantillas.png', 'banner_plantillas.png', 'banner_postulaciones.png', 'sistema_de_plantillas.png'] },
-    postulaciones: { key: 'BANNER_PLANTILLAS_URL',   files: ['panel_postulaciones.png', 'panel_plantillas.png', 'postulaciones.png', 'plantillas.png', 'banner_plantillas.png', 'banner_postulaciones.png', 'sistema_de_plantillas.png'] },
+    plantillas:    { key: 'BANNER_PLANTILLAS_URL',   files: ['panel_postulaciones.png', 'panel_postulacion.png', 'panel_plantillas.png', 'panel_plantilla.png', 'postulaciones.png', 'postulacion.png', 'plantillas.png', 'plantilla.png', 'banner_plantillas.png', 'banner_postulaciones.png', 'sistema_de_plantillas.png'] },
+    postulaciones: { key: 'BANNER_PLANTILLAS_URL',   files: ['panel_postulaciones.png', 'panel_postulacion.png', 'panel_plantillas.png', 'panel_plantilla.png', 'postulaciones.png', 'postulacion.png', 'plantillas.png', 'plantilla.png', 'banner_plantillas.png', 'banner_postulaciones.png', 'sistema_de_plantillas.png'] },
     bienvenida:    { key: 'BANNER_BIENVENIDA_URL',   files: ['banner_bienvenida.png', 'bienvenida.png', 'bienvenidas.png', 'welcome.png'] },
     bienvenidas:   { key: 'BANNER_BIENVENIDA_URL',   files: ['banner_bienvenida.png', 'bienvenida.png', 'bienvenidas.png', 'welcome.png'] },
     consultas:             { key: 'BANNER_CONSULTAS_URL',          files: ['banner_consultas.png', 'consultas.png', 'panel_consultas.png', 'consulta.png'] },
@@ -443,6 +443,13 @@ function findImageInDir(dirPath, candidates) {
     }
 
     const lowerMap = new Map(actualFiles.map(f => [f.toLowerCase(), f]));
+    const slugMap = new Map();
+    for (const f of actualFiles) {
+        const ext = path.extname(f).toLowerCase();
+        if (!exts.includes(ext)) continue;
+        const stemSlug = normalizeSlug(f.slice(0, -ext.length));
+        if (stemSlug && !slugMap.has(stemSlug)) slugMap.set(stemSlug, f);
+    }
 
     for (const baseFilename of list) {
         const lowerExact = baseFilename.toLowerCase();
@@ -456,6 +463,11 @@ function findImageInDir(dirPath, candidates) {
                 const realName = lowerMap.get(stem + ext);
                 return { fullPath: path.join(dirPath, realName), name: realName };
             }
+        }
+        const targetSlug = normalizeSlug(stem);
+        if (targetSlug && slugMap.has(targetSlug)) {
+            const realName = slugMap.get(targetSlug);
+            return { fullPath: path.join(dirPath, realName), name: realName };
         }
     }
     return null;
@@ -609,8 +621,9 @@ function resolveGuildVisuals(guildId, bannerType = null) {
         } else {
             const bannerFile = findImageInDir(assetsDir, info.files);
             if (bannerFile) {
-                files.push(new AttachmentBuilder(bannerFile.fullPath, { name: bannerFile.name }));
-                bannerUrl = `attachment://${bannerFile.name}`;
+                const safeName = bannerFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                files.push(new AttachmentBuilder(bannerFile.fullPath, { name: safeName }));
+                bannerUrl = `attachment://${safeName}`;
             }
         }
     }
