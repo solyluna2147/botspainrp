@@ -417,13 +417,13 @@ function buildPanelConsultasEmbed(isStaffChannel = false, guildId = null) {
             iconURL: logoUrl
         })
         .setThumbnail(logoUrl)
-        .setTitle('🧠 CONSULTAS DE LA NORMATIVA OFICIAL')
+        .setTitle('🧠 CONSULTAS DE LAS NORMATIVAS OFICIALES')
         .setDescription(
             `Bienvenido al **Canal Oficial de Consultas con Inteligencia Artificial** exclusivo de **${serverName}** 🇪🇸.\n\n` +
-            `Este sistema resuelve al instante cualquier duda sobre la normativa general, conceptos de rol, sanciones, zonas seguras, atracos, vehículos e ilegales con base 100% oficial.\n\n` +
+            `Este sistema resuelve al instante cualquier duda sobre **todas nuestras normativas oficiales** (general, ilegales, negocios, facciones, conceptos de rol, sanciones, zonas seguras y vehículos) con base 100% oficial.\n\n` +
             `📋 **¿Cómo realizar una consulta?**\n` +
             `> 1️⃣ **Tan solo escribe tu duda en este canal** hablando normalmente, sin necesidad de usar ningún comando.\n` +
-            `> 2️⃣ La IA analizará la normativa oficial y te responderá en pocos segundos.\n` +
+            `> 2️⃣ La IA analizará las normativas oficiales y te responderá en pocos segundos.\n` +
             `> 3️⃣ Una vez leída la respuesta, pulsa el botón **"🗑️ Cerrar / Borrar"** para mantener el canal limpio y ordenado.\n\n` +
             `💡 *El sistema cuenta con auto-borrado preventivo a los ${cleanSecs} segundos para que no se acumulen mensajes en el canal. Este mensaje informativo es permanente.*`
         )
@@ -536,24 +536,25 @@ const JERGA_SINONIMOS = {
     'ck': ['ck', 'character kill', 'cadena perpetua', 'perpetua', 'muerte definitiva', 'multas', 'droga', 'matarle el pj', 'borrar pj'],
     'mg': ['mg', 'metagaming', 'metagame', 'informacion ooc', 'directo', 'twitch', 'tapado', 'reconocer'],
     'pg': ['pg', 'powergaming', 'powergame', 'imposible', 'irreal', 'montana', 'animaciones', 'cargar', 'bh', 'bunny hop'],
-    'dm': ['dm', 'rdm', 'deathmatch', 'matar sin rol', 'golpear', 'sin rol previo'],
-    'vdm': ['vdm', 'vehicle deathmatch', 'atropellar', 'atropello', 'vehiculo como arma'],
-    'hk': ['hk', 'helikill', 'helicoptero', 'helico', 'helices', 'vdm', 'vehiculos aereos'],
-    'nvv': ['nvv', 'nvl', 'no valoracion de vida', 'valorar vida', 'valoracion de vida', 'no valorar', 'rendirte', 'apuntan'],
+    'dm': ['dm', 'rdm', 'deathmatch', 'matar sin rol', 'matar', 'agredir', 'golpear', 'sin rol previo'],
+    'vdm': ['vdm', 'vehicle deathmatch', 'atropell', 'embestir', 'embist', 'vehiculo como arma', 'vehiculos como arma', 'coche como arma'],
+    'hk': ['hk', 'helikill', 'helicoptero', 'helico', 'helices', 'vehiculos aereos'],
+    'nvv': ['nvv', 'nvl', 'no valoracion de vida', 'valorar vida', 'valorar la vida', 'valoracion de vida', 'no valorar', 'rendirte', 'apuntan'],
     'ic_ooc': ['ic', 'ooc', 'in character', 'out of character', 'fuera de personaje', 'dentro del personaje', 'iooc', 'faltas de respeto', 'insultar'],
-    'evasion': ['evasion', 'f8', 'f8 quit', 'desconectarse', 'forzar reaparicion', 'coma', 'reanimacion'],
+    'evasion': ['evasion', 'evadir', 'combat log', 'f8', 'f8 quit', 'desconectarse', 'forzar reaparicion', 'coma', 'reanimacion'],
     'fairplay': ['fairplay', 'fair play', 'juego limpio', 'bug', 'bugs', 'ba', 'bug abuse', 'dupeo', 'desync', 'lagunas'],
     'comandos_rol': ['/me', '/do', 'tercera persona', 'mentir', 'pensamientos', 'sentimientos'],
-    'negocio': ['local', 'tienda', 'negocio', 'empresa', 'comercio', 'badulaque', 'taller', 'keli', 'propiedad'],
+    'negocio': ['local', 'tienda', 'negocio', 'empresa', 'comercio', 'badulaque', 'taller', 'mecanico', 'armeria', 'ammunation', 'discoteca', 'restaurante', 'cafeteria', 'jefe', 'empleado'],
     'cerrado': ['cerrado', 'cerrar', 'serrao', 'cerrao', 'inactivo', 'inactividad', 'abrir', 'abre', 'dias'],
-    'robar': ['robo', 'robar', 'atraco', 'atracar', 'asaltar', 'asalto', 'botin', 'hurto', 'mangado', 'chafado', 'cj', 'car jacking'],
-    'policia': ['lspd', 'cnp', 'cop', 'cops', 'agente', 'policia', 'patrulla', 'maderos', 'nacional', 'pitufo', 'ems', 'medico', 'hospital'],
-    'sancion': ['ban', 'baneo', 'jail', 'sancion', 'castigo', 'expulsion', 'permaban', 'sancionan', 'castigan'],
-    'coche': ['coche', 'vehiculo', 'auto', 'moto', 'patrulla', 'conducir', 'disparar', 'buga'],
-    'arma': ['pistola', 'fusil', 'ak', 'escopeta', 'pesada', 'armamento', 'blanca', 'pipa', 'plomo', 'sns', 'smg'],
+    'robar': ['robo', 'robar', 'atraco', 'atracar', 'asaltar', 'asalto', 'botin', 'hurto', 'mangado', 'chafado', 'cj', 'car jacking', 'airdrop', 'drop'],
+    'policia': ['lspd', 'cnp', 'cop', 'cops', 'agente', 'policia', 'policial', 'patrulla', 'persecucion', 'taser', 'cacheo', 'detencion', 'alerta', 'defcon', 'codigos'],
+    'ems': ['ems', 'medico', 'hospital', 'ambulancia', 'reanimar', 'reanimacion', 'medikit', 'heridas', 'paciente', 'servicio'],
+    'sancion': ['ban', 'baneo', 'jail', 'sancion', 'sanciones', 'strike', 'strikes', 'aviso', 'castigo', 'expulsion', 'permaban', 'gravedad', 'leve', 'grave'],
+    'coche': ['coche', 'vehiculo', 'auto', 'moto', 'patrulla', 'conducir', 'disparar', 'blindado', 'torreta'],
+    'arma': ['pistola', 'fusil', 'ak', 'escopeta', 'pesada', 'armamento', 'blanca', 'pipa', 'plomo', 'sns', 'smg', 'lanzacohetes'],
     'secuestro': ['secuestro', 'secuestrar', 'rapto', 'retener', 'rehen', 'rehenes', 'rescate'],
-    'guerra': ['guerra', 'tiroteo', 'bandas', 'mafias', 'pacto', 'alianza', 'barrio', 'cartel', 'carteles', 'ilegal', 'ilegales', 'limite', 'cupo', 'integrantes', 'alianzas'],
-    'entorno': ['entorno', 'rde', 'rol de entorno', 'comisaria', 'zona segura', 'zs', 'evasion', 'campeo', 'caliente']
+    'guerra': ['guerra', 'tiroteo', 'banda', 'bandas', 'mafia', 'mafias', 'pacto', 'alianza', 'barrio', 'cartel', 'carteles', 'ilegal', 'ilegales', 'limite', 'cupo', 'integrantes', 'sede', 'norte', 'organizacion'],
+    'entorno': ['entorno', 'rde', 'rol de entorno', 'comisaria', 'zona segura', 'zs', 'evasion', 'campeo', 'caliente', '/911']
 };
 
 function escapeRegex(str) {
@@ -597,9 +598,23 @@ function getRelevantNormativaSnippets(question, customPages = null) {
             'para', 'como', 'pero', 'este', 'esta', 'esto', 'sobre', 'todo', 'toda', 'donde', 'cuando',
             'quien', 'porque', 'mucho', 'poco', 'tiempo', 'pasa', 'queda', 'hace', 'deha', 'nota', 'cosa',
             'que', 'cual', 'cuales', 'pone', 'algo', 'significa', 'quiere', 'decir', 'puede', 'puedo',
-            'hacer', 'tiene', 'tengo', 'normativa', 'norma', 'normas', 'regla', 'reglas', 'vallecas',
-            'server', 'servidor', 'aqui', 'duda', 'pregunta', 'saber', 'hay', 'son', 'del', 'las', 'los', 'una', 'uno'
+            'pueden', 'podria', 'debe', 'debo', 'hacer', 'tiene', 'tengo', 'tienen', 'normativa', 'norma',
+            'normas', 'regla', 'reglas', 'vallecas', 'vilacity', 'server', 'servidor', 'aqui', 'duda',
+            'pregunta', 'saber', 'hay', 'son', 'del', 'las', 'los', 'una', 'uno', 'unos', 'unas', 'con',
+            'sin', 'por', 'algun', 'alguna', 'cuanto', 'cuantos', 'cuanta', 'cuantas'
         ]);
+
+        // Stemmer ligero de español para emparejar gerundios, participios, infinitivos y plurales
+        // Ej: atropellando -> atropell, secuestrando -> secuestr, sanciones -> sancion, empleados -> emplead
+        const spanishStem = (w) => {
+            if (!w || w.length < 6) return w;
+            return w
+                .replace(/(amiento|imiento|aciones|iciones|adores|adoras)$/i, '')
+                .replace(/(acion|icion|ando|iendo|arse|erse|irse|ados|adas|idos|idas|ado|ido|ar|er|ir)$/i, '')
+                .replace(/(ciones|siones|ces)$/i, '')
+                .replace(/(es|s)$/i, '');
+        };
+
         const qClean = question.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         const rawTokens = qClean.split(/[^a-z0-9]+/i).filter(Boolean);
 
@@ -608,64 +623,196 @@ function getRelevantNormativaSnippets(question, customPages = null) {
             rawTokens.filter(w => SHORT_RP_TERMS.has(w) || (w.length >= 3 && !stopWords.has(w)))
         );
 
+        // Raíces españolas de palabras largas (>=6 chars) para detectar cualquier conjugación/plural
+        const stemWords = new Set();
+        for (const w of directWords) {
+            const st = spanishStem(w);
+            if (st && st.length >= 4 && st !== w && !directWords.has(st)) {
+                stemWords.add(st);
+            }
+        }
+
         // Expandir palabras clave con jerga y sinónimos (usando palabra completa para siglas cortas)
         const synonymWords = new Set();
-        for (const [, list] of Object.entries(JERGA_SINONIMOS)) {
+        const matchedCategories = new Set();
+        for (const [catKey, list] of Object.entries(JERGA_SINONIMOS)) {
             const matched = list.some(s => countTermMatches(qClean, s) > 0);
             if (matched) {
+                matchedCategories.add(catKey);
                 list.forEach(w => {
                     if (!directWords.has(w)) synonymWords.add(w);
                 });
             }
         }
 
+        // Detectar dominios de normativa mencionados en la pregunta para priorizar el documento exacto
+        const wantsGeneral = matchedCategories.has('vdm') || matchedCategories.has('dm') || matchedCategories.has('pg')
+            || matchedCategories.has('mg') || matchedCategories.has('rk') || matchedCategories.has('pk')
+            || matchedCategories.has('ck') || matchedCategories.has('nvv') || matchedCategories.has('evasion')
+            || matchedCategories.has('ic_ooc') || matchedCategories.has('comandos_rol') || matchedCategories.has('entorno')
+            || /\b(general|zona segura|sancion|sanciones|ban|multa|cop bait|stream snip)\b/i.test(qClean);
+        const wantsEms = matchedCategories.has('ems') || /\b(ems|medic|hospital|ambulanc|reanim|medikit)\b/i.test(qClean);
+        const wantsPolicia = matchedCategories.has('policia') || /\b(polici|lspd|cnp|patrull|taser|cacheo|persecuc|deten|arrest|defcon)\b/i.test(qClean);
+        const wantsNegocios = matchedCategories.has('negocio') || /\b(negoci|mecanic|taller|armeri|ammunation|badulaque|discotec|restauran|cafeter|emplead|encargad)\b/i.test(qClean);
+        const wantsIlegales = matchedCategories.has('guerra') || matchedCategories.has('robar') || matchedCategories.has('secuestro')
+            || /\b(ilegal|banda|mafia|cartel|organizacion|sede|norte|airdrop|drop|blindad|torreta|atraco|secuestr|rehen)\b/i.test(qClean);
+
         // Puntuación de relevancia por página
         const scored = pagesSource.map(page => {
             const pageLower = page.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const firstLine = pageLower.split('\n')[0] || '';
             let score = 0;
 
             // 1. Coincidencias directas con lo que preguntó el usuario (máxima prioridad)
             for (const word of directWords) {
                 const occurrences = countTermMatches(pageLower, word);
                 if (occurrences > 0) {
-                    const baseWeight = PRIORITY_RP_TERMS.has(word) ? 12 : (word.length >= 5 ? 5 : 3);
+                    const baseWeight = PRIORITY_RP_TERMS.has(word) ? 14 : (word.length >= 5 ? 6 : 3);
                     score += baseWeight + Math.min(occurrences, 5) * 2;
                 }
             }
 
-            // 2. Coincidencias por sinónimos / expansión de siglas
+            // 2. Coincidencias por raíz española (atropellando -> atropell -> atropellar)
+            for (const st of stemWords) {
+                const occurrences = countTermMatches(pageLower, st);
+                if (occurrences > 0) {
+                    score += 7 + Math.min(occurrences, 4) * 2;
+                }
+            }
+
+            // 3. Coincidencias por sinónimos / expansión de siglas
             for (const word of synonymWords) {
                 const occurrences = countTermMatches(pageLower, word);
                 if (occurrences > 0) {
-                    const baseWeight = PRIORITY_RP_TERMS.has(word) ? 6 : 2;
+                    const baseWeight = PRIORITY_RP_TERMS.has(word) ? 10 : 3;
                     score += baseWeight + Math.min(occurrences, 4);
                 }
             }
 
-            // Penalizar ligeramente la página del Índice General para priorizar el artículo completo
-            if (pageLower.includes('indice general') && score > 0) {
-                score = Math.max(1, score - 6);
+            // 4. Priorización por documento exacto cuando la pregunta pertenece a esa normativa
+            if (score > 0) {
+                if (wantsGeneral && firstLine.includes('normativa general')) score += 10;
+                if (wantsEms && firstLine.includes('normativa de ems')) score += 12;
+                if (wantsPolicia && firstLine.includes('normativa policial')) score += 12;
+                if (wantsNegocios && firstLine.includes('normativa de negocios')) score += 12;
+                if (wantsIlegales && firstLine.includes('normativa de ilegales')) score += 10;
+            }
+
+            // 5. Penalizar portadas e índices para priorizar siempre los artículos completos
+            if ((pageLower.includes('indice general') || pageLower.includes('indice de contenidos') || pageLower.length < 320) && score > 0) {
+                score = Math.max(1, score - 12);
             }
 
             return { page, score };
         });
 
         scored.sort((a, b) => b.score - a.score);
-        // Tomar las 2 secciones más relevantes limpiando encabezados repetitivos para ahorrar tokens (~70% menos consumo)
         const cleanPage = (txt) => txt
             .replace(/VALLECAS RP\s*\r?\n\|\s*NORMATIVA GENERAL OFICIAL[\s\S]*?Documento de obligado cumplimiento/gi, '')
             .replace(/\n{3,}/g, '\n\n')
             .trim();
 
         const bestMatches = scored
-            .slice(0, 4)
+            .slice(0, 10)
             .filter(s => s.score > 0)
             .map(s => cleanPage(s.page))
             .join('\n---\n');
-        return bestMatches.slice(0, 5500);
+        return bestMatches.slice(0, 15000);
     } catch (e) {
         return '';
     }
+}
+
+/**
+ * Formatea y embellece cualquier respuesta de la IA para Discord Embeds:
+ * - Convierte tablas Markdown (| col | col |) que Discord NO renderiza en bloques limpios con viñetas y flechas
+ * - Reemplaza separadores "---" por líneas divisorias elegantes "────────────────────────────"
+ * - Reemplaza encabezados "# / ## / ###" por títulos con formato "emoji┃**Título**"
+ */
+function formatAiResponseForDiscord(rawText) {
+    if (!rawText || typeof rawText !== 'string') return '';
+    const lines = rawText.replace(/\r\n/g, '\n').split('\n');
+    const out = [];
+    let i = 0;
+
+    while (i < lines.length) {
+        const trimmed = lines[i].trim();
+
+        // 1. Detectar bloque de tabla Markdown (| ... |) y convertirlo a lista Discord elegante
+        if (trimmed.startsWith('|') && trimmed.endsWith('|') && (trimmed.match(/\|/g) || []).length >= 3) {
+            const tableRows = [];
+            while (i < lines.length) {
+                const t = lines[i].trim();
+                if (!t.startsWith('|') || !t.endsWith('|')) break;
+                const cells = t.slice(1, -1).split('|').map(c => c.trim());
+                tableRows.push(cells);
+                i++;
+            }
+
+            // Filtrar fila separadora | :--- | :--- | y posible cabecera
+            const isSepRow = (cells) => cells.every(c => /^:?-{2,}:?$/.test(c));
+            let startIdx = 0;
+            if (tableRows.length >= 2 && isSepRow(tableRows[1])) {
+                startIdx = 2; // saltar cabecera + separador
+            } else if (tableRows.length >= 1 && isSepRow(tableRows[0])) {
+                startIdx = 1;
+            }
+
+            for (let r = startIdx; r < tableRows.length; r++) {
+                const cells = tableRows[r].filter(Boolean);
+                if (cells.length === 0) continue;
+                const c0Clean = cells[0].replace(/^\*\*|\*\*$/g, '').trim();
+                let dot = '•';
+                if (/^leve$/i.test(c0Clean)) dot = '🟡';
+                else if (/^grave$/i.test(c0Clean)) dot = '🟠';
+                else if (/^muy\s*grave|permanente|extrema$/i.test(c0Clean)) dot = '🔴';
+
+                if (cells.length === 1) {
+                    out.push(`> ${dot} ${cells[0]}`);
+                } else if (cells.length === 2) {
+                    out.push(`> ${dot} **${c0Clean}** ➔ \`${cells[1].replace(/`/g, '')}\``);
+                } else {
+                    const mid = cells.slice(1, -1).join(' · ');
+                    const last = cells[cells.length - 1].replace(/`/g, '');
+                    out.push(`> ${dot} **${c0Clean}:** ${mid} ➔ \`${last}\``);
+                }
+            }
+            continue;
+        }
+
+        // 2. Separadores Markdown (---, ***, ___) -> línea divisoria elegante
+        if (/^[-*_]{3,}$/.test(trimmed)) {
+            out.push('────────────────────────────');
+            i++;
+            continue;
+        }
+
+        // 3. Encabezados Markdown (# / ## / ###) -> formato emoji┃**Título**
+        const headingMatch = trimmed.match(/^#{1,4}\s+(.+)$/);
+        if (headingMatch) {
+            const hText = headingMatch[1].replace(/^\*\*|\*\*$/g, '').trim();
+            const hasLeadingEmoji = /^\p{Extended_Pictographic}/u.test(hText);
+            out.push(hasLeadingEmoji ? `**${hText}**` : `📌┃**${hText}**`);
+            i++;
+            continue;
+        }
+
+        // 4. Convertir listas simples "- item" o "* item" en citas elegantes "> • item"
+        if (/^[-*•]\s+/.test(trimmed)) {
+            out.push(`> • ${trimmed.replace(/^[-*•]\s+/, '')}`);
+            i++;
+            continue;
+        }
+
+        out.push(lines[i]);
+        i++;
+    }
+
+    return out
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/(────────────────────────────\n?){2,}/g, '────────────────────────────\n')
+        .trim();
 }
 
 /**
@@ -741,9 +888,28 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null, guil
             ? `Todavía no se ha cargado el documento de normativa específica de ${serverName}. Responde con las definiciones reales estándar de FiveM Roleplay en español (PG = PowerGaming, MG = MetaGaming, RK = Revenge Kill, PK = Player Kill, CK = Character Kill, RDM/DM = Random Deathmatch, VDM = Vehicle Deathmatch, HK = Helicopter Kill, NVV = No Valorar Vida, CJ = Car Jacking, BH = Bunny Hop, BA = Bug Abuse, IOOC = Insultos OOC, ZS = Zona Segura) y aclara brevemente que para cifras o sanciones concretas de ${serverName} el Staff puede subir su normativa con !subirnormativa.`
             : exactNormativaText;
 
+        const discordFormatRules =
+            `\nREGLAS ESTRICTAS DE DISEÑO PARA DISCORD (OBLIGATORIO EN TODA RESPUESTA):\n` +
+            `- NUNCA uses tablas Markdown con barras "| col | col |" ni "|---|" porque Discord NO las renderiza y se ven rotas.\n` +
+            `- NUNCA uses "---" ni encabezados "#" / "##" / "###".\n` +
+            `- Estructura SIEMPRE cada apartado con formato visual elegante usando:\n` +
+            `  • Títulos de bloque con emoji y barra: ej. ⚖️┃**Tabla General de Sanciones** *(Art. 29)* o 🚑┃**Normativa EMS** *(Art. 08)*\n` +
+            `  • Filas limpias con cita y emoji: ej. > 🟡 **Leve:** descripción breve ➔ \`Aviso o advertencia\`\n` +
+            `  • Resalta cifras, sanciones, tiempos y comandos con backticks (\`30 días\`, \`Strike\`, \`/ems\`).\n` +
+            `  • Separa bloques distintos con la línea divisoria: ────────────────────────────\n` +
+            `  • Deja una línea en blanco entre bloques para que se lea limpio y ordenado, sin cortar nunca una frase a medias.\n`;
+
+        const antiErrorRules =
+            `\nREGLA DE ORO DE PRECISIÓN ABSOLUTA (CERO ERRORES / CERO INVENCIONES):\n` +
+            `- Lee con máxima atención TODOS los fragmentos oficiales proporcionados abajo antes de responder.\n` +
+            `- NUNCA contradigas una prohibición expresa de la normativa: si la normativa dice "Está prohibido...", responde de forma clara y directa empezando por "❌ **NO, está prohibido...**" y cita exactamente la normativa y el artículo correspondiente.\n` +
+            `- NUNCA inventes excepciones, números de artículos, sanciones, horas, multas ni límites que NO aparezcan literalmente en los fragmentos oficiales de abajo.\n` +
+            `- Si un detalle concreto no aparece recogido en los fragmentos oficiales cargados, indícalo claramente en lugar de suponerlo.\n` +
+            `- Prioriza siempre la regla específica oficial de ${serverName} y aplica únicamente sus normativas (NUNCA menciones otro servidor).\n`;
+
         const systemPrompt =
-            `${roleLine}${customConciencia}\n` +
-            `Entiende faltas de ortografía o jerga callejera. Si preguntan por siglas RP (RK, PK, CK, MG, PG, DM, VDM, HK, NVV, RDE, ZS, BH, CJ, BA, IOOC, etc.), defínelas correctamente y aplica únicamente las reglas de ${serverName} (NUNCA menciones otro servidor). Nunca inventes cifras: básate 100% en esta normativa oficial:\n` +
+            `${roleLine}${customConciencia}${antiErrorRules}${discordFormatRules}\n` +
+            `Entiende faltas de ortografía o jerga callejera. Si preguntan por siglas RP (RK, PK, CK, MG, PG, DM, VDM, HK, NVV, RDE, ZS, BH, CJ, BA, IOOC, etc.), defínelas exactamente según las normativas oficiales de ${serverName} de abajo:\n\n` +
             rpFallback +
             knowledgeContext;
 
@@ -773,14 +939,15 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null, guil
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: userQuestion }
                         ],
-                        max_tokens: 450,
-                        temperature: 0.15
+                        max_tokens: 1400,
+                        temperature: 0.0
                     })
                 });
 
                 if (res.ok) {
                     const data = await res.json();
-                    const reply = data.choices?.[0]?.message?.content?.trim();
+                    const rawReply = data.choices?.[0]?.message?.content?.trim();
+                    const reply = formatAiResponseForDiscord(rawReply);
                     if (reply && reply.length > 5) {
                         const usedTokens = data.usage?.total_tokens || Math.ceil((systemPrompt.length + userQuestion.length + reply.length) / 4);
                         const st = tokenStats.models[slotKey];
@@ -993,6 +1160,7 @@ function initConsultasAI(client) {
                         if (now - m.createdTimestamp < maxAgeMs) continue;
                         const isPermanentPanel = m.author.id === client.user.id && m.embeds.some(e =>
                             e.title?.includes('CONSULTAS DE LA NORMATIVA OFICIAL') ||
+                            e.title?.includes('CONSULTAS DE LAS NORMATIVAS OFICIALES') ||
                             e.title?.includes('DUDA SOBRE LA NORMATIVA') ||
                             e.title?.includes('ASESORÍA Y RESOLUCIÓN DE DUDAS') ||
                             e.title?.includes('RESOLUCIÓN DE DUDAS Y NORMATIVA OFICIAL')
@@ -1048,6 +1216,7 @@ function initConsultasAI(client) {
                         if (m.pinned) return false;
                         const isPanel = m.author.id === client.user.id && m.embeds.some(e =>
                             e.title?.includes('CONSULTAS DE LA NORMATIVA OFICIAL') ||
+                            e.title?.includes('CONSULTAS DE LAS NORMATIVAS OFICIALES') ||
                             e.title?.includes('DUDA SOBRE LA NORMATIVA') ||
                             e.title?.includes('ASESORÍA Y RESOLUCIÓN DE DUDAS') ||
                             e.title?.includes('RESOLUCIÓN DE DUDAS Y NORMATIVA OFICIAL')
@@ -1306,21 +1475,26 @@ function initConsultasAI(client) {
                     : `CONSULTAS DE LA NORMATIVA | ${gVis.name}`;
                 const embedColor = gVis.color;
 
+                const safeAnswerDesc = (aiAnswer || 'Lo siento, no he podido obtener respuesta en este momento. Por favor, consulta directamente con la Administración o abre un ticket de soporte.').slice(0, 3550);
+
                 const embed = new EmbedBuilder()
                     .setColor(embedColor)
                     .setAuthor({
                         name: authorTitle,
                         iconURL: iconUrl
                     })
-                    .setTitle('📋 RESOLUCIÓN DE CONSULTA')
+                    .setTitle('📋┃RESOLUCIÓN DE CONSULTA')
                     .setDescription(
-                        `❓ **| Pregunta planteada:**\n` +
+                        `\u200B\n` +
+                        `❓┃**Pregunta planteada**\n` +
                         `> *"${questionText.length > 200 ? questionText.slice(0, 197) + '...' : questionText}"*\n\n` +
-                        `💡 **| Respuesta de la IA:**\n` +
-                        `> ${aiAnswer || 'Lo siento, no he podido obtener respuesta en este momento. Por favor, consulta directamente con la Administración o abre un ticket de soporte.'}\n\n` +
-                        (isPrivateAiCommand 
+                        `────────────────────────────\n\n` +
+                        `💡┃**Respuesta Oficial**\n\n` +
+                        `${safeAnswerDesc}\n\n` +
+                        `────────────────────────────\n` +
+                        (isPrivateAiCommand
                             ? `🔒 *Respuesta privada enviada por !ai (solo para tus ojos).*`
-                            : `*(Pulsa el botón de abajo en cuanto hayas terminado de leer).*`)
+                            : `🗑️ *Pulsa el botón de abajo cuando termines de leer.*`)
                     )
                     .setThumbnail(iconUrl)
                     .setFooter({
