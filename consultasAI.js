@@ -441,7 +441,7 @@ function buildPanelConsultasEmbed(isStaffChannel = false, guildId = null) {
             `> • Pulsa **"🗑️ Cerrar / Borrar"** al terminar *(auto-borrado preventivo a los ${cleanSecs} segundos)*.\n\n` +
             `🔒 **Consulta Privada *(solo la ves tú)***\n` +
             `> • Pulsa el botón **"🔒 Consulta Privada"** de abajo, escribe tu duda y pulsa **Enviar**.\n` +
-            `> • Recibirás la respuesta en modo privado dentro del canal (**nadie más verá tu pregunta ni la respuesta**).\n\n` +
+            `> • Recibirás la respuesta en modo privado dentro del canal (**nadie más verá tu pregunta ni la respuesta**; auto-borrado a los ${cleanSecs} segundos).\n\n` +
             `💡 *Este mensaje informativo es permanente.*`
         )
         .setFooter({
@@ -1647,6 +1647,9 @@ function initConsultasAI(client) {
                     : `CONSULTAS DE LA NORMATIVA | ${gVis.name}`;
                 const safeAnswerDesc = (aiAnswer || 'Lo siento, no he podido obtener respuesta en este momento. Por favor, consulta directamente con la Administración o abre un ticket de soporte.').slice(0, 3550);
 
+                const autoCleanSecs = Math.min(840, Math.max(30, Number(gVis.config?.AI_AUTOCLEAN_SECONDS) || 90));
+                const autoCleanMs = autoCleanSecs * 1000;
+
                 const embed = new EmbedBuilder()
                     .setColor(gVis.color)
                     .setAuthor({
@@ -1662,7 +1665,7 @@ function initConsultasAI(client) {
                         `💡┃**Respuesta Oficial**\n\n` +
                         `${safeAnswerDesc}\n\n` +
                         `────────────────────────────\n` +
-                        `🔒 *Solo tú puedes ver esta respuesta. Pulsa "Eliminar este mensaje" cuando termines.*`
+                        `⏳ *Esta respuesta se eliminará automáticamente en ${autoCleanSecs} segundos.*`
                     )
                     .setThumbnail(iconUrl)
                     .setFooter({
@@ -1675,6 +1678,11 @@ function initConsultasAI(client) {
                     embeds: [embed],
                     files: replyFiles
                 }).catch(() => {});
+
+                // Auto-borrado preventivo igual que en las consultas públicas (el token efímero permite borrar hasta 15 min)
+                setTimeout(() => {
+                    interaction.deleteReply().catch(() => {});
+                }, autoCleanMs);
                 return;
             }
 
