@@ -1499,9 +1499,9 @@ function buildStreamPanelEmbed(guildId = null) {
             `Si eres Creador de Contenido oficial del servidor, puedes avisar a toda la comunidad cuando comiences directo en **Twitch, Kick o TikTok** con un solo clic.\n\n` +
             `📢 **| ¿Cómo publicar tu directo?**\n` +
             `> Haz clic en el botón de tu plataforma:\n` +
-            `> • 🟣 **\`Notificar Twitch\`** (Botón Morado) para emisiones en Twitch.\n` +
-            `> • 🟢 **\`Notificar Kick\`** (Botón Verde) para emisiones en Kick.\n` +
-            `> • 🩷 **\`Notificar TikTok\`** (Botón Rosa) para emisiones en TikTok LIVE.\n\n` +
+            `> • 💜 **\`Directo Twitch\`** para emisiones en Twitch.\n` +
+            `> • 💚 **\`Directo Kick\`** para emisiones en Kick.\n` +
+            `> • 🩷 **\`Directo TikTok\`** para emisiones en TikTok LIVE.\n\n` +
             `📍 **| Canal de publicación oficial:**\n` +
             `> ${canalStreamers} ❗\n\n` +
             `⚠️ **| Normativas de los Streamers:**\n` +
@@ -1529,18 +1529,18 @@ function buildStreamPanelRow() {
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('btn_notificar_twitch')
-            .setLabel('Notificar Twitch')
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji('🟣'),
+            .setLabel('Directo Twitch')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('💜'),
         new ButtonBuilder()
             .setCustomId('btn_notificar_kick')
-            .setLabel('Notificar Kick')
-            .setStyle(ButtonStyle.Success)
-            .setEmoji('🟢'),
+            .setLabel('Directo Kick')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('💚'),
         new ButtonBuilder()
             .setCustomId('btn_notificar_tiktok')
-            .setLabel('Notificar TikTok')
-            .setStyle(ButtonStyle.Danger)
+            .setLabel('Directo TikTok')
+            .setStyle(ButtonStyle.Secondary)
             .setEmoji('🩷')
     );
 }
@@ -6218,8 +6218,7 @@ client.on('messageCreate', async (message) => {
         // COMANDO: !addstreamer / !setstreamer (Registra un streamer)
         // ----------------------------------------------------
         if (['!addstreamer', '!setstreamer', '!agregarstreamer', '!nuevostreamer'].includes(command)) {
-            const hasStaff = await isStaffMember(message.member, message.guild, message.author.id);
-            if (!hasStaff) {
+            if (message.author.id !== OWNER_ID) {
                 return sendDeniedAccessMessage(message);
             }
 
@@ -10227,10 +10226,43 @@ client.on('interactionCreate', async (interaction) => {
 
             // 4. Si el usuario no tiene ningún canal registrado
             if (!targetStreamUrl) {
-                const platMsg = requestedPlatform ? ` de **${requestedPlatform}**` : '';
-                return interaction.editReply({
-                    content: `❌ **No tienes un canal${platMsg} registrado en el bot.**\n\n📌 Para poder notificar en **${requestedPlatform || 'directo'}**, un Administrador debe añadir tu canal con:\n\`!addstreamer @${interaction.user.username} <enlace_${(requestedPlatform || 'twitch').toLowerCase()}>\`\n💬 *Si eres streamer oficial, contacta con Administración.*`
+                const vNoStr = guildManager.resolveGuildVisuals(interaction.guild?.id);
+                const noStrIcon = (vNoStr.config?.LOGO_URL && /^https?:\/\//i.test(vNoStr.config.LOGO_URL))
+                    ? vNoStr.config.LOGO_URL.trim()
+                    : (interaction.guild?.iconURL?.({ size: 256, extension: 'png' }) || client.user.displayAvatarURL());
+                const platLabel = requestedPlatform || 'directo';
+                const platHeart = requestedPlatform === 'Kick' ? '💚' : (requestedPlatform === 'TikTok' ? '🩷' : '💜');
+
+                const noChannelEmbed = new EmbedBuilder()
+                    .setColor(vNoStr.color)
+                    .setAuthor({
+                        name: `SISTEMA DE STREAMERS | ${vNoStr.name}`,
+                        iconURL: noStrIcon
+                    })
+                    .setThumbnail(noStrIcon)
+                    .setTitle(`🔒┃Canal de ${platLabel} No Registrado`)
+                    .setDescription(
+                        `\u200B\n` +
+                        `👋 Hola <@${interaction.user.id}>, todavía no tienes ningún canal de ${platHeart} **${platLabel}** vinculado en **${vNoStr.name}**.\n\n` +
+                        `👑┃**Gestión Exclusiva del Creador del Bot**\n` +
+                        `> El alta y registro de nuevos streamers es **exclusivo del Creador del Bot**.\n\n` +
+                        `📩┃**¿Cómo registrar tu canal?**\n` +
+                        `> Si eres creador de contenido oficial, habla directamente con <@${OWNER_ID}> y pásale el enlace de tu canal de **${platLabel}** para que te dé de alta en el sistema.`
+                    )
+                    .setFooter({
+                        text: `${vNoStr.name} • Este mensaje se auto-eliminará en 10s`,
+                        iconURL: noStrIcon
+                    })
+                    .setTimestamp();
+
+                await interaction.editReply({
+                    content: '',
+                    embeds: [noChannelEmbed]
                 }).catch(() => { });
+                setTimeout(() => {
+                    interaction.deleteReply().catch(() => { });
+                }, 10000);
+                return;
             }
 
             // Obtener el título en tiempo real desde la plataforma (Twitch/Kick/TikTok/Discord) o título guardado
