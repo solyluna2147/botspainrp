@@ -17,6 +17,9 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
     PermissionFlagsBits
 } = require('discord.js');
 
@@ -172,6 +175,8 @@ function createEmptyTokenStats() {
 let tokenStats = createEmptyTokenStats();
 let tokensPanelRef = null; // { channelId, messageId }
 let lastDailyResetPanelDate = ''; // Última fecha UTC (YYYY-MM-DD) en la que se auto-actualizó el panel al reiniciar cupos
+const slotTpmCooldowns = new Map(); // slotKey -> timestamp (ms) hasta que pase el cooldown temporal por TPM
+let keyRoundRobinCursor = 0; // Balanceador rotativo para repartir consultas simultáneas entre todos los núcleos
 
 function ensureTodayTokenStats() {
     const today = getUtcDateKey();
@@ -403,6 +408,16 @@ function getBannerAttachment() {
     return null;
 }
 
+function buildPanelConsultasRow() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('btn_consulta_privada')
+            .setLabel('Consulta Privada')
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji('🔒')
+    );
+}
+
 function buildPanelConsultasEmbed(isStaffChannel = false, guildId = null) {
     const v = guildManager.resolveGuildVisuals(guildId, 'consultas');
     const logoUrl = v.logoUrl;
@@ -421,11 +436,13 @@ function buildPanelConsultasEmbed(isStaffChannel = false, guildId = null) {
         .setDescription(
             `Bienvenido al **Canal Oficial de Consultas con Inteligencia Artificial** exclusivo de **${serverName}** 🇪🇸.\n\n` +
             `Este sistema resuelve al instante cualquier duda sobre **todas nuestras normativas oficiales** (general, ilegales, negocios, facciones, conceptos de rol, sanciones, zonas seguras y vehículos) con base 100% oficial.\n\n` +
-            `📋 **¿Cómo realizar una consulta?**\n` +
-            `> 1️⃣ **Tan solo escribe tu duda en este canal** hablando normalmente, sin necesidad de usar ningún comando.\n` +
-            `> 2️⃣ La IA analizará las normativas oficiales y te responderá en pocos segundos.\n` +
-            `> 3️⃣ Una vez leída la respuesta, pulsa el botón **"🗑️ Cerrar / Borrar"** para mantener el canal limpio y ordenado.\n\n` +
-            `💡 *El sistema cuenta con auto-borrado preventivo a los ${cleanSecs} segundos para que no se acumulen mensajes en el canal. Este mensaje informativo es permanente.*`
+            `💬 **Consulta Pública *(visible en el canal)***\n` +
+            `> • Escribe tu duda directamente en este canal hablando normalmente y la IA te responderá al instante.\n` +
+            `> • Pulsa **"🗑️ Cerrar / Borrar"** al terminar *(auto-borrado preventivo a los ${cleanSecs} segundos)*.\n\n` +
+            `🔒 **Consulta Privada *(solo la ves tú)***\n` +
+            `> • Pulsa el botón **"🔒 Consulta Privada"** de abajo, escribe tu duda y pulsa **Enviar**.\n` +
+            `> • Recibirás la respuesta en modo privado dentro del canal (**nadie más verá tu pregunta ni la respuesta**).\n\n` +
+            `💡 *Este mensaje informativo es permanente.*`
         )
         .setFooter({
             text: `${serverName} • Sistema Oficial de Consultas`,
@@ -712,12 +729,17 @@ function getRelevantNormativaSnippets(question, customPages = null) {
             .replace(/\n{3,}/g, '\n\n')
             .trim();
 
-        const bestMatches = scored
-            .slice(0, 10)
-            .filter(s => s.score > 0)
+        // Filtro dinámico de relevancia: envía solo las 2-4 páginas realmente relevantes (ahorra ~65% de tokens sin perder precisión)
+        const topScore = scored[0]?.score || 0;
+        const minRelevantScore = Math.max(4, Math.floor(topScore * 0.4));
+        const selected = scored
+            .filter((s, idx) => s.score > 0 && (idx < 2 || s.score >= minRelevantScore))
+            .slice(0, 4);
+
+        const bestMatches = selected
             .map(s => cleanPage(s.page))
             .join('\n---\n');
-        return bestMatches.slice(0, 15000);
+        return bestMatches.slice(0, 5200);
     } catch (e) {
         return '';
     }
@@ -889,41 +911,39 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null, guil
             : exactNormativaText;
 
         const discordFormatRules =
-            `\nREGLAS ESTRICTAS DE DISEÑO PARA DISCORD (OBLIGATORIO EN TODA RESPUESTA):\n` +
-            `- NUNCA uses tablas Markdown con barras "| col | col |" ni "|---|" porque Discord NO las renderiza y se ven rotas.\n` +
-            `- NUNCA uses "---" ni encabezados "#" / "##" / "###".\n` +
-            `- Estructura SIEMPRE cada apartado con formato visual elegante usando:\n` +
-            `  • Títulos de bloque con emoji y barra: ej. ⚖️┃**Tabla General de Sanciones** *(Art. 29)* o 🚑┃**Normativa EMS** *(Art. 08)*\n` +
-            `  • Filas limpias con cita y emoji: ej. > 🟡 **Leve:** descripción breve ➔ \`Aviso o advertencia\`\n` +
-            `  • Resalta cifras, sanciones, tiempos y comandos con backticks (\`30 días\`, \`Strike\`, \`/ems\`).\n` +
-            `  • Separa bloques distintos con la línea divisoria: ────────────────────────────\n` +
-            `  • Deja una línea en blanco entre bloques para que se lea limpio y ordenado, sin cortar nunca una frase a medias.\n`;
+            `\nFORMATO DISCORD: Prohibido tablas "| col |" y "---" o "#". Usa títulos "emoji┃**Título** *(Art. X)*", filas "> • **Dato:** detalle ➔ \`valor\`", backticks en sanciones/tiempos/comandos y "────────────────────────────" entre bloques.\n`;
 
         const antiErrorRules =
-            `\nREGLA DE ORO DE PRECISIÓN ABSOLUTA (CERO ERRORES / CERO INVENCIONES):\n` +
-            `- Lee con máxima atención TODOS los fragmentos oficiales proporcionados abajo antes de responder.\n` +
-            `- NUNCA contradigas una prohibición expresa de la normativa: si la normativa dice "Está prohibido...", responde de forma clara y directa empezando por "❌ **NO, está prohibido...**" y cita exactamente la normativa y el artículo correspondiente.\n` +
-            `- NUNCA inventes excepciones, números de artículos, sanciones, horas, multas ni límites que NO aparezcan literalmente en los fragmentos oficiales de abajo.\n` +
-            `- Si un detalle concreto no aparece recogido en los fragmentos oficiales cargados, indícalo claramente en lugar de suponerlo.\n` +
-            `- Prioriza siempre la regla específica oficial de ${serverName} y aplica únicamente sus normativas (NUNCA menciones otro servidor).\n`;
+            `PRECISIÓN ABSOLUTA: Basa el 100% de tu respuesta SOLO en los fragmentos oficiales de abajo. Si algo está prohibido, empieza por "❌ **NO, está prohibido...**" citando normativa y artículo. No inventes cifras, excepciones ni artículos. Nunca menciones otro servidor.\n`;
 
         const systemPrompt =
             `${roleLine}${customConciencia}${antiErrorRules}${discordFormatRules}\n` +
-            `Entiende faltas de ortografía o jerga callejera. Si preguntan por siglas RP (RK, PK, CK, MG, PG, DM, VDM, HK, NVV, RDE, ZS, BH, CJ, BA, IOOC, etc.), defínelas exactamente según las normativas oficiales de ${serverName} de abajo:\n\n` +
+            `Entiende jerga FiveM/faltas y siglas RP (RK, PK, CK, MG, PG, DM, VDM, HK, NVV, ZS, F8...). Normativa oficial de ${serverName}:\n\n` +
             rpFallback +
             knowledgeContext;
 
         ensureTodayTokenStats();
 
-        // Construir cola de intentos: todos los (servidor, modelo) NO agotados hoy primero
+        // Construir cola de intentos con balanceo rotativo entre núcleos:
+        // Prioriza el mejor modelo repartido en round-robin entre todos los servidores para soportar decenas de usuarios simultáneos sin chocar con límites TPM.
+        const startOffset = apiKeys.length > 0 ? (keyRoundRobinCursor++ % apiKeys.length) : 0;
+        const rotatedKeys = apiKeys.length > 1
+            ? [...apiKeys.slice(startOffset), ...apiKeys.slice(0, startOffset)]
+            : apiKeys;
+
         const allSlots = [];
-        for (const keyObj of apiKeys) {
-            for (const modelCfg of GROQ_MODELS) {
+        for (const modelCfg of GROQ_MODELS) {
+            for (const keyObj of rotatedKeys) {
                 allSlots.push({ keyObj, modelCfg, slotKey: getSlotKey(keyObj.idx, modelCfg.id) });
             }
         }
-        const availableSlots = allSlots.filter(s => !tokenStats.models[s.slotKey]?.exhausted);
-        const slotsToTry = availableSlots.length > 0 ? availableSlots : allSlots;
+        const nowTs = Date.now();
+        const notExhausted = allSlots.filter(s => !tokenStats.models[s.slotKey]?.exhausted);
+        const readySlots = notExhausted.filter(s => (slotTpmCooldowns.get(s.slotKey) || 0) <= nowTs);
+        const coolingSlots = notExhausted.filter(s => (slotTpmCooldowns.get(s.slotKey) || 0) > nowTs);
+        const slotsToTry = readySlots.length > 0
+            ? [...readySlots, ...coolingSlots]
+            : (notExhausted.length > 0 ? notExhausted : allSlots);
 
         for (const { keyObj, modelCfg, slotKey } of slotsToTry) {
             try {
@@ -939,7 +959,7 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null, guil
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: userQuestion }
                         ],
-                        max_tokens: 1400,
+                        max_tokens: 900,
                         temperature: 0.0
                     })
                 });
@@ -969,7 +989,8 @@ async function queryGroqAI(userQuestion, isUserMode = false, client = null, guil
                         tokenStats.models[slotKey].exhausted = true;
                         console.warn(`⚠️ [CONSULTAS AI] ${keyObj.label} / ${modelCfg.id} agotó su límite diario. Saltando al siguiente respaldo...`);
                     } else {
-                        console.warn(`⚠️ [CONSULTAS AI] Rate limit temporal (TPM) en ${keyObj.label} / ${modelCfg.id}. Saltando al siguiente...`);
+                        slotTpmCooldowns.set(slotKey, Date.now() + 25000);
+                        console.warn(`⚠️ [CONSULTAS AI] Rate limit temporal (TPM) en ${keyObj.label} / ${modelCfg.id}. Enfriando 25s y saltando al siguiente...`);
                     }
                     saveTokenStats();
                     updateTokensPanel(client);
@@ -1093,8 +1114,13 @@ function initConsultasAI(client) {
     }
 
     // Envía un registro limpio de cada consulta al canal de logs del servidor correspondiente (0 tokens consumidos)
-    async function sendConsultaLog({ message, questionText, aiAnswer, isStaffChannel, isPrivateAiCommand }) {
-        const gChannels = getChannelsForGuild(message.guild?.id);
+    async function sendConsultaLog({ message, guild, channel, author, questionText, aiAnswer, isStaffChannel, isPrivateAiCommand, isPrivateModal }) {
+        const targetGuild = guild || message?.guild;
+        const targetChannel = channel || message?.channel;
+        const targetAuthor = author || message?.author;
+        if (!targetAuthor || !targetChannel) return;
+
+        const gChannels = getChannelsForGuild(targetGuild?.id);
         if (!gChannels.logsId) return;
         try {
             const logCh = client.channels.cache.get(gChannels.logsId) || await client.channels.fetch(gChannels.logsId).catch(() => null);
@@ -1102,9 +1128,10 @@ function initConsultasAI(client) {
 
             const activeIdx = tokenStats.activeKeyIdx || 1;
             const lastToks = tokenStats.lastQueryTokens || 0;
-            const userAvatar = message.author.displayAvatarURL({ size: 128 });
+            const userAvatar = targetAuthor.displayAvatarURL({ size: 128 });
             const origenTxt = isStaffChannel ? '🛡️ Consultas Staff' : '👥 Consultas Usuarios';
-            const gVis = guildManager.resolveGuildVisuals(message.guild?.id);
+            const gVis = guildManager.resolveGuildVisuals(targetGuild?.id);
+            const privateTag = isPrivateModal ? ' • 🔒 Consulta Privada' : (isPrivateAiCommand ? ' • 🔒 Privado (!ai)' : '');
 
             const safeQuestion = questionText.length > 900 ? questionText.slice(0, 897) + '...' : questionText;
             const safeAnswer = (aiAnswer || 'Sin respuesta (error temporal)').length > 1800
@@ -1114,13 +1141,13 @@ function initConsultasAI(client) {
             const logEmbed = new EmbedBuilder()
                 .setColor(gVis.color)
                 .setAuthor({
-                    name: `LOG DE CONSULTA IA | ${message.author.username}`,
+                    name: `LOG DE CONSULTA IA | ${targetAuthor.username}`,
                     iconURL: userAvatar
                 })
                 .setThumbnail(userAvatar)
                 .setDescription(
-                    `👤 **Usuario:** <@${message.author.id}>\n` +
-                    `📍 **Origen:** <#${message.channel.id}> *(${origenTxt})*${isPrivateAiCommand ? ' • 🔒 Privado' : ''}\n` +
+                    `👤 **Usuario:** <@${targetAuthor.id}>\n` +
+                    `📍 **Origen:** <#${targetChannel.id}> *(${origenTxt})*${privateTag}\n` +
                     `🔌 **Núcleo:** \`Núcleo IA ${activeIdx}\` • \`+${formatNum(lastToks)} tokens\`\n\n` +
                     `❓ **Pregunta realizada:**\n` +
                     `> ${safeQuestion.replace(/\n/g, '\n> ')}\n\n` +
@@ -1245,7 +1272,11 @@ function initConsultasAI(client) {
 
                 const v = guildManager.resolveGuildVisuals(gId, 'consultas');
                 const embed = buildPanelConsultasEmbed(isTargetStaff, gId);
-                await message.channel.send({ embeds: [embed], files: v.files }).catch(e => console.error('Error enviando panel consultas:', e));
+                await message.channel.send({
+                    embeds: [embed],
+                    files: v.files,
+                    components: [buildPanelConsultasRow()]
+                }).catch(e => console.error('Error enviando panel consultas:', e));
                 return;
             }
 
@@ -1557,10 +1588,136 @@ function initConsultasAI(client) {
         }
     });
 
-    // Evento: Botón para borrar la consulta y el mensaje original del autor
+    // Evento: Botones y Modales del Sistema de Consultas IA
     client.on('interactionCreate', async (interaction) => {
         try {
+            // 1. MODAL SUBMIT: Consulta Privada (respuesta 100% efímera "Solo tú puedes verlo")
+            if (interaction.isModalSubmit() && interaction.customId === 'modal_consulta_privada') {
+                const gId = interaction.guild?.id;
+                const gChannels = getChannelsForGuild(gId);
+                const isStaffChannel = Boolean(gChannels.staffId && interaction.channelId === gChannels.staffId);
+                const isStaff = isMemberStaff(interaction.member);
+
+                if (isStaffChannel && !isStaff) {
+                    return interaction.reply({
+                        content: '⛔ Este canal de consultas es exclusivo para el Staff. Usa el canal de consultas de la comunidad.',
+                        ephemeral: true
+                    });
+                }
+
+                if (!consultasActivas) {
+                    return interaction.reply({
+                        content: '⚠️ El sistema de Consultas IA está actualmente desactivado por la Administración.',
+                        ephemeral: true
+                    });
+                }
+
+                const questionText = interaction.fields.getTextInputValue('input_consulta_privada').trim();
+                if (questionText.length < 3) {
+                    return interaction.reply({
+                        content: '❌ Por favor escribe una consulta más detallada (mínimo 3 caracteres).',
+                        ephemeral: true
+                    });
+                }
+
+                // Defer efímero: solo el usuario que pulsó el botón verá "pensando..." y la respuesta final
+                await interaction.deferReply({ ephemeral: true });
+
+                const isUsersMode = !isStaffChannel;
+                const aiAnswer = await queryGroqAI(questionText, isUsersMode, client, gId);
+
+                // Registrar en el canal de logs del servidor (0 tokens adicionales)
+                sendConsultaLog({
+                    guild: interaction.guild,
+                    channel: interaction.channel,
+                    author: interaction.user,
+                    questionText,
+                    aiAnswer,
+                    isStaffChannel,
+                    isPrivateModal: true
+                });
+
+                const gVis = guildManager.resolveGuildVisuals(gId);
+                const httpsGuildIcon = interaction.guild?.iconURL({ size: 256, extension: 'png' });
+                const iconUrl = httpsGuildIcon || gVis.logoUrl;
+                const replyFiles = httpsGuildIcon ? [] : gVis.files;
+
+                const authorTitle = isStaffChannel
+                    ? `ASESORÍA DE STAFF | ${gVis.name}`
+                    : `CONSULTAS DE LA NORMATIVA | ${gVis.name}`;
+                const safeAnswerDesc = (aiAnswer || 'Lo siento, no he podido obtener respuesta en este momento. Por favor, consulta directamente con la Administración o abre un ticket de soporte.').slice(0, 3550);
+
+                const embed = new EmbedBuilder()
+                    .setColor(gVis.color)
+                    .setAuthor({
+                        name: authorTitle,
+                        iconURL: iconUrl
+                    })
+                    .setTitle('📋┃RESOLUCIÓN DE CONSULTA')
+                    .setDescription(
+                        `\u200B\n` +
+                        `❓┃**Pregunta planteada**\n` +
+                        `> *"${questionText.length > 200 ? questionText.slice(0, 197) + '...' : questionText}"*\n\n` +
+                        `────────────────────────────\n\n` +
+                        `💡┃**Respuesta Oficial**\n\n` +
+                        `${safeAnswerDesc}\n\n` +
+                        `────────────────────────────\n` +
+                        `🔒 *Solo tú puedes ver esta respuesta. Pulsa "Eliminar este mensaje" cuando termines.*`
+                    )
+                    .setThumbnail(iconUrl)
+                    .setFooter({
+                        text: `${gVis.name} • Solo tú puedes ver esta respuesta`,
+                        iconURL: iconUrl
+                    })
+                    .setTimestamp();
+
+                await interaction.editReply({
+                    embeds: [embed],
+                    files: replyFiles
+                }).catch(() => {});
+                return;
+            }
+
             if (!interaction.isButton()) return;
+
+            // Botón del panel fijo: abrir formulario de Consulta Privada
+            if (interaction.customId === 'btn_consulta_privada') {
+                const gId = interaction.guild?.id;
+                const gChannels = getChannelsForGuild(gId);
+                const isStaffChannel = Boolean(gChannels.staffId && interaction.channelId === gChannels.staffId);
+                const isStaff = isMemberStaff(interaction.member);
+
+                if (isStaffChannel && !isStaff) {
+                    return interaction.reply({
+                        content: '⛔ Este canal de consultas es exclusivo para el Staff. Usa el canal de consultas de la comunidad.',
+                        ephemeral: true
+                    });
+                }
+
+                if (!consultasActivas) {
+                    return interaction.reply({
+                        content: '⚠️ El sistema de Consultas IA está actualmente desactivado por la Administración.',
+                        ephemeral: true
+                    });
+                }
+
+                const modal = new ModalBuilder()
+                    .setCustomId('modal_consulta_privada')
+                    .setTitle('🔒 Consulta Privada — Normativa');
+
+                const questionInput = new TextInputBuilder()
+                    .setCustomId('input_consulta_privada')
+                    .setLabel('¿Cuál es tu duda sobre las normativas?')
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setPlaceholder('Ej: ¿Se puede robar en zona segura? ¿Cuántos miembros puede tener una banda?')
+                    .setMinLength(3)
+                    .setMaxLength(800)
+                    .setRequired(true);
+
+                modal.addComponents(new ActionRowBuilder().addComponents(questionInput));
+                await interaction.showModal(modal);
+                return;
+            }
 
             // Botón de actualización manual del Panel de Tokens IA
             if (interaction.customId === 'btn_refresh_tokens_panel') {
