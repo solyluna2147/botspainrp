@@ -1358,10 +1358,14 @@ function getNextRestartString() {
     return `in ${h} hrs, ${m} mins`;
 }
 
-// Función para construir el Embed de Estado del Servidor (Formato idéntico a txAdmin con Logo)
-function buildStatusEmbed(state) {
-    const logoPath = getLogoPath();
+// Función para construir el Embed de Estado del Servidor (Multi-servidor aislado)
+function buildStatusEmbed(state, guildId = null) {
+    const v = guildManager.resolveGuildVisuals(guildId);
+    const gCfg = v.config || botConfig;
     const isOnline = state.online;
+    const iconUrl = v.logoUrl || client.user?.displayAvatarURL();
+    const serverName = v.name || 'VALLECAS RP';
+    const cfxCode = gCfg.FIVEM_CFX_CODE || 'No configurado';
 
     if (isOnline && !serverOnlineSince) {
         serverOnlineSince = Date.now();
@@ -1372,10 +1376,10 @@ function buildStatusEmbed(state) {
     const embed = new EmbedBuilder()
         .setColor(isOnline ? 0x2ECC71 : 0xE74C3C)
         .setAuthor({
-            name: 'VALLECAS RP',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user?.displayAvatarURL()
+            name: serverName,
+            iconURL: iconUrl
         })
-        .setTitle('VALLECAS RP')
+        .setTitle(serverName)
         .addFields(
             {
                 name: '▍ Estado',
@@ -1389,7 +1393,7 @@ function buildStatusEmbed(state) {
             },
             {
                 name: '▍ F8 Comando',
-                value: `\`cfx.re/join/${botConfig.FIVEM_CFX_CODE}\``,
+                value: `\`cfx.re/join/${cfxCode}\``,
                 inline: false
             },
             {
@@ -1404,25 +1408,28 @@ function buildStatusEmbed(state) {
             }
         )
         .setFooter({
-            text: 'txAdmin 8.0.1 • Updated every minute',
-            iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user?.displayAvatarURL()
+            text: `${serverName} • Actualizado cada minuto`,
+            iconURL: iconUrl
         })
         .setTimestamp();
 
-    if (fs.existsSync(logoPath)) {
-        embed.setThumbnail('attachment://logo.png');
+    if (iconUrl) {
+        embed.setThumbnail(iconUrl);
     }
 
     return embed;
 }
 
 // Función para construir el botón de conectar a FiveM
-function buildStatusActionRow() {
+function buildStatusActionRow(guildId = null) {
+    const v = guildManager.resolveGuildVisuals(guildId);
+    const gCfg = v.config || botConfig;
+    const cfxCode = gCfg.FIVEM_CFX_CODE || botConfig.FIVEM_CFX_CODE || '';
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setLabel('🚀 Conectar a VALLECAS RP')
+            .setLabel(`🚀 Conectar a ${v.name || 'SERVIDOR RP'}`)
             .setStyle(ButtonStyle.Link)
-            .setURL(`https://cfx.re/join/${botConfig.FIVEM_CFX_CODE}`)
+            .setURL(`https://cfx.re/join/${cfxCode}`)
     );
 }
 
@@ -1494,7 +1501,7 @@ function buildStreamPanelEmbed(guildId = null) {
             `> Haz clic en el botón de tu plataforma:\n` +
             `> • 🟣 **\`Notificar Twitch\`** (Botón Morado) para emisiones en Twitch.\n` +
             `> • 🟢 **\`Notificar Kick\`** (Botón Verde) para emisiones en Kick.\n` +
-            `> • ⚫ **\`Notificar TikTok\`** (Botón Rosa) para emisiones en TikTok LIVE.\n\n` +
+            `> • 🩷 **\`Notificar TikTok\`** (Botón Rosa) para emisiones en TikTok LIVE.\n\n` +
             `📍 **| Canal de publicación oficial:**\n` +
             `> ${canalStreamers} ❗\n\n` +
             `⚠️ **| Normativas de los Streamers:**\n` +
@@ -1534,44 +1541,41 @@ function buildStreamPanelRow() {
             .setCustomId('btn_notificar_tiktok')
             .setLabel('Notificar TikTok')
             .setStyle(ButtonStyle.Danger)
-            .setEmoji('⚫')
+            .setEmoji('🩷')
     );
 }
 
-// Función para asegurar que el panel esté publicado en el canal asignado
-async function ensureStreamPanel(overrideChannelId = null) {
-    const channelId = overrideChannelId || botConfig.CHANNEL_STREAM_PANEL_ID;
+// Función para asegurar que el panel esté publicado en el canal asignado (100% aislado por servidor)
+async function ensureStreamPanel(overrideChannelId = null, guildId = null) {
+    const channelId = overrideChannelId || (guildId ? guildManager.getGuildConfig(guildId).CHANNEL_STREAM_PANEL_ID : botConfig.CHANNEL_STREAM_PANEL_ID);
     if (!channelId) return;
 
     try {
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return;
 
-        const embed = buildStreamPanelEmbed();
+        const targetGuildId = guildId || channel.guild?.id || null;
+        const embed = buildStreamPanelEmbed(targetGuildId);
         const row = buildStreamPanelRow();
-        const files = [];
-
-        const logoPath = getLogoPath();
-        const imgPanelPath = path.join(__dirname, 'assets', 'panel_directos.png');
-        if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-        if (fs.existsSync(imgPanelPath)) files.push(new AttachmentBuilder(imgPanelPath, { name: 'panel_directos.png' }));
+        const files = guildManager.resolveGuildVisuals(targetGuildId, 'directos').files;
 
         const fetched = await channel.messages.fetch({ limit: 10 }).catch(() => null);
         const prevMsg = fetched ? fetched.find(m => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0].title?.includes('PANEL DE NOTIFICACIÓN DE DIRECTOS')) : null;
 
         if (prevMsg) {
-            await prevMsg.edit({ embeds: [embed], components: [row], files }).catch(() => null);
+            await prevMsg.edit({ embeds: [embed], components: [row], files, attachments: [] }).catch(() => null);
         } else {
             await channel.send({ embeds: [embed], components: [row], files }).catch(() => null);
         }
-        console.log(`✅ [PANEL DIRECTOS] Panel de notificar directos verificado en canal #${channel.name} (${channelId})`);
+        guildManager.logGuild(channel.guild, '🟣', `Panel de notificar directos verificado en #${channel.name}`);
     } catch (e) {
         console.error('Error al asegurar el panel de streams:', e);
     }
 }
 
 // Función para obtener el título real del directo en vivo (desde Twitch/TikTok o presencia de Discord)
-async function fetchLiveStreamTitle(streamUrl, member = null, defaultTitle = null) {
+async function fetchLiveStreamTitle(streamUrl, member = null, defaultTitle = null, guildId = null) {
+    const srvName = guildManager.resolveGuildVisuals(guildId || member?.guild?.id).name || 'VALLECAS RP';
     // 1. Si el usuario tiene actividad de Streaming / Rich Presence en Discord
     if (member && member.presence && member.presence.activities) {
         const streamAct = member.presence.activities.find(act =>
@@ -1620,7 +1624,7 @@ async function fetchLiveStreamTitle(streamUrl, member = null, defaultTitle = nul
                         }
                     }
                 }
-                return `🔴 Directo de ${channelName} | VALLECAS RP 🇪🇸`;
+                return `🔴 Directo de ${channelName} | ${srvName} 🇪🇸`;
             }
         }
     } catch (err) { }
@@ -1631,7 +1635,7 @@ async function fetchLiveStreamTitle(streamUrl, member = null, defaultTitle = nul
             const match = streamUrl.match(/@([a-zA-Z0-9_.]+)/i);
             if (match && match[1]) {
                 const tiktokUser = match[1];
-                return `🔴 LIVE de @${tiktokUser} | VALLECAS RP 🇪🇸`;
+                return `🔴 LIVE de @${tiktokUser} | ${srvName} 🇪🇸`;
             }
         }
     } catch (e) { }
@@ -1640,7 +1644,7 @@ async function fetchLiveStreamTitle(streamUrl, member = null, defaultTitle = nul
         return defaultTitle.trim();
     }
 
-    return '🔥 Roleplay en vivo en VALLECAS RP 🇪🇸';
+    return `🔥 Roleplay en vivo en ${srvName} 🇪🇸`;
 }
 
 
@@ -4115,12 +4119,22 @@ function buildStaffRatingCardEmbed({ userMention, userAvatar, staffMention, staf
 }
 
 // ==========================================
-// SISTEMA DE PLANTILLAS DE POSTULACIONES (VALLECAS RP)
+// SISTEMA DE PLANTILLAS DE POSTULACIONES (MULTI-SERVIDOR 100% AISLADO)
 // ==========================================
 const PLANTILLAS_FILE = path.join(__dirname, 'plantillas.json');
-const lastGeneratedPlantillaByStaff = new Map(); // staffId -> { key, nombre, emoji, contenido, timestamp }
+const lastGeneratedPlantillaByStaff = new Map(); // `${guildId}:${staffId}` -> { key, nombre, emoji, contenido, timestamp }
+const guildPlantillasCache = new Map(); // guildId -> { plantillas: { [key]: { nombre, emoji, descripcion, contenido } } }
 
-function getPlantillasData() {
+const guildPlantillaSchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true },
+    nombre: { type: String, required: true },
+    emoji: { type: String, default: '📋' },
+    descripcion: { type: String, default: '' },
+    contenido: { type: String, required: true },
+    order: { type: Number, default: 0 }
+}, { timestamps: true });
+
+function readPrimaryPlantillasFile() {
     if (fs.existsSync(PLANTILLAS_FILE)) {
         try {
             return JSON.parse(fs.readFileSync(PLANTILLAS_FILE, 'utf8'));
@@ -4131,8 +4145,135 @@ function getPlantillasData() {
     return { plantillas: {} };
 }
 
+function readGuildLocalPlantillasFile(guildId) {
+    if (!guildId || guildManager.isPrimaryGuild(guildId)) return null;
+    try {
+        const cfg = guildManager.getGuildConfig(guildId);
+        const dir = guildManager.findGuildAssetsDir(guildId, cfg);
+        if (dir) {
+            const fp = path.join(dir, 'plantillas.json');
+            if (fs.existsSync(fp)) {
+                const parsed = JSON.parse(fs.readFileSync(fp, 'utf8'));
+                if (parsed && parsed.plantillas && Object.keys(parsed.plantillas).length > 0) {
+                    return parsed;
+                }
+            }
+        }
+    } catch (e) {
+        console.error(`⚠️ [PLANTILLAS] Error leyendo plantillas.json del servidor ${guildId}:`, e.message);
+    }
+    return null;
+}
+
+function adaptPlantillaTextForGuild(rawText, serverName) {
+    if (!rawText || !serverName) return rawText || '';
+    const compactName = serverName.replace(/\s+/g, '');
+    return String(rawText)
+        .replace(/VALLECAS\s*RP/g, serverName.toUpperCase())
+        .replace(/Vallecas\s*RP/gi, serverName)
+        .replace(/VallecasRP/gi, compactName);
+}
+
+async function syncGuildPlantillasFromMongo(guildId) {
+    if (!guildId || guildManager.isPrimaryGuild(guildId)) return;
+    if (mongoose.connection.readyState !== 1) return;
+    try {
+        const Model = guildManager.getGuildModel(guildId, 'GuildPlantilla', guildPlantillaSchema);
+        let docs = await Model.find({}).sort({ order: 1, createdAt: 1 }).lean();
+
+        // Si existe assets/<Servidor>/plantillas.json, asegurar que sus plantillas estén sincronizadas en su DB
+        const localSeed = readGuildLocalPlantillasFile(guildId);
+        if (localSeed && localSeed.plantillas && docs.length === 0) {
+            let idx = 0;
+            for (const [k, p] of Object.entries(localSeed.plantillas)) {
+                if (!p || !p.contenido) continue;
+                await Model.findOneAndUpdate(
+                    { key: k },
+                    {
+                        key: k,
+                        nombre: p.nombre || k,
+                        emoji: p.emoji || '📋',
+                        descripcion: p.descripcion || '',
+                        contenido: p.contenido,
+                        order: typeof p.order === 'number' ? p.order : idx
+                    },
+                    { upsert: true }
+                ).catch(() => {});
+                idx++;
+            }
+            docs = await Model.find({}).sort({ order: 1, createdAt: 1 }).lean();
+        }
+
+        if (docs.length > 0) {
+            const mapObj = {};
+            for (const d of docs) {
+                mapObj[d.key] = {
+                    nombre: d.nombre,
+                    emoji: d.emoji || '📋',
+                    descripcion: d.descripcion || '',
+                    contenido: d.contenido
+                };
+            }
+            guildPlantillasCache.set(String(guildId), { plantillas: mapObj });
+        } else if (localSeed) {
+            guildPlantillasCache.set(String(guildId), localSeed);
+        }
+    } catch (e) {
+        console.error(`⚠️ [PLANTILLAS] Error sincronizando plantillas de ${guildId}:`, e.message);
+    }
+}
+
+async function syncAllGuildPlantillasFromMongo() {
+    for (const guild of client.guilds.cache.values()) {
+        if (guildManager.isPrimaryGuild(guild.id)) continue;
+        await syncGuildPlantillasFromMongo(guild.id);
+    }
+}
+
+function getPlantillasData(guildId = null) {
+    // Servidor principal (Vallecas RP): intacto 100%
+    if (!guildId || guildManager.isPrimaryGuild(guildId)) {
+        return readPrimaryPlantillasFile();
+    }
+
+    const gKey = String(guildId);
+    if (guildPlantillasCache.has(gKey)) {
+        const cached = guildPlantillasCache.get(gKey);
+        if (cached && cached.plantillas && Object.keys(cached.plantillas).length > 0) {
+            return cached;
+        }
+    }
+
+    // Respaldo 1: archivo dedicado assets/<Servidor>/plantillas.json
+    const localGuildFile = readGuildLocalPlantillasFile(gKey);
+    if (localGuildFile) {
+        guildPlantillasCache.set(gKey, localGuildFile);
+        return localGuildFile;
+    }
+
+    // Respaldo 2: adaptar automáticamente las plantillas base al nombre de ESTE servidor (nunca mostrar Vallecas RP)
+    const v = guildManager.resolveGuildVisuals(gKey);
+    const serverName = v.name || 'MI SERVIDOR RP';
+    const base = readPrimaryPlantillasFile();
+    const adapted = {};
+    for (const [k, p] of Object.entries(base.plantillas || {})) {
+        adapted[k] = {
+            ...p,
+            descripcion: adaptPlantillaTextForGuild(p.descripcion || '', serverName),
+            contenido: adaptPlantillaTextForGuild(p.contenido || '', serverName)
+        };
+    }
+    return { plantillas: adapted };
+}
+
 function buildPlantillasPanelEmbed(guildId = null) {
     const v = guildManager.resolveGuildVisuals(guildId, 'plantillas');
+    const data = getPlantillasData(guildId);
+    const entries = Object.values(data.plantillas || {});
+
+    const listLines = entries.length > 0
+        ? entries.map(p => `> ${p.emoji || '📋'} **${p.nombre}**${p.descripcion ? ` *(${p.descripcion})*` : ''}`).join('\n')
+        : '> 📋 *Aún no hay plantillas configuradas (`!addplantilla`).*';
 
     const embed = new EmbedBuilder()
         .setColor(v.color)
@@ -4144,19 +4285,16 @@ function buildPlantillasPanelEmbed(guildId = null) {
         .setTitle('📋 SISTEMA DE PLANTILLAS DE POSTULACIÓN')
         .setDescription(
             `\u200B\n` +
-            `¡Bienvenido al panel central de **Plantillas de Postulaciones Oficiales** de **${v.name}**!\n\n` +
-            `Aquí el equipo de Staff puede obtener instantáneamente el formato oficial y limpio de cualquier postulación para enviarlo a los usuarios o tickets de soporte.\n\n` +
+            `¡Bienvenido al panel informativo del **Sistema Oficial de Plantillas** de **${v.name}**!\n\n` +
+            `Aquí el equipo de Staff puede consultar qué plantillas hay activas y revisar su contenido antes de enviarlas directamente dentro de cualquier ticket.\n\n` +
             `📌 **Plantillas Disponibles en el Sistema:**\n` +
-            `> 💼 **Postulación Negocio** *(Apertura de comercios y locales)*\n` +
-            `> 💀 **Postulación Mafia** *(Organizaciones y jerarquías)*\n` +
-            `> 🏴‍☠️ **Postulación Banda** *(Bandas callejeras y territorios)*\n` +
-            `> 🛡️ **Postulación Staff** *(Ingreso al equipo de moderación)*\n` +
-            `> 📄 **Whitelist** *(Formulario escrito y trasfondo)*\n` +
-            `> 🎥 **Streamer** *(Postulaciones de creadores de contenido)*\n\n` +
-            `⚡ **Instrucciones para Staff:**\n` +
-            `> 1️⃣ Haz clic en el botón **"📋 Seleccionar Plantilla"** abajo.\n` +
-            `> 2️⃣ Elige la plantilla deseada en el selector desplegable.\n` +
-            `> 3️⃣ El bot te la entregará y podrás reenviarla con \`!enviar <ID_TICKET>\`.\n\n` +
+            `${listLines}\n\n` +
+            `⚡ **¿Cómo enviar una plantilla a un ticket?**\n` +
+            `> 1️⃣ Entra directamente al **ticket** del usuario.\n` +
+            `> 2️⃣ Escribe el comando \`!plantillas\` *(el bot borrará tu mensaje automáticamente)*.\n` +
+            `> 3️⃣ Selecciona la plantilla en el menú desplegable: el bot limpiará el selector y enviará la plantilla **mencionando al usuario** al instante.\n\n` +
+            `👁️ **¿Quieres verificar qué contiene una plantilla antes de enviarla?**\n` +
+            `> Pulsa el botón **"Ver Plantillas"** de abajo para previsualizar en privado cualquier formulario.\n\n` +
             `🇪🇸 **| ${v.name} • Calidad y Organización |** 🇪🇸`
         )
         .setFooter({
@@ -4175,15 +4313,38 @@ function buildPlantillasPanelEmbed(guildId = null) {
 function buildPlantillasPanelRow() {
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('btn_abrir_selector_plantillas')
-            .setLabel('📋 Seleccionar Plantilla')
-            .setStyle(ButtonStyle.Secondary) // Botón gris elegante
-            .setEmoji('📂')
+            .setCustomId('btn_ver_plantillas_preview')
+            .setLabel('Ver Plantillas')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('👁️')
     );
 }
 
-function buildPlantillaCardEmbed({ plantillaKey, staffId, staffMention, isTicket = false, guildId = null }) {
-    const data = getPlantillasData();
+async function detectTicketOpenerId(channel, guild, staffId = null) {
+    if (!channel || !guild) return null;
+    try {
+        // 1. Topic del canal (ej. ticketSystem.js -> "Usuario: tag (123456789012345678)")
+        if (channel.topic) {
+            const topicMatch = channel.topic.match(/\((\d{17,20})\)/);
+            if (topicMatch) return topicMatch[1];
+        }
+        // 2. Permisos individuales del canal (usuario añadido como Overwrite de tipo Member que no sea bot ni Staff)
+        if (channel.permissionOverwrites && channel.permissionOverwrites.cache) {
+            for (const ow of channel.permissionOverwrites.cache.values()) {
+                if (ow.type !== 1) continue; // 1 = Member
+                if (ow.id === client.user?.id || ow.id === staffId) continue;
+                const m = guild.members.cache.get(ow.id) || await guild.members.fetch(ow.id).catch(() => null);
+                if (!m || m.user?.bot) continue;
+                const mIsStaff = await isStaffMember(m, guild, m.id).catch(() => false);
+                if (!mIsStaff) return m.id;
+            }
+        }
+    } catch (_) { }
+    return null;
+}
+
+function buildPlantillaCardEmbed({ plantillaKey, staffId, staffMention, targetUserId = null, isTicket = false, guildId = null }) {
+    const data = getPlantillasData(guildId);
     const plantilla = data.plantillas?.[plantillaKey] || {
         nombre: 'Postulación',
         emoji: '📋',
@@ -4198,6 +4359,9 @@ function buildPlantillaCardEmbed({ plantillaKey, staffId, staffMention, isTicket
 
     const canalTickets = gCfg.CHANNEL_TICKETS_ID ? `<#${gCfg.CHANNEL_TICKETS_ID}>` : '`#tickets`';
     const canalNormativas = gCfg.CHANNEL_NORMATIVAS_ID ? `<#${gCfg.CHANNEL_NORMATIVAS_ID}>` : '`#normativas`';
+    const greetingLine = targetUserId
+        ? `👋 Hola <@${targetUserId}>, a continuación se te proporciona la **Plantilla Oficial** de **${plantilla.nombre}** para **${v.name}** \uD83C\uDDEA\uD83C\uDDF8.`
+        : `👋 Estimado usuario, a continuación se te proporciona la **Plantilla Oficial** de **${plantilla.nombre}** para **${v.name}** \uD83C\uDDEA\uD83C\uDDF8.`;
 
     const embed = new EmbedBuilder()
         .setColor(v.color)
@@ -4209,17 +4373,17 @@ function buildPlantillaCardEmbed({ plantillaKey, staffId, staffMention, isTicket
         .setTitle(`${plantilla.emoji || '📋'} Formulario de ${plantilla.nombre}`)
         .setDescription(
             `\u200B\n` +
-            `👋 Estimado usuario, a continuación se te proporciona la **Plantilla Oficial** de **${plantilla.nombre}** para **${v.name}** \uD83C\uDDEA\uD83C\uDDF8.\n\n` +
+            `${greetingLine}\n\n` +
             `📝 **| Puedes consultar la normativa en,**\n` +
             `> ${canalNormativas} ❗\n\n` +
             `📁 **| Si tienes alguna duda consulta en,**\n` +
             `> ${canalTickets} ❗\n\n` +
             `📌 **| Instrucciones de Cumplimentación:**\n` +
-            `> 1️⃣ Haz clic en el botón **"📋 Copiar Plantilla"** abajo para obtener el texto limpio.\n` +
-            `> 2️⃣ Rellena todos los apartados indicados con asterisco (\`*\`).\n` +
+            `> 1️⃣ Haz clic en el botón **"Copiar Plantilla"** abajo para obtener el texto limpio.\n` +
+            `> 2️⃣ Rellena todos los apartados indicados.\n` +
             `> 3️⃣ Envía tu postulación completa en este mismo canal para su revisión.\n\n` +
             `\uD83C\uDDEA\uD83C\uDDF8 **| ¡Disfruta de ${v.name}! |** \uD83C\uDDEA\uD83C\uDDF8\n\n` +
-            `🛡️ **Generado / Enviado por:** ${staffMention || `<@${staffId}>`}`
+            `🛡️ **Enviado por:** ${staffMention || `<@${staffId}>`}`
         )
         .setFooter({
             text: `${v.name} • Departamento de Atención y Soporte`,
@@ -4234,68 +4398,94 @@ function buildPlantillaCardEmbed({ plantillaKey, staffId, staffMention, isTicket
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(`btn_copiar_plantilla_${plantillaKey}`)
-            .setLabel('📋 Copiar Plantilla')
+            .setLabel('Copiar Plantilla')
             .setStyle(ButtonStyle.Success)
             .setEmoji('📄')
     );
 
     return { embed, files, row };
 }
-function buildSubmittedPostulacionEmbed({ member, text, attachments = [] }) {
+function buildSubmittedPostulacionEmbed({ member, text, attachments = [], guildId = null }) {
     const rawText = (text || '').trim();
     if (rawText.length < 30) return null;
 
-    // Detectar qué tipo de postulación es según el contenido
+    const resolvedGuildId = guildId || member?.guild?.id || null;
+    const isPrimary = !resolvedGuildId || guildManager.isPrimaryGuild(resolvedGuildId);
+    const vSub = guildManager.resolveGuildVisuals(resolvedGuildId, 'postulaciones');
+
+    // Detectar qué tipo de postulación es: primero revisar las plantillas propias del servidor, luego patrones generales
     let plantillaKey = 'desconocida';
     let nombre = 'Postulación';
     let emoji = '📋';
-    let color = 0x3498DB; // Azul
+    let color = isPrimary ? 0x3498DB : vSub.color;
 
-    if (/POSTULACI[OÓ]N\s*(?:PARA|-)?\s*STREAMER|Informaci[oó]n de creador|Media de espectadores/i.test(rawText)) {
-        plantillaKey = 'streamer';
-        nombre = 'Postulación para Streamer';
-        emoji = '🎥';
-        color = 0x9B59B6; // Morado Streamer
-    } else if (/POSTULACI[OÓ]N\s*(?:A EQUIPO DE)?\s*STAFF|TxAdmin|LuxuAdmin|¿Por qu[eé] quieres ser staff/i.test(rawText)) {
-        plantillaKey = 'postulacion_staff';
-        nombre = 'Postulación a Staff';
-        emoji = '🛡️';
-        color = 0xE67E22; // Naranja Staff
-    } else if (/POSTULACI[OÓ]N\s*(?:DE)?\s*NEGOCIO|Local deseado|Capital|Acepto la normativa de negocios/i.test(rawText)) {
-        plantillaKey = 'postulacion_negocio';
-        nombre = 'Postulación de Negocio';
-        emoji = '💼';
-        color = 0x2ECC71; // Verde Negocio
-    } else if (/POSTULACION MAFIA|Requisitos para solicitar una mafia|¿Qué significa para vosotros ser una mafia/i.test(rawText)) {
-        plantillaKey = 'postulacion_mafia';
-        nombre = 'Postulación de Mafia';
-        emoji = '💀';
-        color = 0x95A5A6; // Gris oscuro
-    } else if (/POSTULACION BANDA|Requisitos para solicitar una banda|¿Qué es para vosotros una banda/i.test(rawText)) {
-        plantillaKey = 'postulacion_banda';
-        nombre = 'Postulación de Banda';
-        emoji = '🏴‍☠️';
-        color = 0xE74C3C; // Rojo Banda
-    } else if (/WL-ORAL|¿Qué es el PowerGaming|¿Qué es el MetaGaming|¿Qué es el DeathMatch/i.test(rawText)) {
-        plantillaKey = 'wl_oral';
-        nombre = 'Postulación WL-Oral';
-        emoji = '🎙️';
-        color = 0x1ABC9C; // Turquesa
-    } else if (/WHITELIST VALLECAS RP|DATOS OOC|DATOS IC|Historia del personaje/i.test(rawText)) {
-        plantillaKey = 'whitelist';
-        nombre = 'Postulación de Whitelist';
-        emoji = '📄';
-        color = 0x3498DB;
-    } else {
-        // Si no coincide con ninguna plantilla oficial, no es un formulario completado
-        return null;
+    if (!isPrimary) {
+        const srvPlantillas = getPlantillasData(resolvedGuildId).plantillas || {};
+        const normSubmitted = rawText.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        for (const [k, p] of Object.entries(srvPlantillas)) {
+            const pNameNorm = (p.nombre || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+            const firstLine = (p.contenido || '').split('\n').map(l => l.trim()).find(Boolean) || '';
+            const firstLineNorm = firstLine.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+            if ((firstLineNorm.length >= 8 && normSubmitted.includes(firstLineNorm.slice(0, 22))) ||
+                (pNameNorm.length >= 4 && normSubmitted.includes(pNameNorm) && (rawText.includes('➤') || rawText.includes(':') || rawText.includes('•')))) {
+                plantillaKey = k;
+                nombre = p.nombre || 'Postulación';
+                emoji = p.emoji || '📋';
+                color = vSub.color;
+                break;
+            }
+        }
+    }
+
+    if (plantillaKey === 'desconocida') {
+        if (/POSTULACI[OÓ]N\s*(?:PARA|-)?\s*STREAMER|Informaci[oó]n de creador|Media de espectadores/i.test(rawText)) {
+            plantillaKey = 'streamer';
+            nombre = 'Postulación para Streamer';
+            emoji = '🎥';
+            color = isPrimary ? 0x9B59B6 : vSub.color;
+        } else if (/POSTULACI[OÓ]N\s*(?:A EQUIPO DE|A)?\s*STAFF|TxAdmin|LuxuAdmin|¿Por qu[eé] quieres ser staff/i.test(rawText)) {
+            plantillaKey = 'postulacion_staff';
+            nombre = 'Postulación a Staff';
+            emoji = '🛡️';
+            color = isPrimary ? 0xE67E22 : vSub.color;
+        } else if (/POSTULACI[OÓ]N\s*(?:DE)?\s*NEGOCIO|Local deseado|Capital|Acepto la normativa de negocios/i.test(rawText)) {
+            plantillaKey = 'postulacion_negocio';
+            nombre = 'Postulación de Negocio';
+            emoji = '💼';
+            color = isPrimary ? 0x2ECC71 : vSub.color;
+        } else if (/POSTULACI[OÓ]N\s*(?:DE\s*)?MAFIA|Requisitos para solicitar una mafia|¿Qué significa para vosotros ser una mafia/i.test(rawText)) {
+            plantillaKey = 'postulacion_mafia';
+            nombre = 'Postulación de Mafia';
+            emoji = '💀';
+            color = isPrimary ? 0x95A5A6 : vSub.color;
+        } else if (/POSTULACI[OÓ]N\s*(?:DE\s*)?BANDA|Requisitos para solicitar una banda|¿Qué es para vosotros una banda/i.test(rawText)) {
+            plantillaKey = 'postulacion_banda';
+            nombre = 'Postulación de Banda';
+            emoji = '🏴‍☠️';
+            color = isPrimary ? 0xE74C3C : vSub.color;
+        } else if (/WL-ORAL|¿Qué es el PowerGaming|¿Qué es el MetaGaming|¿Qué es el DeathMatch/i.test(rawText)) {
+            plantillaKey = 'wl_oral';
+            nombre = 'Postulación WL-Oral';
+            emoji = '🎙️';
+            color = isPrimary ? 0x1ABC9C : vSub.color;
+        } else if (/WHITELIST\s+[A-Z]|DATOS OOC|DATOS IC|Historia del personaje/i.test(rawText)) {
+            plantillaKey = 'whitelist';
+            nombre = 'Postulación de Whitelist';
+            emoji = '📄';
+            color = isPrimary ? 0x3498DB : vSub.color;
+        } else {
+            // Si no coincide con ninguna plantilla oficial, no es un formulario completado
+            return null;
+        }
     }
 
     const logoPath = getLogoPath();
     const bannerRecibidaPath = path.join(__dirname, 'assets', 'postulacion_recibida.png');
-    const files = [];
-    if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-    if (fs.existsSync(bannerRecibidaPath)) files.push(new AttachmentBuilder(bannerRecibidaPath, { name: 'postulacion_recibida.png' }));
+    const files = isPrimary ? [] : [...vSub.files];
+    if (isPrimary) {
+        if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+        if (fs.existsSync(bannerRecibidaPath)) files.push(new AttachmentBuilder(bannerRecibidaPath, { name: 'postulacion_recibida.png' }));
+    }
 
     // Reestructurar los campos del texto rellenado por el usuario
     const lines = rawText.split('\n');
@@ -4461,8 +4651,10 @@ function buildSubmittedPostulacionEmbed({ member, text, attachments = [] }) {
         formattedBody = formattedBody.slice(0, 3650) + '\n\n... *(texto truncado por longitud)*';
     }
 
-    const vSub = guildManager.resolveGuildVisuals(member?.guild?.id);
-    const subIconUrl = vSub.logoUrl || (fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL());
+    const subIconUrl = vSub.logoUrl || (isPrimary && fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL());
+    const staffRoleNotifyId = isPrimary ? '1538191116610838691' : (vSub.config?.ROLE_STAFF_ID || '');
+    const notifyLine = staffRoleNotifyId ? `🔔 **Notificación enviada a:** <@&${staffRoleNotifyId}>\n` : '';
+
     const embed = new EmbedBuilder()
         .setColor(color)
         .setAuthor({
@@ -4473,7 +4665,7 @@ function buildSubmittedPostulacionEmbed({ member, text, attachments = [] }) {
         .setTitle(`${emoji} ${nombre} Presentada`)
         .setDescription(
             `\u200B\n\n` +
-            `🔔 **Notificación enviada a:** <@&1538191116610838691>\n` +
+            `${notifyLine}` +
             `👤 **Postulante:** <@${member.id}>\n` +
             `📅 **Fecha de Envío:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n` +
             `\u200B\n` +
@@ -4487,18 +4679,18 @@ function buildSubmittedPostulacionEmbed({ member, text, attachments = [] }) {
         })
         .setTimestamp();
 
-    if (attachments && attachments.length > 0) {
-        const firstImg = attachments.find(att => att.contentType?.startsWith('image/') || att.url?.match(/\.(png|jpg|jpeg|gif|webp)$/i));
-        if (firstImg) {
-            embed.setImage(firstImg.url);
-        } else if (fs.existsSync(bannerRecibidaPath)) {
-            embed.setImage('attachment://postulacion_recibida.png');
-        }
-    } else if (fs.existsSync(bannerRecibidaPath)) {
+    const firstImg = (attachments && attachments.length > 0)
+        ? attachments.find(att => att.contentType?.startsWith('image/') || att.url?.match(/\.(png|jpg|jpeg|gif|webp)$/i))
+        : null;
+    if (firstImg) {
+        embed.setImage(firstImg.url);
+    } else if (isPrimary && fs.existsSync(bannerRecibidaPath)) {
         embed.setImage('attachment://postulacion_recibida.png');
+    } else if (!isPrimary && vSub.bannerUrl) {
+        embed.setImage(vSub.bannerUrl);
     }
 
-    return { embed, files };
+    return { embed, files, color };
 }
 // ==========================================
 // SISTEMA DE SANCIONES Y MODERACIÓN STAFF (VALLECAS RP)
@@ -5889,19 +6081,15 @@ client.on('messageCreate', async (message) => {
         }
 
         // ----------------------------------------------------
-        // COMANDO: !estado / !status (Muestra el estado en tiempo real)
+        // COMANDO: !estado / !status (Muestra el estado en tiempo real — aislado por servidor)
         // ----------------------------------------------------
         if (['!estado', '!status', '!servidor'].includes(command)) {
             try {
+                const gId = message.guild?.id;
                 const state = await fetchFiveMServerStatus();
-                const embed = buildStatusEmbed(state);
-                const row = buildStatusActionRow();
-                const files = [];
-
-                const logoPath = getLogoPath();
-                if (fs.existsSync(logoPath)) {
-                    files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-                }
+                const embed = buildStatusEmbed(state, gId);
+                const row = buildStatusActionRow(gId);
+                const files = guildManager.resolveGuildVisuals(gId).files;
 
                 return message.channel.send({ embeds: [embed], components: [row], files });
             } catch (err) {
@@ -5911,26 +6099,27 @@ client.on('messageCreate', async (message) => {
         }
 
         // ----------------------------------------------------
-        // COMANDO: !fijar-estado / !panel-estado (Crea el panel auto-actualizable)
+        // COMANDO: !fijar-estado / !panel-estado (Crea el panel auto-actualizable — aislado por servidor)
         // ----------------------------------------------------
         if (['!fijar-estado', '!panel-estado'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            const hasStaff = message.author.id === OWNER_ID || await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) {
                 return sendDeniedAccessMessage(message);
             }
             try {
+                const gId = message.guild?.id;
                 const state = await fetchFiveMServerStatus();
-                const embed = buildStatusEmbed(state);
-                const row = buildStatusActionRow();
-                const files = [];
+                const embed = buildStatusEmbed(state, gId);
+                const row = buildStatusActionRow(gId);
+                const files = guildManager.resolveGuildVisuals(gId).files;
 
-                const logoPath = getLogoPath();
-                if (fs.existsSync(logoPath)) {
-                    files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+                const sentStatus = await message.channel.send({ embeds: [embed], components: [row], files });
+                if (guildManager.isPrimaryGuild(gId)) {
+                    liveStatusMessageRef = sentStatus;
                 }
-
-                liveStatusMessageRef = await message.channel.send({ embeds: [embed], components: [row], files });
-                console.log(`📌 [PANEL FIJADO] Panel de estado fijado en canal #${message.channel.name} (${message.channel.id})`);
+                await updateConfig('CHANNEL_STATUS_ID', message.channel.id, gId);
+                guildManager.logGuild(message.guild, '📌', `Panel de estado fijado en #${message.channel.name}`);
                 return;
             } catch (err) {
                 console.error('Error al fijar panel de estado:', err);
@@ -5939,11 +6128,12 @@ client.on('messageCreate', async (message) => {
         }
 
         // ----------------------------------------------------
-        // COMANDO: !stream / !directo (Publica anuncio de streamer)
+        // COMANDO: !stream / !directo (Publica anuncio de streamer — aislado por servidor)
         // ----------------------------------------------------
         if (['!stream', '!directo', '!streamer'].includes(command)) {
             try {
-                // Formato: !stream @usuario <enlace> [título...]  O  !stream <enlace> [título...]
+                const gId = message.guild?.id;
+                const vStrCmd = guildManager.resolveGuildVisuals(gId);
                 let targetUser = message.mentions.users.first();
                 let filteredArgs = args.slice(1);
 
@@ -5955,9 +6145,9 @@ client.on('messageCreate', async (message) => {
 
                 let urlArg = filteredArgs.find(arg => arg.startsWith('http') || arg.includes('twitch.tv') || arg.includes('kick.com') || arg.includes('youtube.com') || arg.includes('tiktok.com'));
 
-                // Si no pone URL, usamos una URL por defecto para pruebas
                 if (!urlArg) {
-                    urlArg = 'https://twitch.tv/vallecasrp';
+                    const slug = (vStrCmd.name || 'servidor').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    urlArg = `https://twitch.tv/${slug}`;
                 }
 
                 const titleArgs = filteredArgs.filter(arg => arg !== urlArg);
@@ -5965,7 +6155,7 @@ client.on('messageCreate', async (message) => {
 
                 if (!streamTitle) {
                     const targetMember = message.guild?.members.cache.get(targetUser.id) || null;
-                    streamTitle = await fetchLiveStreamTitle(urlArg, targetMember, '🔥 Patrullaje y Rol en Directo | VALLECAS RP 🇪🇸');
+                    streamTitle = await fetchLiveStreamTitle(urlArg, targetMember, `🔥 Patrullaje y Rol en Directo | ${vStrCmd.name} 🇪🇸`, gId);
                 }
 
                 let platform = 'Twitch';
@@ -5978,7 +6168,8 @@ client.on('messageCreate', async (message) => {
                     streamUrl: urlArg,
                     streamTitle,
                     platform,
-                    avatarUrl: targetUser.displayAvatarURL({ dynamic: true })
+                    avatarUrl: targetUser.displayAvatarURL({ dynamic: true }),
+                    guildId: gId
                 });
 
                 if (res && res.success) {
@@ -5992,18 +6183,20 @@ client.on('messageCreate', async (message) => {
         }
 
         // ----------------------------------------------------
-        // COMANDO: !panel-stream / !notificarstream (Publica el botón interactivo de streamer)
+        // COMANDO: !panel-stream / !notificarstream (Publica el botón interactivo de streamer — 100% aislado por servidor)
         // ----------------------------------------------------
         if (['!panel-stream', '!notificarstream', '!panel-directos', '!fijar-stream'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            const hasStaff = message.author.id === OWNER_ID || await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) {
                 return sendDeniedAccessMessage(message);
             }
             try {
+                const gId = message.guild?.id;
                 const targetChannel = message.channel;
-                await ensureStreamPanel(targetChannel.id).catch(() => { });
-                await updateConfig('CHANNEL_STREAM_PANEL_ID', targetChannel.id, message.guild?.id);
-                console.log(`🟣 [PANEL STREAM] Panel de stream publicado en #${targetChannel.name} (${targetChannel.id})`);
+                await ensureStreamPanel(targetChannel.id, gId).catch(() => { });
+                await updateConfig('CHANNEL_STREAM_PANEL_ID', targetChannel.id, gId);
+                guildManager.logGuild(message.guild, '🟣', `Panel de stream publicado en #${targetChannel.name}`);
                 return;
             } catch (err) {
                 console.error('Error al publicar panel de stream:', err);
@@ -6025,8 +6218,9 @@ client.on('messageCreate', async (message) => {
             const link = cleanArgs.find(arg => arg.startsWith('http') || arg.includes('twitch.tv') || arg.includes('kick.com') || arg.includes('youtube.com') || arg.includes('tiktok.com')) || cleanArgs[0];
 
             if (!targetUser || !targetUser.id || !link) {
+                const vAddH = guildManager.resolveGuildVisuals(message.guild?.id);
                 return message.reply({
-                    content: `❌ **Uso correcto:** \`!addstreamer @usuario <enlace_del_canal> [Título opcional]\`\n📌 *Ejemplos:* \n• **Kick:** \`!addstreamer @usuario https://kick.com/canal Rol en Kick Vallecas RP\`\n• **Twitch:** \`!addstreamer @usuario https://twitch.tv/canal Rol en Vallecas RP\`\n• **TikTok:** \`!addstreamer @usuario https://www.tiktok.com/@canal Directo en TikTok\``
+                    content: `❌ **Uso correcto:** \`!addstreamer @usuario <enlace_del_canal> [Título opcional]\`\n📌 *Ejemplos:* \n• **Kick:** \`!addstreamer @usuario https://kick.com/canal Rol en Kick ${vAddH.name}\`\n• **Twitch:** \`!addstreamer @usuario https://twitch.tv/canal Rol en ${vAddH.name}\`\n• **TikTok:** \`!addstreamer @usuario https://www.tiktok.com/@canal Directo en TikTok\``
                 });
             }
 
@@ -6110,16 +6304,20 @@ client.on('messageCreate', async (message) => {
         }
 
         // ----------------------------------------------------
-        // SISTEMA DE PLANTILLAS DE POSTULACIONES (!panel-plantillas / !plantillas / !enviar)
+        // SISTEMA DE PLANTILLAS DE POSTULACIONES (!panel-plantillas / !verplantillas / !addplantilla / !delplantilla / !enviar)
         // ----------------------------------------------------
         if (['!panel-plantillas', '!panel-plantilla', '!panelplantillas', '!plantillas-panel', '!fijar-plantillas'].includes(command)) {
             await message.delete().catch(() => { });
-            if (message.author.id !== OWNER_ID) {
+            const hasStaff = message.author.id === OWNER_ID || await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) {
                 return sendDeniedAccessMessage(message);
             }
 
             try {
                 const gId = message.guild?.id;
+                if (gId && !guildManager.isPrimaryGuild(gId)) {
+                    await syncGuildPlantillasFromMongo(gId).catch(() => {});
+                }
                 const targetChannel = message.channel;
                 const embed = buildPlantillasPanelEmbed(gId);
                 const row = buildPlantillasPanelRow();
@@ -6131,12 +6329,180 @@ client.on('messageCreate', async (message) => {
                     files
                 });
 
-                console.log(`📋 [PANEL PLANTILLAS] Panel de plantillas publicado en #${targetChannel.name} (${targetChannel.id}) por ${message.author.tag}`);
+                guildManager.logGuild(message.guild, '📋', `Panel de plantillas publicado en #${targetChannel.name}`);
                 return;
             } catch (err) {
                 console.error('Error al publicar panel de plantillas:', err);
                 return;
             }
+        }
+
+        // COMANDO DIRECTO EN TICKETS: !plantillas / !plantilla
+        // El Staff lo escribe dentro del ticket -> borra su comando -> elige la plantilla -> borra el selector y la envía mencionando al usuario
+        if (['!plantillas', '!plantilla'].includes(command)) {
+            await message.delete().catch(() => {});
+            const hasStaff = message.author.id === OWNER_ID || await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+
+            const gId = message.guild?.id;
+            if (gId && !guildManager.isPrimaryGuild(gId)) {
+                await syncGuildPlantillasFromMongo(gId).catch(() => {});
+            }
+
+            const data = getPlantillasData(gId);
+            const entries = Object.entries(data.plantillas || {});
+            if (entries.length === 0) {
+                const emptyMsg = await message.channel.send('⚠️ No hay plantillas configuradas todavía en este servidor (`!addplantilla`).').catch(() => null);
+                if (emptyMsg) setTimeout(() => emptyMsg.delete().catch(() => {}), 6000);
+                return;
+            }
+
+            const v = guildManager.resolveGuildVisuals(gId);
+            const options = entries.slice(0, 25).map(([key, p]) => ({
+                label: (p.nombre || key).slice(0, 100),
+                description: (p.descripcion || `Plantilla oficial de ${p.nombre || key}`).slice(0, 100),
+                value: key,
+                emoji: p.emoji || '📋'
+            }));
+
+            const selectRow = new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId(`select_send_plantilla_ticket_${message.author.id}`)
+                    .setPlaceholder('📂 Elige la plantilla para enviar a este ticket...')
+                    .addOptions(options)
+            );
+
+            const cancelRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`btn_cancel_plantilla_ticket_${message.author.id}`)
+                    .setLabel('Cancelar')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setEmoji('✖️')
+            );
+
+            const pickerIcon = (v.config?.LOGO_URL && /^https?:\/\//i.test(v.config.LOGO_URL))
+                ? v.config.LOGO_URL.trim()
+                : (message.guild?.iconURL?.({ size: 256, extension: 'png' }) || undefined);
+            const pickerEmbed = new EmbedBuilder()
+                .setColor(v.color)
+                .setAuthor({ name: `SELECTOR DE PLANTILLAS | ${v.name}`, iconURL: pickerIcon })
+                .setDescription(
+                    `🛡️ <@${message.author.id}>, selecciona abajo la **plantilla oficial** que quieres enviar a este ticket.\n` +
+                    `> *Al seleccionarla, este menú se eliminará automáticamente y se enviará la plantilla mencionando al usuario.*`
+                )
+                .setFooter({ text: `${v.name} • Este selector se auto-elimina en 45s` });
+
+            const pickerMsg = await message.channel.send({
+                embeds: [pickerEmbed],
+                components: [selectRow, cancelRow]
+            }).catch(() => null);
+
+            if (pickerMsg) {
+                setTimeout(() => pickerMsg.delete().catch(() => {}), 45000);
+            }
+            return;
+        }
+
+        // VER PLANTILLAS CONFIGURADAS EN ESTE SERVIDOR: !verplantillas
+        if (['!verplantillas', '!plantillas-lista', '!listaplantillas'].includes(command)) {
+            const hasStaff = message.author.id === OWNER_ID || await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+            await message.delete().catch(() => {});
+
+            const gId = message.guild?.id;
+            if (gId && !guildManager.isPrimaryGuild(gId)) {
+                await syncGuildPlantillasFromMongo(gId).catch(() => {});
+            }
+            const data = getPlantillasData(gId);
+            const v = guildManager.resolveGuildVisuals(gId);
+            const entries = Object.entries(data.plantillas || {});
+            const lines = entries.length > 0
+                ? entries.map(([k, p]) => `> ${p.emoji || '📋'} **${p.nombre}** (\`${k}\`)${p.descripcion ? ` — *${p.descripcion}*` : ''}`).join('\n')
+                : '> *Sin plantillas configuradas todavía.*';
+
+            const emb = new EmbedBuilder()
+                .setColor(v.color)
+                .setAuthor({ name: `PLANTILLAS CONFIGURADAS | ${v.name}`, iconURL: v.logoUrl })
+                .setTitle(`📋 Plantillas de ${v.name} (${entries.length})`)
+                .setDescription(
+                    `${lines}\n\n` +
+                    `⚙️ **Gestión rápida (solo este servidor):**\n` +
+                    `> \`!addplantilla clave | emoji | Nombre | Descripción\` *(con el texto debajo o archivo .txt)*\n` +
+                    `> \`!delplantilla clave\`\n` +
+                    `> \`!panel-plantillas\` *(publicar panel actualizado)*`
+                )
+                .setTimestamp();
+            const m = await message.channel.send({ embeds: [emb], files: v.files }).catch(() => null);
+            if (m) setTimeout(() => m.delete().catch(() => {}), 20000);
+            return;
+        }
+
+        // AÑADIR / EDITAR PLANTILLA EN LA DB DEDICADA DE ESTE SERVIDOR: !addplantilla clave | emoji | Nombre | Descripción
+        if (['!addplantilla', '!setplantilla', '!crearplantilla'].includes(command)) {
+            const hasStaff = message.author.id === OWNER_ID || await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+            const gId = message.guild?.id;
+            if (!gId || guildManager.isPrimaryGuild(gId)) {
+                return message.reply('ℹ️ En el servidor principal las plantillas se gestionan desde `plantillas.json`.');
+            }
+
+            const rawBody = message.content.slice(command.length).trim();
+            const firstNewline = rawBody.indexOf('\n');
+            const headerLine = (firstNewline === -1 ? rawBody : rawBody.slice(0, firstNewline)).trim();
+            let contenido = firstNewline === -1 ? '' : rawBody.slice(firstNewline + 1).trim();
+
+            const att = message.attachments.first();
+            if (!contenido && att && att.url) {
+                try {
+                    const res = await fetch(att.url);
+                    if (res.ok) contenido = (await res.text()).trim();
+                } catch (_) {}
+            }
+
+            const parts = headerLine.split('|').map(s => s.trim());
+            const rawKey = (parts[0] || '').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+            const emoji = parts[1] || '📋';
+            const nombre = parts[2] || rawKey;
+            const descripcion = parts[3] || `Plantilla oficial de ${nombre}`;
+
+            if (!rawKey || !contenido || contenido.length < 10) {
+                return message.reply(
+                    '⚠️ **Uso:**\n```text\n!addplantilla negocio | 💼 | Postulación Negocio | Apertura de negocios\nAquí debajo pega el texto completo de la plantilla...\n```\n*(También puedes adjuntar un archivo `.txt` con el texto de la plantilla)*'
+                );
+            }
+
+            const Model = guildManager.getGuildModel(gId, 'GuildPlantilla', guildPlantillaSchema);
+            const curCount = await Model.countDocuments({}).catch(() => 0);
+            await Model.findOneAndUpdate(
+                { key: rawKey },
+                { key: rawKey, nombre, emoji, descripcion, contenido, order: curCount },
+                { upsert: true }
+            );
+            await syncGuildPlantillasFromMongo(gId);
+            await message.delete().catch(() => {});
+            const ok = await message.channel.send(`✅ Plantilla **${emoji} ${nombre}** (\`${rawKey}\`) guardada en la base de datos de **${message.guild.name}**.`).catch(() => null);
+            if (ok) setTimeout(() => ok.delete().catch(() => {}), 8000);
+            return;
+        }
+
+        // ELIMINAR PLANTILLA DE ESTE SERVIDOR: !delplantilla <clave>
+        if (['!delplantilla', '!borrarplantilla', '!eliminarplantilla'].includes(command)) {
+            const hasStaff = message.author.id === OWNER_ID || await isStaffMember(message.member, message.guild, message.author.id);
+            if (!hasStaff) return;
+            const gId = message.guild?.id;
+            if (!gId || guildManager.isPrimaryGuild(gId)) return;
+
+            const rawKey = (args[1] || '').toLowerCase().trim();
+            if (!rawKey) return message.reply('⚠️ **Uso:** `!delplantilla <clave>` *(usa `!verplantillas` para ver las claves)*.');
+
+            const Model = guildManager.getGuildModel(gId, 'GuildPlantilla', guildPlantillaSchema);
+            await Model.deleteOne({ key: rawKey }).catch(() => {});
+            guildPlantillasCache.delete(String(gId));
+            await syncGuildPlantillasFromMongo(gId);
+            await message.delete().catch(() => {});
+            const ok = await message.channel.send(`🗑️ Plantilla \`${rawKey}\` eliminada de **${message.guild.name}**.`).catch(() => null);
+            if (ok) setTimeout(() => ok.delete().catch(() => {}), 7000);
+            return;
         }
 
         // COMANDO REENVIAR PLANTILLA A UN TICKET O CANAL ESPECÍFICO: !enviar <ID_CANAL_O_TICKET>
@@ -6165,7 +6531,8 @@ client.on('messageCreate', async (message) => {
                 return;
             }
 
-            const lastPlantilla = lastGeneratedPlantillaByStaff.get(message.author.id);
+            const staffSessionKey = `${message.guild?.id || 'global'}:${message.author.id}`;
+            const lastPlantilla = lastGeneratedPlantillaByStaff.get(staffSessionKey) || lastGeneratedPlantillaByStaff.get(message.author.id);
             if (!lastPlantilla || !lastPlantilla.contenido) {
                 const noPlanMsg = await message.channel.send({
                     content: `❌ **No tienes ninguna plantilla seleccionada recientemente.**\n💡 Haz clic en **"📋 Seleccionar Plantilla"** en el panel de plantillas para generar una primero.`
@@ -6197,11 +6564,9 @@ client.on('messageCreate', async (message) => {
                             const msgToDelete = await originChan.messages.fetch(lastPlantilla.messageId).catch(() => null);
                             if (msgToDelete) {
                                 await msgToDelete.delete().catch(() => { });
-                                console.log(`🗑️ [PLANTILLA LIMPIA] Mensaje previo de plantilla #${lastPlantilla.messageId} eliminado para mantener el panel limpio.`);
                             }
                         }
                     } else {
-                        // Si no tenía ID exacta, buscar y borrar mensajes recientes de plantillas generadas en el canal actual
                         const recentMsgs = await message.channel.messages.fetch({ limit: 8 }).catch(() => null);
                         if (recentMsgs) {
                             for (const [, rMsg] of recentMsgs) {
@@ -6209,7 +6574,6 @@ client.on('messageCreate', async (message) => {
                                     const authorName = rMsg.embeds[0].author?.name || '';
                                     if (authorName.includes('PLANTILLA OFICIAL') && !rMsg.components?.[0]?.components?.[0]?.customId?.includes('btn_abrir_selector_plantillas')) {
                                         await rMsg.delete().catch(() => { });
-                                        console.log(`🗑️ [PLANTILLA LIMPIA] Tarjeta previa de plantilla eliminada.`);
                                         break;
                                     }
                                 }
@@ -6219,6 +6583,7 @@ client.on('messageCreate', async (message) => {
                 } catch (cleanErr) { }
 
                 // Limpiar referencia de memoria
+                lastGeneratedPlantillaByStaff.delete(staffSessionKey);
                 lastGeneratedPlantillaByStaff.delete(message.author.id);
 
                 const confirmMsg = await message.channel.send({
@@ -6683,65 +7048,59 @@ client.on('messageCreate', async (message) => {
             } catch (err) { }
         }
 
-        // Función para construir el Embed y Archivos del Panel de Control de Admin
-        function buildAdminEmbed(authorId) {
-            const logoPath = getLogoPath();
-            const files = [];
-            if (fs.existsSync(logoPath)) {
-                files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-            }
+        // Función para construir el Embed y Archivos del Panel de Control de Admin (100% aislado por servidor)
+        function buildAdminEmbed(authorId, guildId = null) {
+            const vAdm = guildManager.resolveGuildVisuals(guildId);
+            const cfg = vAdm.config || botConfig;
+            const files = [...vAdm.files];
+            const iconUrl = vAdm.logoUrl || client.user.displayAvatarURL();
 
             const formatChannel = (id) => id ? `<#${id}> \`(${id})\`` : '`🔴 No configurado`';
             const formatRole = (id) => id ? `<@&${id}> \`(${id})\`` : '`🔴 No configurado`';
 
             const adminEmbed = new EmbedBuilder()
-                .setColor(0xD900FF) // Morado Magenta VALLECAS RP
+                .setColor(vAdm.color)
                 .setAuthor({
-                    name: 'PANEL DE CONTROL DEL CREADOR | VALLECAS RP 🇪🇸',
-                    iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                    name: `PANEL DE CONTROL DEL CREADOR | ${vAdm.name} 🇪🇸`,
+                    iconURL: iconUrl
                 })
-                .setThumbnail(fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL())
-                .setTitle('👑 Panel de Configuración de Canales y Servidor')
+                .setThumbnail(iconUrl)
+                .setTitle(`👑 Panel de Configuración de Canales • ${vAdm.name}`)
                 .setDescription(
-                    `Hola <@${authorId}>, desde aquí puedes ver y gestionar cualquier canal, rol o IP del bot.\n\n` +
+                    `Hola <@${authorId}>, desde aquí puedes ver y gestionar cualquier canal, rol o IP de **${vAdm.name}**.\n\n` +
                     `📋 **CANALES DE WHITELIST & ENTREVISTAS:**\n` +
-                    `> 📥 **Solicitudes:** ${formatChannel(botConfig.CHANNEL_SOLICITUDES_ID)}\n` +
-                    `> ✅ **Aprobados:** ${formatChannel(botConfig.CHANNEL_APROBADOS_ID)}\n` +
-                    `> ❌ **Denegados:** ${formatChannel(botConfig.CHANNEL_DENEGADOS_ID)}\n` +
-                    `> 🎙️ **Fichas Entrevistas:** ${formatChannel(botConfig.CHANNEL_ENTREVISTAS_ID)}\n\n` +
+                    `> 📥 **Solicitudes:** ${formatChannel(cfg.CHANNEL_SOLICITUDES_ID)}\n` +
+                    `> ✅ **Aprobados:** ${formatChannel(cfg.CHANNEL_APROBADOS_ID)}\n` +
+                    `> ❌ **Denegados:** ${formatChannel(cfg.CHANNEL_DENEGADOS_ID)}\n` +
+                    `> 🎙️ **Fichas Entrevistas:** ${formatChannel(cfg.CHANNEL_ENTREVISTAS_ID)}\n\n` +
                     `🟣 **CANALES DE STREAMERS:**\n` +
-                    `> 🔘 **Panel Botón Directo:** ${formatChannel(botConfig.CHANNEL_STREAM_PANEL_ID)}\n` +
-                    `> 📢 **Canal de Avisos Stream:** ${formatChannel(botConfig.CHANNEL_STREAMERS_ID)}\n\n` +
+                    `> 🔘 **Panel Botón Directo:** ${formatChannel(cfg.CHANNEL_STREAM_PANEL_ID)}\n` +
+                    `> 📢 **Canal de Avisos Stream:** ${formatChannel(cfg.CHANNEL_STREAMERS_ID)}\n\n` +
                     `🌐 **CANALES DEL SERVIDOR & ESTADO:**\n` +
-                    `> 👋 **Bienvenidas:** ${formatChannel(botConfig.CHANNEL_BIENVENIDAS_ID)}\n` +
-                    `> 📊 **Panel Estado FiveM:** ${formatChannel(botConfig.CHANNEL_STATUS_ID)}\n` +
-                    `> 📜 **Normativas:** ${formatChannel(botConfig.CHANNEL_NORMATIVAS_ID)}\n` +
-                    `> 🎫 **Tickets / Soporte:** ${formatChannel(botConfig.CHANNEL_TICKETS_ID)}\n` +
-                    `> 💬 **General:** ${formatChannel(botConfig.CHANNEL_GENERAL_ID)}\n\n` +
+                    `> 👋 **Bienvenidas:** ${formatChannel(cfg.CHANNEL_BIENVENIDAS_ID)}\n` +
+                    `> 📊 **Panel Estado FiveM:** ${formatChannel(cfg.CHANNEL_STATUS_ID)}\n` +
+                    `> 📜 **Normativas:** ${formatChannel(cfg.CHANNEL_NORMATIVAS_ID)}\n` +
+                    `> 🎫 **Tickets / Soporte:** ${formatChannel(cfg.CHANNEL_TICKETS_ID)}\n` +
+                    `> 💬 **General:** ${formatChannel(cfg.CHANNEL_GENERAL_ID)}\n\n` +
                     `🤖 **CANALES DE CONSULTAS IA:**\n` +
-                    `> 🛡️ **Consultas Staff (Canal 1):** ${formatChannel(botConfig.CHANNEL_CONSULTAS_STAFF_ID)}\n` +
-                    `> 👥 **Consultas Usuarios (Canal 2):** ${formatChannel(botConfig.CHANNEL_CONSULTAS_USERS_ID)}\n\n` +
+                    `> 🛡️ **Consultas Staff (Canal 1):** ${formatChannel(cfg.CHANNEL_CONSULTAS_STAFF_ID)}\n` +
+                    `> 👥 **Consultas Usuarios (Canal 2):** ${formatChannel(cfg.CHANNEL_CONSULTAS_USERS_ID)}\n\n` +
                     `🚨 **CANALES DE MODERACIÓN & EVENTOS:**\n` +
-                    `> ⚖️ **Sanciones:** ${formatChannel(botConfig.CHANNEL_SANCIONES_ID)}\n` +
-                    `> 📋 **Panel Sanciones:** ${formatChannel(botConfig.CHANNEL_SANCIONES_PANEL_ID)}\n` +
-                    `> 🎉 **Eventos Oficiales:** ${formatChannel(botConfig.CHANNEL_EVENTOS_ID)}\n` +
-                    `> 📢 **Panel Eventos:** ${formatChannel(botConfig.CHANNEL_EVENTOS_PANEL_ID)}\n\n` +
+                    `> ⚖️ **Sanciones:** ${formatChannel(cfg.CHANNEL_SANCIONES_ID)}\n` +
+                    `> 📋 **Panel Sanciones:** ${formatChannel(cfg.CHANNEL_SANCIONES_PANEL_ID)}\n` +
+                    `> 🎉 **Eventos Oficiales:** ${formatChannel(cfg.CHANNEL_EVENTOS_ID)}\n` +
+                    `> 📢 **Panel Eventos:** ${formatChannel(cfg.CHANNEL_EVENTOS_PANEL_ID)}\n\n` +
                     `🛡️ **ROLES:**\n` +
-                    `> 👑 **Staff WL:** ${formatRole(botConfig.ROLE_STAFF_ID)}\n` +
-                    `> 🟣 **Streamer:** ${formatRole(botConfig.ROLE_STREAMER_ID)}\n\n` +
+                    `> 👑 **Staff:** ${formatRole(cfg.ROLE_STAFF_ID)}\n` +
+                    `> 🟣 **Streamer:** ${formatRole(cfg.ROLE_STREAMER_ID)}\n\n` +
                     `🎮 **DATOS FIVEM:**\n` +
-                    `> 📡 **IP/Puerto:** \`${botConfig.FIVEM_SERVER_IP || 'No definida'}\`\n` +
-                    `> 🔗 **CFX Code:** \`${botConfig.FIVEM_CFX_CODE || 'No definido'}\`\n\n` +
+                    `> 📡 **IP/Puerto:** \`${cfg.FIVEM_SERVER_IP || 'No definida'}\`\n` +
+                    `> 🔗 **CFX Code:** \`${cfg.FIVEM_CFX_CODE || 'No definido'}\`\n\n` +
                     `────────────────────────────\n` +
                     `⚙️ **¿CÓMO CAMBIAR LOS CANALES Y AJUSTES?**\n` +
                     `• \`!setcanal bienvenidas <#canal o ID>\` *(Avisos de bienvenida)*\n` +
-                    `• \`!setcanal solicitudes <#canal o ID>\`\n` +
-                    `• \`!setcanal aprobados <#canal o ID>\`\n` +
-                    `• \`!setcanal denegados <#canal o ID>\`\n` +
-                    `• \`!setcanal entrevistas <#canal o ID>\` *(Fichas de voz)*\n` +
                     `• \`!setcanal streampanel <#canal o ID>\` *(Donde va el botón)*\n` +
                     `• \`!setcanal streamaviso <#canal o ID>\` *(Donde se publica el directo)*\n` +
-                    `• \`!setcanal status <#canal o ID>\` *(Panel de jugadores)*\n` +
                     `• \`!setcanal eventos <#canal o ID>\` *(Donde se publican los eventos)*\n` +
                     `• \`!setcanal paneleventos <#canal o ID>\` *(Donde va el botón de eventos)*\n` +
                     `• \`!setcanal sanciones <#canal o ID>\`\n` +
@@ -6749,17 +7108,15 @@ client.on('messageCreate', async (message) => {
                     `• \`!setcanal tickets <#canal o ID>\`\n` +
                     `• \`!setcanal general <#canal o ID>\`\n` +
                     `• \`!setcanal consultas <#canal o ID>\` *(Consultas Staff)*\n` +
-                    `• \`!setcanal consultas2 <#canal o ID>\` *(Consultas Usuarios/Comunidad)*\n` +
+                    `• \`!setcanal consultas2 <#canal o ID>\` *(Consultas Usuarios)*\n` +
                     `• \`!setrol staff <@rol o ID>\`\n` +
                     `• \`!setrol streamer <@rol o ID>\`\n` +
-                    `• \`!setip <ip:puerto>\` *(Ej: 185.230.52.246:30120)*\n` +
-                    `• \`!setcfx <codigo>\` *(Ej: 7b97gmr)*\n` +
-                    `• \`!reiniciar-paneles\` *(Vuelve a enviar los paneles automáticos)*\n` +
-                    `• \`!reiniciar-mensajes\` *(Edita mensajes antiguos del bot a VALLECAS RP)*`
+                    `• \`!setip <ip:puerto>\` • \`!setcfx <codigo>\`\n` +
+                    `• \`!reiniciar-paneles\` *(Actualiza los paneles de ${vAdm.name})*`
                 )
                 .setFooter({
-                    text: 'VALLECAS RP • Configuración Exclusiva del Creador',
-                    iconURL: fs.existsSync(logoPath) ? 'attachment://logo.png' : client.user.displayAvatarURL()
+                    text: `${vAdm.name} • Configuración del Servidor`,
+                    iconURL: iconUrl
                 })
                 .setTimestamp();
 
@@ -6773,7 +7130,7 @@ client.on('messageCreate', async (message) => {
             }
 
             try {
-                const { adminEmbed, files } = buildAdminEmbed(message.author.id);
+                const { adminEmbed, files } = buildAdminEmbed(message.author.id, message.guild?.id);
                 return message.reply({ embeds: [adminEmbed], files });
             } catch (err) {
                 console.error('Error al mostrar panel admin:', err);
@@ -7054,52 +7411,47 @@ client.on('messageCreate', async (message) => {
                 return sendDeniedAccessMessage(message);
             }
 
-            const pMsg = await message.reply({ content: '🔄 **Reenviando y actualizando todos los paneles automáticos con el nuevo logo de VALLECAS RP...**' }).catch(() => null);
+            const gIdPan = message.guild?.id;
+            const vPan = guildManager.resolveGuildVisuals(gIdPan);
+            const cfgPan = vPan.config || botConfig;
+            const pMsg = await message.reply({ content: `🔄 **Reenviando y actualizando los paneles automáticos de ${vPan.name}...**` }).catch(() => null);
 
             // 1. Panel de Directos / Streamers
-            if (botConfig.CHANNEL_STREAM_PANEL_ID) await ensureStreamPanel().catch(() => { });
+            if (cfgPan.CHANNEL_STREAM_PANEL_ID) await ensureStreamPanel(cfgPan.CHANNEL_STREAM_PANEL_ID, gIdPan).catch(() => { });
 
-            // 2. Panel de Estado FiveM
-            if (botConfig.CHANNEL_STATUS_ID) await updateChannelStatusPanel().catch(() => { });
+            // 2. Panel de Estado FiveM (solo principal)
+            if (guildManager.isPrimaryGuild(gIdPan) && cfgPan.CHANNEL_STATUS_ID) await updateChannelStatusPanel().catch(() => { });
 
             // 3. Panel de Tops Staff
-            await updateStaffTopRankingPanel().catch(() => { });
+            await updateStaffTopRankingPanel(gIdPan).catch(() => { });
 
             // 4. Panel de Valoraciones Staff (si está configurado)
-            if (botConfig.CHANNEL_VALORACION_PANEL_ID) {
+            if (cfgPan.CHANNEL_VALORACION_PANEL_ID) {
                 try {
-                    const vChannel = message.guild.channels.cache.get(botConfig.CHANNEL_VALORACION_PANEL_ID) || await client.channels.fetch(botConfig.CHANNEL_VALORACION_PANEL_ID).catch(() => null);
+                    const vChannel = message.guild.channels.cache.get(cfgPan.CHANNEL_VALORACION_PANEL_ID) || await client.channels.fetch(cfgPan.CHANNEL_VALORACION_PANEL_ID).catch(() => null);
                     if (vChannel) {
-                        const embed = buildStaffRatingPanelEmbed();
+                        const embed = buildStaffRatingPanelEmbed(gIdPan);
                         const row = buildStaffRatingPanelRow();
-                        const files = [];
-                        const logoPath = getLogoPath();
-                        const panelImgPath = path.join(__dirname, 'assets', 'panel_valoracion.png');
-                        if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-                        if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_valoracion.png' }));
+                        const files = guildManager.resolveGuildVisuals(gIdPan, 'valoraciones').files;
                         await vChannel.send({ embeds: [embed], components: [row], files }).catch(() => { });
                     }
                 } catch (e) { }
             }
 
             // 5. Panel de Eventos (si está configurado)
-            if (botConfig.CHANNEL_EVENTOS_PANEL_ID) {
+            if (cfgPan.CHANNEL_EVENTOS_PANEL_ID) {
                 try {
-                    const eChannel = message.guild.channels.cache.get(botConfig.CHANNEL_EVENTOS_PANEL_ID) || await client.channels.fetch(botConfig.CHANNEL_EVENTOS_PANEL_ID).catch(() => null);
+                    const eChannel = message.guild.channels.cache.get(cfgPan.CHANNEL_EVENTOS_PANEL_ID) || await client.channels.fetch(cfgPan.CHANNEL_EVENTOS_PANEL_ID).catch(() => null);
                     if (eChannel) {
-                        const embed = buildEventosPanelEmbed();
+                        const embed = buildEventosPanelEmbed(gIdPan);
                         const row = buildEventosPanelRow();
-                        const files = [];
-                        const logoPath = getLogoPath();
-                        const panelImgPath = path.join(__dirname, 'assets', 'panel_eventos.png');
-                        if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
-                        if (fs.existsSync(panelImgPath)) files.push(new AttachmentBuilder(panelImgPath, { name: 'panel_eventos.png' }));
+                        const files = guildManager.resolveGuildVisuals(gIdPan, 'eventos').files;
                         await eChannel.send({ embeds: [embed], components: [row], files }).catch(() => { });
                     }
                 } catch (e) { }
             }
 
-            if (pMsg) await pMsg.edit({ content: '✅ **¡Todos los paneles han sido reenviados y actualizados con éxito con el logo de VALLECAS RP!**' }).catch(() => { });
+            if (pMsg) await pMsg.edit({ content: `✅ **¡Todos los paneles de ${vPan.name} han sido actualizados con éxito!**` }).catch(() => { });
             return;
         }
 
@@ -9350,11 +9702,13 @@ client.on('messageCreate', async (message) => {
         }
     }
 
-    // Si se envía un mensaje en el canal oficial de valoraciones (incluso por otros bots/admins), auto-sincronizar y actualizar el Top
-    if (botConfig.CHANNEL_VALORACIONES_ID && message.channel.id === botConfig.CHANNEL_VALORACIONES_ID) {
+    // Si se envía un mensaje en el canal oficial de valoraciones de ESTE servidor, auto-sincronizar y actualizar su Top
+    const gValChId = message.guild ? guildManager.getGuildConfig(message.guild.id).CHANNEL_VALORACIONES_ID : botConfig.CHANNEL_VALORACIONES_ID;
+    if (gValChId && message.channel.id === gValChId) {
         const parsed = parseRatingFromMessage(message);
         if (parsed) {
-            const currentData = getStaffRatingsData();
+            const gIdVal = message.guild?.id;
+            const currentData = getStaffRatingsData(gIdVal);
             const existingRatings = currentData.ratings || [];
             const isDuplicate = existingRatings.some(r => r.id === parsed.id || (r.staffId === parsed.staffId && r.userId === parsed.userId && r.rating === parsed.rating && Math.abs(new Date(r.timestamp).getTime() - new Date(parsed.timestamp).getTime()) < 60000));
             if (!isDuplicate) {
@@ -9363,9 +9717,9 @@ client.on('messageCreate', async (message) => {
                     currentData.staffList.push(parsed.staffId);
                 }
                 currentData.ratings = existingRatings;
-                saveStaffRatingsData(currentData);
-                await updateStaffTopRankingPanel().catch(() => { });
-                console.log(`⭐ [VALORACIÓN EN VIVO] Valoración registrada para Staff ${parsed.staffTag} (${parsed.rating}/10). Panel de Tops actualizado.`);
+                saveStaffRatingsData(currentData, gIdVal);
+                await updateStaffTopRankingPanel(gIdVal).catch(() => { });
+                guildManager.logGuild(message.guild, '⭐', `Valoración registrada para Staff ${parsed.staffTag} (${parsed.rating}/10)`);
             }
         }
     }
@@ -9374,9 +9728,10 @@ client.on('messageCreate', async (message) => {
     if (message.author && !message.author.bot && message.author.id !== client.user.id && message.content && message.content.length > 50) {
         try {
             const formattedSubmission = buildSubmittedPostulacionEmbed({
-                member: message.member || { id: message.author.id, user: message.author },
+                member: message.member || { id: message.author.id, user: message.author, guild: message.guild },
                 text: message.content,
-                attachments: Array.from(message.attachments.values())
+                attachments: Array.from(message.attachments.values()),
+                guildId: message.guild?.id
             });
 
             if (formattedSubmission) {
@@ -9487,7 +9842,7 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
 
-            const { adminEmbed, files } = buildAdminEmbed(interaction.user.id);
+            const { adminEmbed, files } = buildAdminEmbed(interaction.user.id, interaction.guild?.id);
             return interaction.reply({
                 embeds: [adminEmbed],
                 files: files,
@@ -9518,12 +9873,11 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (commandName === 'estado') {
+            const gId = interaction.guild?.id;
             const state = await fetchFiveMServerStatus();
-            const embed = buildStatusEmbed(state);
-            const row = buildStatusActionRow();
-            const files = [];
-            const logoPath = getLogoPath();
-            if (fs.existsSync(logoPath)) files.push(new AttachmentBuilder(logoPath, { name: 'logo.png' }));
+            const embed = buildStatusEmbed(state, gId);
+            const row = buildStatusActionRow(gId);
+            const files = guildManager.resolveGuildVisuals(gId).files;
 
             return interaction.reply({ embeds: [embed], components: [row], files, ephemeral: true });
         }
@@ -9572,11 +9926,107 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ----------------------------------------------------
-    // SELECTOR DE PLANTILLAS DE POSTULACIÓN
+    // SELECTOR DIRECTO EN TICKET (!plantillas): ELIMINA EL MENÚ Y ENVÍA LA PLANTILLA MENCIONANDO AL USUARIO
+    // ----------------------------------------------------
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('select_send_plantilla_ticket_')) {
+        const expectedStaffId = interaction.customId.replace('select_send_plantilla_ticket_', '');
+        const isAllowed = interaction.user.id === expectedStaffId
+            || interaction.user.id === OWNER_ID
+            || interaction.member?.permissions?.has(PermissionFlagsBits.Administrator);
+        if (!isAllowed) {
+            return interaction.reply({ content: '⛔ Solo el Staff que abrió este selector puede elegir la plantilla.', ephemeral: true }).catch(() => {});
+        }
+
+        const plantillaKey = interaction.values[0];
+        const gId = interaction.guild?.id;
+        const data = getPlantillasData(gId);
+        const plantilla = data.plantillas?.[plantillaKey];
+        if (!plantilla) {
+            return interaction.reply({ content: '❌ No se encontró la plantilla seleccionada.', ephemeral: true }).catch(() => {});
+        }
+
+        await interaction.deferUpdate().catch(() => {});
+        // Borrar inmediatamente el selector para dejar el ticket 100% limpio
+        await interaction.message.delete().catch(() => {});
+
+        const targetUserId = await detectTicketOpenerId(interaction.channel, interaction.guild, interaction.user.id);
+        const { embed, files, row } = buildPlantillaCardEmbed({
+            plantillaKey,
+            staffId: interaction.user.id,
+            staffMention: `<@${interaction.user.id}>`,
+            targetUserId,
+            isTicket: true,
+            guildId: gId
+        });
+
+        await interaction.channel.send({
+            content: targetUserId ? `📩 <@${targetUserId}> — **Plantilla oficial de ${plantilla.emoji || '📋'} ${plantilla.nombre}** lista para rellenar:` : undefined,
+            embeds: [embed],
+            components: [row],
+            files
+        }).catch(err => console.error('⚠️ [PLANTILLAS] Error enviando plantilla en ticket:', err.message));
+        return;
+    }
+
+    // SELECTOR DE VISTA PREVIA PRIVADA (BOTÓN "👁️ Ver Plantillas" DEL PANEL INFORMATIVO)
+    // ----------------------------------------------------
+    if (interaction.isStringSelectMenu() && interaction.customId === 'select_preview_plantilla') {
+        const plantillaKey = interaction.values[0];
+        const gId = interaction.guild?.id;
+        const data = getPlantillasData(gId);
+        const entries = Object.entries(data.plantillas || {});
+        const plantilla = data.plantillas?.[plantillaKey];
+        if (!plantilla) {
+            return interaction.reply({ content: '❌ No se encontró esa plantilla.', ephemeral: true }).catch(() => {});
+        }
+
+        const vPrev = guildManager.resolveGuildVisuals(gId);
+        const prevIcon = (vPrev.config?.LOGO_URL && /^https?:\/\//i.test(vPrev.config.LOGO_URL))
+            ? vPrev.config.LOGO_URL.trim()
+            : (interaction.guild?.iconURL?.({ size: 256, extension: 'png' }) || undefined);
+        const rawContent = (plantilla.contenido || 'Sin contenido').replace(/```/g, '');
+        const safeContent = rawContent.length > 3750 ? rawContent.slice(0, 3750) + '\n... (recortado)' : rawContent;
+
+        const previewEmbed = new EmbedBuilder()
+            .setColor(vPrev.color)
+            .setAuthor({ name: `VISTA PREVIA DE PLANTILLA | ${vPrev.name}`, iconURL: prevIcon })
+            .setTitle(`👁️ ${plantilla.emoji || '📋'} ${plantilla.nombre}`)
+            .setDescription(
+                `${plantilla.descripcion ? `> 📝 *${plantilla.descripcion}*\n\n` : ''}` +
+                `\`\`\`text\n${safeContent}\n\`\`\``
+            )
+            .setFooter({ text: `${vPrev.name} • Vista previa privada (solo tú puedes verla) • Usa !plantillas en un ticket para enviarla` })
+            .setTimestamp();
+
+        const switchRow = new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId('select_preview_plantilla')
+                .setPlaceholder('👁️ Ver otra plantilla...')
+                .addOptions(
+                    entries.slice(0, 25).map(([k, p]) => ({
+                        label: (p.nombre || k).slice(0, 100),
+                        description: (p.descripcion || `Plantilla oficial de ${p.nombre || k}`).slice(0, 100),
+                        value: k,
+                        emoji: p.emoji || '📋',
+                        default: k === plantillaKey
+                    }))
+                )
+        );
+
+        await interaction.update({
+            content: '',
+            embeds: [previewEmbed],
+            components: [switchRow]
+        }).catch(() => {});
+        return;
+    }
+
+    // SELECTOR DE PLANTILLAS DE POSTULACIÓN (compatibilidad paneles anteriores)
     // ----------------------------------------------------
     if (interaction.isStringSelectMenu() && interaction.customId === 'select_plantilla_postulacion') {
         const plantillaKey = interaction.values[0];
-        const data = getPlantillasData();
+        const gId = interaction.guild?.id;
+        const data = getPlantillasData(gId);
         const plantilla = data.plantillas?.[plantillaKey];
 
         if (!plantilla) {
@@ -9586,7 +10036,8 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
-        // Guardar como última plantilla seleccionada en memoria por este Staff
+        // Guardar como última plantilla seleccionada en memoria por este Staff en este servidor
+        const staffSessionKey = `${gId || 'global'}:${interaction.user.id}`;
         const plantillaSession = {
             key: plantillaKey,
             nombre: plantilla.nombre,
@@ -9595,15 +10046,15 @@ client.on('interactionCreate', async (interaction) => {
             channelId: interaction.channelId,
             timestamp: Date.now()
         };
-        lastGeneratedPlantillaByStaff.set(interaction.user.id, plantillaSession);
+        lastGeneratedPlantillaByStaff.set(staffSessionKey, plantillaSession);
 
         // Crear un Embed estético tipo contenedor para el Staff
-        const vPl = guildManager.resolveGuildVisuals(interaction.guild?.id);
+        const vPl = guildManager.resolveGuildVisuals(gId);
         const files = [...vPl.files];
         const plIconUrl = vPl.logoUrl || client.user.displayAvatarURL();
 
         const staffGuideEmbed = new EmbedBuilder()
-            .setColor(0xF1C40F) // Amarillo dorado
+            .setColor(vPl.color)
             .setAuthor({
                 name: `SISTEMA DE PLANTILLAS • ${vPl.name}`,
                 iconURL: plIconUrl
@@ -9631,9 +10082,9 @@ client.on('interactionCreate', async (interaction) => {
 
         // Auto-eliminar a los 30 segundos si el staff no envía la plantilla
         setTimeout(() => {
-            const currentSession = lastGeneratedPlantillaByStaff.get(interaction.user.id);
+            const currentSession = lastGeneratedPlantillaByStaff.get(staffSessionKey);
             if (currentSession && currentSession.timestamp === plantillaSession.timestamp) {
-                lastGeneratedPlantillaByStaff.delete(interaction.user.id);
+                lastGeneratedPlantillaByStaff.delete(staffSessionKey);
             }
             interaction.deleteReply().catch(() => { });
         }, 30000);
@@ -9648,7 +10099,7 @@ client.on('interactionCreate', async (interaction) => {
     // ----------------------------------------------------
     if (interaction.customId.startsWith('btn_copiar_plantilla_')) {
         const plantillaKey = interaction.customId.replace('btn_copiar_plantilla_', '');
-        const data = getPlantillasData();
+        const data = getPlantillasData(interaction.guild?.id);
         const plantilla = data.plantillas?.[plantillaKey];
 
         if (!plantilla || !plantilla.contenido) {
@@ -9685,7 +10136,7 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
-        const { adminEmbed, files } = buildAdminEmbed(interaction.user.id);
+        const { adminEmbed, files } = buildAdminEmbed(interaction.user.id, interaction.guild?.id);
         return interaction.reply({
             embeds: [adminEmbed],
             files: files,
@@ -9773,11 +10224,11 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             // Obtener el título en tiempo real desde la plataforma (Twitch/Kick/TikTok/Discord) o título guardado
+            const gIdStream = interaction.guild?.id;
             const defaultPlatformTitle = requestedPlatform === 'Kick' ? streamerInfo.kickTitle : (requestedPlatform === 'TikTok' ? streamerInfo.tiktokTitle : (requestedPlatform === 'Twitch' ? streamerInfo.twitchTitle : streamerInfo.title));
-            const liveTitle = await fetchLiveStreamTitle(targetStreamUrl, interaction.member, defaultPlatformTitle || streamerInfo.title);
+            const liveTitle = await fetchLiveStreamTitle(targetStreamUrl, interaction.member, defaultPlatformTitle || streamerInfo.title, gIdStream);
 
             // Enviar notificación personalizada al canal oficial de streams de ESTE servidor
-            const gIdStream = interaction.guild?.id;
             const result = await sendStreamerNotification({
                 userMention: `<@${userId}>`,
                 streamUrl: targetStreamUrl,
@@ -9792,7 +10243,7 @@ client.on('interactionCreate', async (interaction) => {
             if (result && result.success) {
                 let platEmoji = '🟣';
                 if (activePlatform.toLowerCase().includes('kick')) platEmoji = '🟢';
-                else if (activePlatform.toLowerCase().includes('tiktok')) platEmoji = '⚫';
+                else if (activePlatform.toLowerCase().includes('tiktok')) platEmoji = '🩷';
 
                 await interaction.editReply({
                     content: `✅ **¡Tu directo de ${activePlatform} ${platEmoji} ha sido anunciado con éxito en <#${targetChannelId}>!**\n🏷️ **Título:** \`"${liveTitle}"\`\n🔗 **Canal:** <${targetStreamUrl}>\n¡Mucho éxito en tu transmisión! 🚀`
@@ -9907,8 +10358,78 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    // BOTÓN CANCELAR SELECTOR DE !plantillas EN UN TICKET
     // ----------------------------------------------------
-    // BOTÓN: ABRIR SELECTOR DE PLANTILLAS DE POSTULACIÓN
+    if (interaction.customId.startsWith('btn_cancel_plantilla_ticket_')) {
+        const expectedStaffId = interaction.customId.replace('btn_cancel_plantilla_ticket_', '');
+        const isAllowed = interaction.user.id === expectedStaffId
+            || interaction.user.id === OWNER_ID
+            || interaction.member?.permissions?.has(PermissionFlagsBits.Administrator);
+        if (!isAllowed) {
+            return interaction.reply({ content: '⛔ Solo el Staff que abrió este selector puede cancelarlo.', ephemeral: true }).catch(() => {});
+        }
+        await interaction.deferUpdate().catch(() => {});
+        await interaction.message.delete().catch(() => {});
+        return;
+    }
+
+    // BOTÓN "👁️ Ver Plantillas" EN EL PANEL INFORMATIVO (!panel-plantillas) -> VISTA PREVIA PRIVADA PARA STAFF
+    // ----------------------------------------------------
+    if (interaction.customId === 'btn_ver_plantillas_preview') {
+        const hasStaff = interaction.user.id === OWNER_ID || await isStaffMember(interaction.member, interaction.guild, interaction.user.id);
+        if (!hasStaff) {
+            return interaction.reply({
+                content: '⛔ Solo el equipo de **Staff** puede previsualizar las plantillas desde este panel.',
+                ephemeral: true
+            }).catch(() => {});
+        }
+
+        const gId = interaction.guild?.id;
+        if (gId && !guildManager.isPrimaryGuild(gId)) {
+            await syncGuildPlantillasFromMongo(gId).catch(() => {});
+        }
+        const data = getPlantillasData(gId);
+        const entries = Object.entries(data.plantillas || {});
+        if (entries.length === 0) {
+            return interaction.reply({ content: '⚠️ No hay plantillas configuradas todavía en este servidor.', ephemeral: true }).catch(() => {});
+        }
+
+        const vPrev = guildManager.resolveGuildVisuals(gId);
+        const previewMenu = new StringSelectMenuBuilder()
+            .setCustomId('select_preview_plantilla')
+            .setPlaceholder('👁️ Selecciona una plantilla para ver su contenido...')
+            .addOptions(
+                entries.slice(0, 25).map(([k, p]) => ({
+                    label: (p.nombre || k).slice(0, 100),
+                    description: (p.descripcion || `Plantilla oficial de ${p.nombre || k}`).slice(0, 100),
+                    value: k,
+                    emoji: p.emoji || '📋'
+                }))
+            );
+
+        const introIcon = (vPrev.config?.LOGO_URL && /^https?:\/\//i.test(vPrev.config.LOGO_URL))
+            ? vPrev.config.LOGO_URL.trim()
+            : (interaction.guild?.iconURL?.({ size: 256, extension: 'png' }) || undefined);
+        const introEmbed = new EmbedBuilder()
+            .setColor(vPrev.color)
+            .setAuthor({ name: `VISOR DE PLANTILLAS | ${vPrev.name}`, iconURL: introIcon })
+            .setTitle('👁️ Previsualización Privada de Plantillas')
+            .setDescription(
+                `Elige abajo la plantilla que quieras revisar para verificar su contenido exacto antes de enviarla.\n` +
+                `> 💡 *Para enviarla a un usuario, escribe \`!plantillas\` directamente dentro de su ticket.*`
+            )
+            .setFooter({ text: `${vPrev.name} • Solo tú puedes ver este mensaje` });
+
+        await interaction.reply({
+            embeds: [introEmbed],
+            components: [new ActionRowBuilder().addComponents(previewMenu)],
+            ephemeral: true
+        }).catch(() => {});
+        return;
+    }
+
+    // ----------------------------------------------------
+    // BOTÓN: ABRIR SELECTOR DE PLANTILLAS DE POSTULACIÓN (compatibilidad paneles anteriores)
     // ----------------------------------------------------
     if (interaction.customId === 'btn_abrir_selector_plantillas') {
         const hasStaff = await isStaffMember(interaction.member, interaction.guild, interaction.user.id);
@@ -9919,7 +10440,7 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
-        const data = getPlantillasData();
+        const data = getPlantillasData(interaction.guild?.id);
         const plantillasMap = data.plantillas || {};
 
         const options = [];
@@ -10041,7 +10562,7 @@ client.on('interactionCreate', async (interaction) => {
     // BOTÓN: VER TOP / RANKING DE STAFF
     // ----------------------------------------------------
     if (interaction.customId === 'btn_ver_top_staff') {
-        const ratingsData = getStaffRatingsData();
+        const ratingsData = getStaffRatingsData(interaction.guild?.id);
         const stats = ratingsData.stats || {};
         const validStaffList = ratingsData.staffList || [];
         const allIds = Array.from(new Set([...validStaffList, ...Object.keys(stats)]));
@@ -10354,6 +10875,7 @@ client.on('interactionCreate', async (interaction) => {
                 description,
                 ping: '@everyone',
                 channelId: interaction.channelId,
+                guildId: interaction.guild?.id || null,
                 expiresAt: Date.now() + 60000 // 60 segundos
             });
 
@@ -10416,17 +10938,21 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
             return; // Ya estaba en directo con el mismo stream
         }
 
-        // Anti-spam Cooldown: 3 horas por streamer
+        // Anti-spam Cooldown: 3 horas por streamer y por servidor
+        const gIdPres = newPresence.guild?.id;
         const userId = newPresence.userId;
-        const lastNotified = streamerCooldowns.get(userId);
+        const cooldownKey = `${gIdPres || 'global'}:${userId}`;
+        const lastNotified = streamerCooldowns.get(cooldownKey);
         if (lastNotified && Date.now() - lastNotified < 3 * 60 * 60 * 1000) {
             return;
         }
 
-        // Si se configuró un rol de streamer específico, comprobar que el usuario lo tenga
-        if (ROLE_STREAMER_ID) {
+        // Si se configuró un rol de streamer específico en ESTE servidor, comprobar que el usuario lo tenga
+        const gCfgPres = guildManager.getGuildConfig(gIdPres);
+        const guildStreamerRoleId = gCfgPres.ROLE_STREAMER_ID || (guildManager.isPrimaryGuild(gIdPres) ? ROLE_STREAMER_ID : '');
+        if (guildStreamerRoleId) {
             const member = newPresence.member || await newPresence.guild.members.fetch(userId).catch(() => null);
-            if (!member || !member.roles.cache.has(ROLE_STREAMER_ID)) {
+            if (!member || !member.roles.cache.has(guildStreamerRoleId)) {
                 return;
             }
         }
@@ -10454,7 +10980,7 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
         });
 
         if (result && result.success) {
-            streamerCooldowns.set(userId, Date.now());
+            streamerCooldowns.set(cooldownKey, Date.now());
         }
     } catch (err) {
         console.error('Error en presenceUpdate de streamers:', err);
@@ -10701,6 +11227,7 @@ async function startBot() {
         guildManager.detectPrimaryGuildId();
         await guildManager.ensurePrimaryGuildProfileInMongo().catch(() => {});
         await syncSecondaryGuildsFromMongo().catch(() => {});
+        await syncAllGuildPlantillasFromMongo().catch(() => {});
     });
 
     // Sistema independiente de Web Dashboard Prémium (OAuth2 + Selector de Servidores + Configuración en Vivo)
