@@ -533,6 +533,9 @@ function removeStaffMemberFromRating(staffId, guildId = null) {
     return true;
 }
 
+// Registro en memoria de selectores efímeros de valoración abiertos para borrarlos al instante al enviar el modal
+const pendingStaffRatingSelects = new Map();
+
 // Helper global para responder avisos/confirmaciones con Embed corporativo del servidor (sin texto plano feo)
 function buildBrandedNoticeEmbed(guild, { title, description, color = null, category = 'SISTEMA OFICIAL', footerText = null } = {}) {
     const gId = guild?.id || null;
@@ -10077,9 +10080,6 @@ client.on('interactionCreate', async (interaction) => {
             .setCustomId(`modal_valorar_staff_${targetStaffId}`)
             .setTitle(`⭐ Valorar a ${staffDisplayName}`.slice(0, 45));
 
-        const ratingInput = new TextInputBuilder()
-            .setCustomId('input_staff_rating')
-            .setLabel('Puntuación del 1 al 10')
             .setPlaceholder('Escribe tu puntuación: 10, 9, 8...')
             .setStyle(TextInputStyle.Short)
             .setRequired(true)
@@ -10664,6 +10664,15 @@ client.on('interactionCreate', async (interaction) => {
                 iconURL: httpsIcon
             });
 
+        // Si el usuario ya tenía un selector abierto, limpiarlo antes de mostrar el nuevo
+        const selectKey = `${interaction.guildId || 'dm'}:${interaction.user.id}`;
+        const existingSelect = pendingStaffRatingSelects.get(selectKey);
+        if (existingSelect) {
+            clearTimeout(existingSelect.timeoutId);
+            existingSelect.interaction.deleteReply().catch(() => { });
+            pendingStaffRatingSelects.delete(selectKey);
+        }
+
         await interaction.reply({
             embeds: [selectEmbed],
             components: [row],
@@ -10672,9 +10681,11 @@ client.on('interactionCreate', async (interaction) => {
         }).catch(() => { });
 
         // Auto-eliminar el selector efímero tras 60 segundos si no responde
-        setTimeout(() => {
+        const timeoutId = setTimeout(() => {
+            pendingStaffRatingSelects.delete(selectKey);
             interaction.deleteReply().catch(() => { });
         }, 60000);
+        pendingStaffRatingSelects.set(selectKey, { interaction, timeoutId });
         return;
     }
 
@@ -10998,6 +11009,15 @@ client.on('interactionCreate', async (interaction) => {
     // ----------------------------------------------------
     if (interaction.customId.startsWith('modal_valorar_staff_')) {
         await interaction.deferReply({ ephemeral: true }).catch(() => { });
+
+        // Borrar al instante el menú de selección de Staff antes de publicar la confirmación
+        const selectKey = `${interaction.guildId || 'dm'}:${interaction.user.id}`;
+        const pendingSelect = pendingStaffRatingSelects.get(selectKey);
+        if (pendingSelect) {
+            clearTimeout(pendingSelect.timeoutId);
+            pendingStaffRatingSelects.delete(selectKey);
+            await pendingSelect.interaction.deleteReply().catch(() => { });
+        }
 
         try {
             const staffId = interaction.customId.replace('modal_valorar_staff_', '').trim();
