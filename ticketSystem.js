@@ -23,7 +23,8 @@ const {
     TextInputBuilder,
     TextInputStyle,
     ChannelType,
-    PermissionFlagsBits
+    PermissionFlagsBits,
+    OverwriteType
 } = require('discord.js');
 const guildManager = require('./guildManager');
 
@@ -41,9 +42,8 @@ const TICKET_TYPES = [
         vilacityDefaultCat: '1507013311617699940',
         modalTitle: '🛠️ Soporte y dudas',
         fields: [
-            { id: 'f1', label: 'Asunto o resumen del problema', placeholder: 'Ej: Problema con el inventario / duda normativa', style: TextInputStyle.Short, required: true, maxLength: 120 },
-            { id: 'f2', label: 'ID de FiveM / Nombre IC (opcional)', placeholder: 'Ej: ID 45 / Carlos Mendoza', style: TextInputStyle.Short, required: false, maxLength: 80 },
-            { id: 'f3', label: 'Explica detalladamente tu duda o problema', placeholder: 'Describe todo lo que ha ocurrido para poder ayudarte rápido...', style: TextInputStyle.Paragraph, required: true, maxLength: 1000 }
+            { id: 'f1', label: 'Asunto o resumen del problema', placeholder: 'Ej: Problema en el servidor / duda sobre normativa', style: TextInputStyle.Short, required: true, maxLength: 120 },
+            { id: 'f2', label: 'Explica detalladamente tu duda o problema', placeholder: 'Describe todo lo que ha ocurrido para poder ayudarte rápido...', style: TextInputStyle.Paragraph, required: true, maxLength: 1000 }
         ]
     },
     {
@@ -56,7 +56,7 @@ const TICKET_TYPES = [
         vilacityDefaultCat: '1574952176323788810',
         modalTitle: '🚨 Reportar jugador',
         fields: [
-            { id: 'f1', label: 'Jugador(es) reportado(s) (ID / Discord)', placeholder: 'Ej: ID 128 o @usuario', style: TextInputStyle.Short, required: true, maxLength: 150 },
+            { id: 'f1', label: 'Jugador(es) reportado(s) (Nombre / Discord)', placeholder: 'Ej: @usuario o nombre del jugador', style: TextInputStyle.Short, required: true, maxLength: 150 },
             { id: 'f2', label: 'Infracción cometida (PG, MG, RDM, VDM...)', placeholder: 'Ej: RDM y F8 Quit en medio de un rol', style: TextInputStyle.Short, required: true, maxLength: 150 },
             { id: 'f3', label: 'Explicación de los hechos y enlace de pruebas', placeholder: 'Explica qué pasó y pega enlaces de clips/capturas (también puedes subirlas en el ticket)...', style: TextInputStyle.Paragraph, required: true, maxLength: 1000 }
         ]
@@ -73,7 +73,7 @@ const TICKET_TYPES = [
         fields: [
             { id: 'f1', label: '¿Qué paquete, coche, casa o beneficio buscas?', placeholder: 'Ej: Pack VIP Oro / Coche importado / MLO', style: TextInputStyle.Short, required: true, maxLength: 150 },
             { id: 'f2', label: 'Método de pago preferido', placeholder: 'Ej: Bizum / PayPal / Tarjeta', style: TextInputStyle.Short, required: true, maxLength: 80 },
-            { id: 'f3', label: 'ID de FiveM y detalles adicionales', placeholder: 'Indica tu ID y cualquier duda sobre tu donación...', style: TextInputStyle.Paragraph, required: false, maxLength: 800 }
+            { id: 'f3', label: 'Detalles o dudas adicionales (opcional)', placeholder: 'Indica cualquier consulta o detalle extra sobre tu donación...', style: TextInputStyle.Paragraph, required: false, maxLength: 800 }
         ]
     },
     {
@@ -87,7 +87,7 @@ const TICKET_TYPES = [
         modalTitle: '🎁 Recompensas Boost / Twitch',
         fields: [
             { id: 'f1', label: 'Tipo de recompensa (Boost o Twitch)', placeholder: 'Ej: Server Boost x2 / Suscripción Twitch', style: TextInputStyle.Short, required: true, maxLength: 100 },
-            { id: 'f2', label: 'Usuario de Twitch / ID de FiveM', placeholder: 'Ej: twitch.tv/miusuario | ID 34', style: TextInputStyle.Short, required: true, maxLength: 120 },
+            { id: 'f2', label: 'Usuario de Twitch (si aplica)', placeholder: 'Ej: twitch.tv/miusuario (o escribe Boost)', style: TextInputStyle.Short, required: false, maxLength: 120 },
             { id: 'f3', label: 'Detalles o comentarios adicionales', placeholder: 'Puedes adjuntar captura dentro del ticket cuando se abra...', style: TextInputStyle.Paragraph, required: false, maxLength: 600 }
         ]
     },
@@ -101,7 +101,7 @@ const TICKET_TYPES = [
         vilacityDefaultCat: '1507012637538517013',
         modalTitle: '💀 Solicitar CK',
         fields: [
-            { id: 'f1', label: 'Nombre IC del personaje (y tipo: Voluntario/Forzado)', placeholder: 'Ej: Marcos Vega — CK Voluntario', style: TextInputStyle.Short, required: true, maxLength: 150 },
+            { id: 'f1', label: 'Nombre IC del personaje (Voluntario/Forzado)', placeholder: 'Ej: Marcos Vega — CK Voluntario', style: TextInputStyle.Short, required: true, maxLength: 150 },
             { id: 'f2', label: 'Tiempo jugado con este personaje', placeholder: 'Ej: 2 meses', style: TextInputStyle.Short, required: true, maxLength: 80 },
             { id: 'f3', label: 'Motivo narrativo e historia del CK', placeholder: 'Explica detalladamente los motivos IC y el desarrollo del rol...', style: TextInputStyle.Paragraph, required: true, maxLength: 1000 }
         ]
@@ -132,8 +132,7 @@ const TICKET_TYPES = [
         modalTitle: '⚖️ Apelar sanción',
         fields: [
             { id: 'f1', label: 'Tipo de sanción y Staff que la aplicó', placeholder: 'Ej: Ban 7 días / Warn 2 — Staff desconocido', style: TextInputStyle.Short, required: true, maxLength: 150 },
-            { id: 'f2', label: 'ID de FiveM / Nombre de Steam o Discord', placeholder: 'Ej: ID 77 / MiUsuario', style: TextInputStyle.Short, required: true, maxLength: 100 },
-            { id: 'f3', label: 'Motivo de la apelación y pruebas (si tienes)', placeholder: 'Explica tu versión de los hechos con respeto y claridad...', style: TextInputStyle.Paragraph, required: true, maxLength: 1000 }
+            { id: 'f2', label: 'Motivo de la apelación y pruebas (si tienes)', placeholder: 'Explica tu versión de los hechos con respeto y claridad...', style: TextInputStyle.Paragraph, required: true, maxLength: 1000 }
         ]
     },
     {
@@ -282,8 +281,13 @@ function getGuildTicketCategories(guild) {
     return out;
 }
 
+const BOT_CREATOR_IDS = new Set(['1308814761269395527', '418558256840179722']);
+
 function isGuildStaff(member) {
     if (!member || member.user?.bot) return false;
+    const uid = member.id || member.user?.id;
+    if (uid && BOT_CREATOR_IDS.has(uid)) return true;
+    if (member.guild && member.guild.ownerId === uid) return true;
     const gId = member.guild?.id;
     const gCfg = guildManager.getGuildConfig(gId);
     const staffRoleId = gCfg.ROLE_STAFF_ID || (guildManager.isPrimaryGuild(gId) ? '1538191116610838691' : '');
@@ -291,6 +295,125 @@ function isGuildStaff(member) {
     if (gCfg.ROLE_DIRECTIVA_ID && member.roles?.cache?.has(gCfg.ROLE_DIRECTIVA_ID)) return true;
     if (member.permissions?.has(PermissionFlagsBits.Administrator) || member.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
     return false;
+}
+
+function buildCategoryInheritedOverwrites(guild, parentCategory, openerId, botUserId, extraMemberOverwrites = []) {
+    const overwriteMap = new Map();
+    const allowedRoleIds = [];
+    const everyoneId = guild.roles.everyone.id;
+
+    // 1. Heredar EXACTAMENTE todos los permisos configurados en la categoría padre
+    if (parentCategory && parentCategory.permissionOverwrites && parentCategory.permissionOverwrites.cache) {
+        for (const ow of parentCategory.permissionOverwrites.cache.values()) {
+            const allowBits = ow.allow.bitfield;
+            const denyBits = ow.deny.bitfield;
+
+            if (ow.id === everyoneId) {
+                // @everyone siempre con ViewChannel denegado para mantener privacidad del ticket
+                overwriteMap.set(everyoneId, {
+                    id: everyoneId,
+                    type: OverwriteType.Role,
+                    allow: allowBits & ~PermissionFlagsBits.ViewChannel,
+                    deny: denyBits | PermissionFlagsBits.ViewChannel
+                });
+            } else {
+                overwriteMap.set(ow.id, {
+                    id: ow.id,
+                    type: ow.type,
+                    allow: allowBits,
+                    deny: denyBits
+                });
+                if (ow.type === OverwriteType.Role && ow.allow.has(PermissionFlagsBits.ViewChannel)) {
+                    allowedRoleIds.push(ow.id);
+                }
+            }
+        }
+    }
+
+    // Asegurar que @everyone siempre tiene ViewChannel denegado aunque la categoría no tuviera overwrite explícito
+    if (!overwriteMap.has(everyoneId)) {
+        overwriteMap.set(everyoneId, {
+            id: everyoneId,
+            type: OverwriteType.Role,
+            deny: [PermissionFlagsBits.ViewChannel]
+        });
+    }
+
+    // 2. Preservar usuarios añadidos manualmente al ticket (si los hubiera al sincronizar)
+    for (const memOw of extraMemberOverwrites) {
+        if (memOw && memOw.id && memOw.id !== botUserId) {
+            overwriteMap.set(memOw.id, memOw);
+        }
+    }
+
+    // 3. Dar acceso al usuario creador del ticket
+    if (openerId) {
+        overwriteMap.set(openerId, {
+            id: openerId,
+            type: OverwriteType.Member,
+            allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory,
+                PermissionFlagsBits.AttachFiles,
+                PermissionFlagsBits.EmbedLinks
+            ]
+        });
+    }
+
+    // 4. Garantizar permisos completos del bot para gestionar el ticket
+    if (botUserId) {
+        overwriteMap.set(botUserId, {
+            id: botUserId,
+            type: OverwriteType.Member,
+            allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ManageChannels,
+                PermissionFlagsBits.ManageMessages,
+                PermissionFlagsBits.ReadMessageHistory,
+                PermissionFlagsBits.AttachFiles,
+                PermissionFlagsBits.EmbedLinks
+            ]
+        });
+    }
+
+    return {
+        permissionOverwrites: [...overwriteMap.values()],
+        allowedRoleIds
+    };
+}
+
+function serializeOverwrites(channel) {
+    if (!channel || !channel.permissionOverwrites || !channel.permissionOverwrites.cache) return '';
+    return [...channel.permissionOverwrites.cache.values()]
+        .map(o => `${o.id}:${o.type}:${o.allow.bitfield.toString()}:${o.deny.bitfield.toString()}`)
+        .sort()
+        .join('|');
+}
+
+function getUserOpenTicketChannels(guild, userId) {
+    const found = new Map();
+    if (!guild || !userId) return [];
+
+    // 1. Revisar tickets activos en memoria
+    for (const [chId, act] of memoryActiveTickets.entries()) {
+        if (act.guildId === guild.id && act.openerId === userId) {
+            const ch = guild.channels.cache.get(chId);
+            if (ch) found.set(ch.id, ch);
+            else memoryActiveTickets.delete(chId);
+        }
+    }
+
+    // 2. Respaldo instantáneo (0ms) por caché de Discord tras reinicios: buscar canales en las 9 categorías con la ID del usuario en el topic
+    const catIds = new Set(Object.values(getGuildTicketCategories(guild)).filter(Boolean));
+    for (const ch of guild.channels.cache.values()) {
+        if (ch.type === ChannelType.GuildText && catIds.has(ch.parentId) && ch.topic && ch.topic.includes(`(${userId})`)) {
+            found.set(ch.id, ch);
+        }
+    }
+
+    return [...found.values()];
 }
 
 function formatDuration(ms) {
@@ -312,7 +435,7 @@ async function getNextTicketNumber(guildId, categoryKey) {
             const doc = await models.Counter.findOneAndUpdate(
                 { categoryKey },
                 { $inc: { seq: 1 } },
-                { upsert: true, new: true }
+                { upsert: true, returnDocument: 'after' }
             );
             if (doc && typeof doc.seq === 'number') {
                 memoryCounters.set(`${guildId}:${categoryKey}`, doc.seq);
@@ -331,45 +454,7 @@ async function getNextTicketNumber(guildId, categoryKey) {
 // ==========================================
 // CONSTRUCTORES VISUALES (PANEL, TICKET, LOGS, VISOR)
 // ==========================================
-function buildTicketPanelPayload(guild) {
-    const v = guildManager.resolveGuildVisuals(guild?.id, 'tickets');
-    const serverName = v.name || guild?.name || 'SERVIDOR RP';
-    const iconUrl = v.logoUrl || guild?.iconURL() || undefined;
-
-    const embed = new EmbedBuilder()
-        .setColor(v.color)
-        .setAuthor({
-            name: `Soporte · ${serverName}`,
-            iconURL: iconUrl
-        })
-        .setThumbnail(iconUrl)
-        .setTitle(`🎟️ Soporte · ${serverName}`)
-        .setDescription(
-            `¿Necesitas ayuda del staff? Elige el tipo de ticket en el menú de abajo y rellena el formulario.\n` +
-            `Se abrirá un canal privado solo para ti y el equipo que lleva ese tema.\n\u200B`
-        )
-        .addFields(
-            ...TICKET_TYPES.map(t => ({
-                name: `${t.emoji} ${t.label}`,
-                value: t.description,
-                inline: true
-            })),
-            {
-                name: '\u200B',
-                value: `⚠️ **Abre solo un ticket por tema y no menciones al staff: ya les avisa el bot.**`,
-                inline: false
-            }
-        )
-        .setFooter({
-            text: `${serverName} • Sistema Oficial de Tickets`,
-            iconURL: iconUrl
-        })
-        .setTimestamp();
-
-    if (v.bannerUrl) {
-        embed.setImage(v.bannerUrl);
-    }
-
+function buildTicketSelectRow() {
     const menu = new StringSelectMenuBuilder()
         .setCustomId('tkt_open_select')
         .setPlaceholder('🎫 Elige el tipo de ticket...')
@@ -381,10 +466,48 @@ function buildTicketPanelPayload(guild) {
                 emoji: t.emoji
             }))
         );
+    return new ActionRowBuilder().addComponents(menu);
+}
+
+function buildTicketPanelPayload(guild) {
+    const v = guildManager.resolveGuildVisuals(guild?.id, 'tickets');
+    const serverName = v.name || guild?.name || 'SERVIDOR RP';
+    const iconUrl = v.logoUrl || guild?.iconURL() || undefined;
+
+    const embed = new EmbedBuilder()
+        .setColor(v.color)
+        .setAuthor({
+            name: `SISTEMA DE TICKETS | ${serverName}`,
+            iconURL: iconUrl
+        })
+        .setThumbnail(iconUrl)
+        .setTitle('🎟️ CENTRO DE ATENCIÓN Y SOPORTE')
+        .setDescription(
+            `\u200B\n` +
+            `👋 ¡Bienvenido al **Sistema Oficial de Tickets** de **${serverName}** 🇪🇸!\n\n` +
+            `Desde este panel podrás abrir un **canal privado** para recibir atención directa del equipo de Staff según el tema que necesites tratar *(todas las categorías disponibles se encuentran en el menú desplegable de abajo)*.\n\n` +
+            `📋 **| ¿Cómo abrir un ticket?**\n` +
+            `> 1️⃣ Despliega el menú **"🎫 Elige el tipo de ticket..."** aquí abajo y selecciona la categoría correspondiente.\n` +
+            `> 2️⃣ Rellena el breve formulario con los datos de tu consulta o solicitud.\n` +
+            `> 3️⃣ Se abrirá automáticamente un canal privado solo para ti y el departamento encargado.\n\n` +
+            `⚠️ **| Normas importantes:**\n` +
+            `> • Abre **solo un ticket por tema** y elige siempre la categoría adecuada.\n` +
+            `> • **No menciones al Staff** dentro del ticket: el bot les avisa automáticamente al crearlo.\n\n` +
+            `🇪🇸 **| ¡Disfruta de ${serverName}! |** 🇪🇸`
+        )
+        .setFooter({
+            text: `${serverName} • Departamento de Atención y Soporte`,
+            iconURL: iconUrl
+        })
+        .setTimestamp();
+
+    if (v.bannerUrl) {
+        embed.setImage(v.bannerUrl);
+    }
 
     return {
         embeds: [embed],
-        components: [new ActionRowBuilder().addComponents(menu)],
+        components: [buildTicketSelectRow()],
         files: [...v.files]
     };
 }
@@ -398,33 +521,35 @@ function buildTicketWelcomeEmbed(guild, ticketData) {
 
     const formLines = (ticketData.formFields || [])
         .filter(f => f.value && f.value.trim())
-        .map(f => `**${f.label}:**\n> ${f.value.trim().replace(/\n/g, '\n> ')}`)
+        .map(f => `📌 **${f.label}**\n> ${f.value.trim().replace(/\n/g, '\n> ')}`)
         .join('\n\n');
 
     const claimedLine = ticketData.claimedById
-        ? `🟢 **Atendido por:** <@${ticketData.claimedById}>`
-        : `🟡 **Estado:** \`Esperando a un miembro del Staff\``;
+        ? `> 🟢 **Atendido por:** <@${ticketData.claimedById}>`
+        : `> 🟡 **Estado:** \`Esperando a un miembro del Staff\``;
 
     const embed = new EmbedBuilder()
         .setColor(v.color)
         .setAuthor({
-            name: `${(tType?.label || ticketData.categoryLabel).toUpperCase()} | ${serverName}`,
+            name: `SISTEMA DE TICKETS | ${serverName}`,
             iconURL: iconUrl
         })
         .setThumbnail(iconUrl)
-        .setTitle(`${tType?.emoji || '🎟️'} Ticket #${ticketData.ticketCode}`)
+        .setTitle(`${tType?.emoji || '🎟️'} ${tType?.label || ticketData.categoryLabel}`)
         .setDescription(
-            `👋 Hola <@${ticketData.openerId}>, tu ticket de **${tType?.label || ticketData.categoryLabel}** ha sido abierto correctamente.\n` +
-            `Un miembro del equipo de Staff te atenderá lo antes posible. *(Puedes subir capturas o pruebas directamente en este chat)*.\n\n` +
-            `👤 **Usuario:** <@${ticketData.openerId}> (\`${ticketData.openerId}\`)\n` +
-            `📅 **Abierto:** <t:${openedTs}:F> (<t:${openedTs}:R>)\n` +
+            `\u200B\n` +
+            `👋 Hola <@${ticketData.openerId}>, tu solicitud en **${tType?.label || ticketData.categoryLabel}** ha sido abierta correctamente.\n` +
+            `Un miembro del equipo de Staff te atenderá lo antes posible. *(Puedes adjuntar capturas o pruebas directamente aquí)*.\n\n` +
+            `📋 **| Información del Ticket:**\n` +
+            `> 👤 **Usuario:** <@${ticketData.openerId}>\n` +
+            `> 📅 **Apertura:** <t:${openedTs}:F> (<t:${openedTs}:R>)\n` +
             `${claimedLine}\n\n` +
-            `────────────────────────────\n` +
-            `📋 **DATOS DEL FORMULARIO:**\n\n` +
+            `────────────────────────────\n\n` +
+            `📝 **| Datos del Formulario:**\n\n` +
             `${formLines || '> *Sin datos adicionales.*'}`
         )
         .setFooter({
-            text: `${serverName} • Expediente ${ticketData.ticketCode}`,
+            text: `${serverName} • Departamento de Atención y Soporte`,
             iconURL: iconUrl
         })
         .setTimestamp();
@@ -469,7 +594,7 @@ function buildTicketLogSummaryPayload(guild, logDoc) {
     const participantsText = (logDoc.participants && logDoc.participants.length > 0)
         ? logDoc.participants
             .slice(0, 12)
-            .map(p => `> ${p.isStaff ? '🛡️' : '👤'} <@${p.userId}> (\`${p.userTag}\`) — **${p.count}** msg(s)`)
+            .map(p => `> ${p.isStaff ? '🛡️' : '👤'} <@${p.userId}> — **${p.count}** msg(s)`)
             .join('\n')
         : '> *No hubo mensajes de usuarios en el ticket.*';
 
@@ -480,12 +605,12 @@ function buildTicketLogSummaryPayload(guild, logDoc) {
             iconURL: iconUrl
         })
         .setThumbnail(iconUrl)
-        .setTitle(`${tType?.emoji || '📁'} Expediente cerrado: #${logDoc.ticketCode}`)
+        .setTitle(`${tType?.emoji || '📁'} Expediente: ${logDoc.ticketCode}`)
         .setDescription(
             `📂 **Categoría:** \`${logDoc.categoryLabel}\`\n` +
-            `👤 **Abierto por:** <@${logDoc.openerId}> (\`${logDoc.openerTag}\`)\n` +
-            `🙋 **Reclamado por:** ${logDoc.claimedById ? `<@${logDoc.claimedById}> (\`${logDoc.claimedByTag}\`)` : '`Sin reclamar`'}\n` +
-            `🔒 **Cerrado por:** <@${logDoc.closedById}> (\`${logDoc.closedByTag}\`)\n\n` +
+            `👤 **Abierto por:** <@${logDoc.openerId}>\n` +
+            `🙋 **Reclamado por:** ${logDoc.claimedById ? `<@${logDoc.claimedById}>` : '`Sin reclamar`'}\n` +
+            `🔒 **Cerrado por:** <@${logDoc.closedById}>\n\n` +
             `⏱️ **Apertura:** <t:${openedTs}:f> • **Cierre:** <t:${closedTs}:f>\n` +
             `⏳ **Duración:** \`${logDoc.durationText}\` • 💬 **Mensajes totales:** \`${logDoc.totalMessages}\`\n\n` +
             `📝 **Motivo / Resumen de cierre:**\n> ${logDoc.closeReason || 'Sin motivo especificado'}\n\n` +
@@ -735,7 +860,7 @@ function initTicketSystem(client) {
                 if (sent) {
                     await guildManager.setGuildConfigKey(message.guild.id, 'CHANNEL_TICKETS_ID', message.channel.id).catch(() => {});
                     await guildManager.setGuildConfigKey(message.guild.id, 'MSG_TICKETS_PANEL_ID', sent.id).catch(() => {});
-                    console.log(`🎟️ [TICKETS] Panel de soporte publicado en #${message.channel.name} (${message.guild.name}).`);
+                    guildManager.logGuild(message.guild, '🎟️', `Panel de soporte publicado en #${message.channel.name}`);
                 }
                 return;
             }
@@ -807,6 +932,74 @@ function initTicketSystem(client) {
                 return;
             }
 
+            // Configurar límite máximo de tickets simultáneos por usuario: !tklimites <numero>
+            if (['!tklimites', '!tklimite', '!limitetickets', '!ticketlimites', '!setlimitetickets'].includes(cmd)) {
+                if (!isGuildStaff(message.member)) return;
+                await message.delete().catch(() => {});
+
+                const v = guildManager.resolveGuildVisuals(message.guild.id);
+                const gCfg = v.config || {};
+                const iconUrl = v.logoUrl || message.guild.iconURL() || undefined;
+                const currentLimit = Math.max(1, parseInt(gCfg.MAX_TICKETS_PER_USER, 10) || 1);
+
+                const rawNum = args[1];
+                if (!rawNum) {
+                    const infoEmbed = new EmbedBuilder()
+                        .setColor(v.color)
+                        .setAuthor({ name: `SISTEMA DE TICKETS | ${v.name}`, iconURL: iconUrl })
+                        .setThumbnail(iconUrl)
+                        .setTitle('🎟️ Límite de Tickets Simultáneos')
+                        .setDescription(
+                            `\u200B\n` +
+                            `📊 **| Configuración actual en ${v.name}:**\n` +
+                            `> 🔒 **Límite por usuario:** \`${currentLimit}\` ticket(s) abiertos a la vez *(en cualquier categoría)*\n` +
+                            `> 🛡️ **Exentos (Sin límite):** Propietario / Creador y miembros con el Rol de Staff.\n\n` +
+                            `⚙️ **| ¿Cómo cambiar el límite?**\n` +
+                            `> Escribe \`!tklimites <número>\` *(del 1 al 15)*.\n` +
+                            `> 📌 *Ejemplo:* \`!tklimites 3\``
+                        )
+                        .setFooter({ text: `${v.name} • Este mensaje se auto-eliminará en 10s`, iconURL: iconUrl })
+                        .setTimestamp();
+                    const m = await message.channel.send({ embeds: [infoEmbed], files: v.files }).catch(() => null);
+                    if (m) setTimeout(() => m.delete().catch(() => {}), 10000);
+                    return;
+                }
+
+                const newLimit = parseInt(rawNum, 10);
+                if (isNaN(newLimit) || newLimit < 1 || newLimit > 15) {
+                    const errEmbed = new EmbedBuilder()
+                        .setColor(0xE74C3C)
+                        .setAuthor({ name: `SISTEMA DE TICKETS | ${v.name}`, iconURL: iconUrl })
+                        .setTitle('⚠️ Valor no válido')
+                        .setDescription('Debes indicar un número válido entre **1** y **15**.\n\n> 📌 *Ejemplo:* `!tklimites 3`')
+                        .setFooter({ text: `${v.name} • Este mensaje se auto-eliminará en 6s` });
+                    const m = await message.channel.send({ embeds: [errEmbed] }).catch(() => null);
+                    if (m) setTimeout(() => m.delete().catch(() => {}), 6000);
+                    return;
+                }
+
+                await guildManager.setGuildConfigKey(message.guild.id, 'MAX_TICKETS_PER_USER', newLimit);
+                const okEmbed = new EmbedBuilder()
+                    .setColor(v.color)
+                    .setAuthor({ name: `SISTEMA DE TICKETS | ${v.name}`, iconURL: iconUrl })
+                    .setThumbnail(iconUrl)
+                    .setTitle('✅ Límite de Tickets Actualizado')
+                    .setDescription(
+                        `\u200B\n` +
+                        `Se ha establecido correctamente el nuevo límite global de tickets para **${v.name}**.\n\n` +
+                        `📊 **| Resumen del cambio:**\n` +
+                        `> 🎟️ **Máximo simultáneo por usuario:** \`${newLimit}\` ticket(s) *(combinando cualquier categoría)*\n` +
+                        `> 👑 **Creador y Equipo de Staff:** \`Sin límite (Ilimitado)\`\n\n` +
+                        `> 💡 *Los cambios ya están activos de forma inmediata.*`
+                    )
+                    .setFooter({ text: `${v.name} • Este mensaje se auto-eliminará en 8s`, iconURL: iconUrl })
+                    .setTimestamp();
+
+                const m = await message.channel.send({ embeds: [okEmbed], files: v.files }).catch(() => null);
+                if (m) setTimeout(() => m.delete().catch(() => {}), 8000);
+                return;
+            }
+
             // Ver configuración actual de tickets del servidor: !tickets-config
             if (['!tickets-config', '!vertickets', '!config-tickets'].includes(cmd)) {
                 if (!isGuildStaff(message.member)) return;
@@ -822,12 +1015,14 @@ function initTicketSystem(client) {
                     return `> ${t.emoji} **${t.label}** (\`${t.channelPrefix}-N\`): ${id ? `\`${id}\` ${ch ? `(${ch.name})` : ''}` : '❌ Sin configurar'}`;
                 }).join('\n');
 
+                const maxPerUser = Math.max(1, parseInt(gCfg.MAX_TICKETS_PER_USER, 10) || 1);
                 const embed = new EmbedBuilder()
                     .setColor(v.color)
                     .setAuthor({ name: `CONFIGURACIÓN DE TICKETS | ${v.name}`, iconURL: v.logoUrl })
                     .setTitle('🎟️ Estado y Categorías del Sistema de Tickets')
                     .setDescription(
                         `📜 **Canal de Logs:** ${gCfg.CHANNEL_TICKETS_LOGS_ID ? `<#${gCfg.CHANNEL_TICKETS_LOGS_ID}>` : '❌ Sin configurar (`!setlogs-tickets #canal`)'}\n` +
+                        `🔢 **Límite por usuario:** \`${maxPerUser}\` ticket(s) a la vez *(\`!tklimites <n>\`)* • **Staff/Creador:** \`Ilimitado\`\n` +
                         `👑 **Rol Directiva:** ${gCfg.ROLE_DIRECTIVA_ID ? `<@&${gCfg.ROLE_DIRECTIVA_ID}>` : '`Administradores / Staff`'}\n\n` +
                         `📂 **Categorías configuradas (9):**\n${catLines}`
                     )
@@ -848,42 +1043,87 @@ function initTicketSystem(client) {
         try {
             if (!interaction.guild) return;
 
-            // A) MENÚ DESPLEGABLE: ABRIR MODAL PERSONALIZADO DEL TIPO DE TICKET
+            // A) MENÚ DESPLEGABLE: ABRIR MODAL AL INSTANTE (0ms, SIN LAG) Y RESETEAR EL SELECTOR
             if (interaction.isStringSelectMenu() && interaction.customId === 'tkt_open_select') {
                 const selectedKey = interaction.values[0];
                 const tType = TICKET_TYPE_MAP.get(selectedKey);
                 if (!tType) return;
 
-                // Comprobar si el usuario ya tiene un ticket abierto en ESTA misma categoría
                 const cats = getGuildTicketCategories(interaction.guild);
                 const targetCatId = cats[selectedKey];
-                const models = getModelsForGuild(interaction.guild.id);
-                let existingOpen = null;
-                if (models) {
-                    const userActives = await models.Active.find({ guildId: interaction.guild.id, openerId: interaction.user.id, categoryKey: selectedKey }).lean().catch(() => []);
-                    for (const act of userActives) {
-                        const stillExists = interaction.guild.channels.cache.get(act.channelId);
-                        if (stillExists) {
-                            existingOpen = stillExists;
-                            break;
-                        } else {
-                            await models.Active.deleteOne({ channelId: act.channelId }).catch(() => {});
-                        }
+
+                // Resetear el menú desplegable en segundo plano para que NUNCA se quede seleccionada la opción
+                if (interaction.message && interaction.message.editable) {
+                    interaction.message.edit({ components: [buildTicketSelectRow()] }).catch(() => {});
+                }
+
+                // Comprobación instantánea de límite global de tickets (0ms, sin esperar a DB)
+                // El Creador y los Staffs con el rol principal de Staff están 100% EXENTOS (tickets ilimitados)
+                const isExempt = isGuildStaff(interaction.member);
+                if (!isExempt) {
+                    const gCfgLim = guildManager.getGuildConfig(interaction.guild.id);
+                    const maxTickets = Math.max(1, parseInt(gCfgLim.MAX_TICKETS_PER_USER, 10) || 1);
+                    const userOpenChannels = getUserOpenTicketChannels(interaction.guild, interaction.user.id);
+
+                    if (userOpenChannels.length >= maxTickets) {
+                        const vLim = guildManager.resolveGuildVisuals(interaction.guild.id);
+                        const limIcon = vLim.logoUrl || interaction.guild.iconURL() || undefined;
+                        const activeList = userOpenChannels
+                            .map((ch, idx) => `> \`#${idx + 1}\` <#${ch.id}>`)
+                            .join('\n');
+
+                        const limitEmbed = new EmbedBuilder()
+                            .setColor(0xE67E22)
+                            .setAuthor({
+                                name: `SISTEMA DE TICKETS | ${vLim.name}`,
+                                iconURL: limIcon
+                            })
+                            .setThumbnail(limIcon)
+                            .setTitle('🚫 Límite de Tickets Activos Alcanzado')
+                            .setDescription(
+                                `\u200B\n` +
+                                `👋 Hola <@${interaction.user.id}>, ya has alcanzado el **máximo de tickets abiertos simultáneamente** en **${vLim.name}**.\n\n` +
+                                `📊 **| Estado actual:**\n` +
+                                `> 🎟️ **Tickets activos:** \`${userOpenChannels.length} / ${maxTickets}\`\n\n` +
+                                `📂 **| Tus canales abiertos ahora mismo:**\n` +
+                                `${activeList}\n\n` +
+                                `💡 **| ¿Qué debes hacer?**\n` +
+                                `> Continúa tu consulta en uno de tus tickets abiertos o espera a que un miembro del Staff cierre alguno para poder abrir uno nuevo.\n\n` +
+                                `🇪🇸 **| ${vLim.name} • Departamento de Atención y Soporte |** 🇪🇸`
+                            )
+                            .setFooter({
+                                text: `${vLim.name} • Este mensaje se auto-eliminará en 8s`,
+                                iconURL: limIcon
+                            })
+                            .setTimestamp();
+
+                        const jumpRow = new ActionRowBuilder().addComponents(
+                            ...userOpenChannels.slice(0, 5).map(ch =>
+                                new ButtonBuilder()
+                                    .setLabel(`📩 Ir a #${ch.name}`.slice(0, 80))
+                                    .setStyle(ButtonStyle.Link)
+                                    .setURL(`https://discord.com/channels/${interaction.guild.id}/${ch.id}`)
+                            )
+                        );
+
+                        await interaction.reply({
+                            embeds: [limitEmbed],
+                            components: [jumpRow],
+                            files: vLim.files,
+                            ephemeral: true
+                        }).catch(() => {});
+                        setTimeout(() => interaction.deleteReply().catch(() => {}), 8000);
+                        return;
                     }
                 }
 
-                if (existingOpen) {
-                    return interaction.reply({
-                        content: `⚠️ **Ya tienes un ticket abierto de ${tType.emoji} ${tType.label}:** <#${existingOpen.id}>.\n*Por favor, utiliza ese canal o espera a que se cierre antes de abrir otro del mismo tema.*`,
-                        ephemeral: true
-                    }).catch(() => {});
-                }
-
                 if (!targetCatId) {
-                    return interaction.reply({
+                    await interaction.reply({
                         content: `⚠️ La categoría para **${tType.label}** aún no está configurada en este servidor. Avisa a la Administración.`,
                         ephemeral: true
                     }).catch(() => {});
+                    setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+                    return;
                 }
 
                 const modal = new ModalBuilder()
@@ -928,64 +1168,18 @@ function initTicketSystem(client) {
                 const nextNum = await getNextTicketNumber(guild.id, catKey);
                 const ticketCode = `${tType.channelPrefix}-${nextNum}`;
 
-                // Permisos privados estrictos
-                const permissionOverwrites = [
-                    {
-                        id: guild.roles.everyone.id,
-                        deny: [PermissionFlagsBits.ViewChannel]
-                    },
-                    {
-                        id: interaction.user.id,
-                        allow: [
-                            PermissionFlagsBits.ViewChannel,
-                            PermissionFlagsBits.SendMessages,
-                            PermissionFlagsBits.ReadMessageHistory,
-                            PermissionFlagsBits.AttachFiles,
-                            PermissionFlagsBits.EmbedLinks
-                        ]
-                    },
-                    {
-                        id: client.user.id,
-                        allow: [
-                            PermissionFlagsBits.ViewChannel,
-                            PermissionFlagsBits.SendMessages,
-                            PermissionFlagsBits.ManageChannels,
-                            PermissionFlagsBits.ManageMessages,
-                            PermissionFlagsBits.ReadMessageHistory,
-                            PermissionFlagsBits.AttachFiles,
-                            PermissionFlagsBits.EmbedLinks
-                        ]
-                    }
-                ];
+                // Heredar ESTRICTAMENTE los permisos de la categoría en Discord + creador del ticket + bot
+                // Así ningún Staff sin permiso en esa categoría podrá ver el ticket
+                const parentCategory = categoryId
+                    ? (guild.channels.cache.get(categoryId) || await guild.channels.fetch(categoryId).catch(() => null))
+                    : null;
 
-                const staffRoleId = gCfg.ROLE_STAFF_ID || (guildManager.isPrimaryGuild(guild.id) ? '1538191116610838691' : '');
-                const directivaRoleId = gCfg.ROLE_DIRECTIVA_ID || '';
-
-                if (catKey === 'directiva' && directivaRoleId && guild.roles.cache.has(directivaRoleId)) {
-                    permissionOverwrites.push({
-                        id: directivaRoleId,
-                        allow: [
-                            PermissionFlagsBits.ViewChannel,
-                            PermissionFlagsBits.SendMessages,
-                            PermissionFlagsBits.ReadMessageHistory,
-                            PermissionFlagsBits.AttachFiles,
-                            PermissionFlagsBits.EmbedLinks,
-                            PermissionFlagsBits.ManageMessages
-                        ]
-                    });
-                } else if (staffRoleId && guild.roles.cache.has(staffRoleId)) {
-                    permissionOverwrites.push({
-                        id: staffRoleId,
-                        allow: [
-                            PermissionFlagsBits.ViewChannel,
-                            PermissionFlagsBits.SendMessages,
-                            PermissionFlagsBits.ReadMessageHistory,
-                            PermissionFlagsBits.AttachFiles,
-                            PermissionFlagsBits.EmbedLinks,
-                            PermissionFlagsBits.ManageMessages
-                        ]
-                    });
-                }
+                const { permissionOverwrites, allowedRoleIds } = buildCategoryInheritedOverwrites(
+                    guild,
+                    parentCategory,
+                    interaction.user.id,
+                    client.user.id
+                );
 
                 const channel = await guild.channels.create({
                     name: ticketCode,
@@ -1020,12 +1214,15 @@ function initTicketSystem(client) {
                 };
 
                 const { embed, files } = buildTicketWelcomeEmbed(guild, ticketData);
-                const pingRole = (catKey === 'directiva' && directivaRoleId)
-                    ? `<@&${directivaRoleId}>`
-                    : (staffRoleId ? `<@&${staffRoleId}>` : '');
+                // Mencionar únicamente los roles que realmente tienen permiso en ESTA categoría (sin mencionar Staffs no autorizados)
+                const pingRoles = allowedRoleIds
+                    .filter(rid => rid !== guild.roles.everyone.id)
+                    .slice(0, 6)
+                    .map(rid => `<@&${rid}>`)
+                    .join(' ');
 
                 const welcomeMsg = await channel.send({
-                    content: `🔔 <@${interaction.user.id}> ${pingRole}`.trim(),
+                    content: `🔔 <@${interaction.user.id}> ${pingRoles}`.trim(),
                     embeds: [embed],
                     components: [buildTicketControlRow(false)],
                     files
@@ -1047,17 +1244,42 @@ function initTicketSystem(client) {
                 if (typeof client.notifyTicketMonitor === 'function') {
                     client.notifyTicketMonitor(guild.id);
                 }
+                guildManager.logGuild(guild, '🎟️', `Ticket #${ticketCode} (${tType.label}) abierto por ${interaction.user.username}`);
 
                 const vOk = guildManager.resolveGuildVisuals(guild.id);
+                const okIcon = vOk.logoUrl || guild.iconURL() || undefined;
                 const okEmbed = new EmbedBuilder()
                     .setColor(vOk.color)
-                    .setTitle(`${tType.emoji} ¡Ticket abierto correctamente!`)
-                    .setDescription(`✅ Tu ticket **#${ticketCode}** ha sido creado en <#${channel.id}>.\n> *Haz clic en el canal para hablar con el equipo de Staff.*`)
-                    .setFooter({ text: `${vOk.name} • Sistema Avanzado de Tickets` })
+                    .setAuthor({
+                        name: `SISTEMA DE TICKETS | ${vOk.name}`,
+                        iconURL: okIcon
+                    })
+                    .setThumbnail(okIcon)
+                    .setTitle(`${tType.emoji} ¡Tu ticket ha sido abierto!`)
+                    .setDescription(
+                        `👋 Hola <@${interaction.user.id}>, ya hemos creado tu canal privado de **${tType.label}**.\n\n` +
+                        `> 📩 **Canal asignado:** <#${channel.id}>\n` +
+                        `> 🛡️ *Pulsa el botón de abajo para ir directamente a tu ticket.*`
+                    )
+                    .setFooter({
+                        text: `${vOk.name} • Este mensaje se auto-eliminará en 5s`,
+                        iconURL: okIcon
+                    })
                     .setTimestamp();
 
-                await interaction.editReply({ embeds: [okEmbed] }).catch(() => {});
-                setTimeout(() => interaction.deleteReply().catch(() => {}), 10000);
+                const goTicketRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setLabel('📩 Ir a mi Ticket')
+                        .setStyle(ButtonStyle.Link)
+                        .setURL(`https://discord.com/channels/${guild.id}/${channel.id}`)
+                );
+
+                await interaction.editReply({
+                    embeds: [okEmbed],
+                    components: [goTicketRow],
+                    files: vOk.files
+                }).catch(() => {});
+                setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
                 return;
             }
 
@@ -1096,9 +1318,27 @@ function initTicketSystem(client) {
                         components: [buildTicketControlRow(true)]
                     }).catch(() => {});
 
-                    await interaction.channel.send({
-                        content: `🙋 **Ticket reclamado:** <@${interaction.user.id}> se encargará de atender este ticket.`
-                    }).catch(() => {});
+                    const vCl = guildManager.resolveGuildVisuals(interaction.guild.id);
+                    const clIcon = vCl.logoUrl || interaction.guild.iconURL() || undefined;
+                    const claimEmbed = new EmbedBuilder()
+                        .setColor(0x2ECC71)
+                        .setAuthor({
+                            name: `ATENCIÓN DE STAFF | ${vCl.name}`,
+                            iconURL: clIcon
+                        })
+                        .setTitle('🙋 Ticket Reclamado')
+                        .setDescription(
+                            `🛡️ El miembro del Staff <@${interaction.user.id}> ha reclamado este ticket y se encargará de atender a <@${ticket.openerId}>.\n\n` +
+                            `> 💬 *Ya puedes continuar explicando tu caso con total tranquilidad.*`
+                        )
+                        .setFooter({
+                            text: `${vCl.name} • Departamento de Atención y Soporte`,
+                            iconURL: clIcon
+                        })
+                        .setTimestamp();
+
+                    await interaction.channel.send({ embeds: [claimEmbed], files: vCl.files }).catch(() => {});
+                    guildManager.logGuild(interaction.guild, '🙋', `Ticket #${ticket.ticketCode} reclamado por ${interaction.user.username}`);
                     return;
                 }
 
@@ -1183,7 +1423,13 @@ function initTicketSystem(client) {
                     AttachFiles: true,
                     EmbedLinks: true
                 }).catch(() => {});
-                return interaction.reply({ content: `✅ <@${member.id}> ha sido añadido a este ticket por <@${interaction.user.id}>.` }).catch(() => {});
+                const vAdd = guildManager.resolveGuildVisuals(interaction.guild.id);
+                const addEmbed = new EmbedBuilder()
+                    .setColor(vAdd.color)
+                    .setAuthor({ name: `GESTIÓN DE TICKET | ${vAdd.name}`, iconURL: vAdd.logoUrl })
+                    .setDescription(`➕ <@${member.id}> ha sido añadido a este ticket por <@${interaction.user.id}>.`)
+                    .setTimestamp();
+                return interaction.reply({ embeds: [addEmbed] }).catch(() => {});
             }
 
             // E) MODAL RENOMBRAR CANAL
@@ -1197,7 +1443,13 @@ function initTicketSystem(client) {
                     return interaction.reply({ content: '⚠️ Nombre no válido.', ephemeral: true }).catch(() => {});
                 }
                 await interaction.channel.setName(newName).catch(() => {});
-                return interaction.reply({ content: `✏️ Canal renombrado a **#${newName}** por <@${interaction.user.id}>.` }).catch(() => {});
+                const vRen = guildManager.resolveGuildVisuals(interaction.guild.id);
+                const renEmbed = new EmbedBuilder()
+                    .setColor(vRen.color)
+                    .setAuthor({ name: `GESTIÓN DE TICKET | ${vRen.name}`, iconURL: vRen.logoUrl })
+                    .setDescription(`✏️ Canal renombrado a **#${newName}** por <@${interaction.user.id}>.`)
+                    .setTimestamp();
+                return interaction.reply({ embeds: [renEmbed] }).catch(() => {});
             }
 
             // F) MODAL CERRAR TICKET -> GUARDA TRANSCRIPCIÓN INTERACTIVA EN MONGODB Y ENVÍA LOG
@@ -1271,9 +1523,21 @@ function initTicketSystem(client) {
                     }
                 }
 
-                await interaction.editReply({
-                    content: `🔒 **Ticket cerrado por <@${interaction.user.id}>.**\n> 📜 Registro guardado (${formattedMsgs.length} mensajes)${logsChannelId ? ` en <#${logsChannelId}>` : ''}.\n> ⏳ *Eliminando este canal en **5 segundos**...*`
-                }).catch(() => {});
+                const vCls = guildManager.resolveGuildVisuals(guild.id);
+                const closeEmbed = new EmbedBuilder()
+                    .setColor(0xE74C3C)
+                    .setAuthor({ name: `CIERRE DE TICKET | ${vCls.name}`, iconURL: vCls.logoUrl })
+                    .setTitle('🔒 Ticket Cerrado')
+                    .setDescription(
+                        `🛡️ Cerrado por <@${interaction.user.id}>.\n` +
+                        `> 📜 **Registro guardado:** \`${formattedMsgs.length}\` mensaje(s)${logsChannelId ? ` en <#${logsChannelId}>` : ''}.\n` +
+                        `> ⏳ *Eliminando este canal en **5 segundos**...*`
+                    )
+                    .setFooter({ text: `${vCls.name} • Departamento de Atención y Soporte` })
+                    .setTimestamp();
+
+                await interaction.editReply({ embeds: [closeEmbed] }).catch(() => {});
+                guildManager.logGuild(guild, '🔒', `Ticket #${ticket.ticketCode} cerrado por ${interaction.user.username} (${formattedMsgs.length} mensajes)`);
 
                 setTimeout(async () => {
                     await channel.delete(`Ticket cerrado por ${interaction.user.tag}: ${closeReason}`).catch(() => {});
@@ -1342,10 +1606,10 @@ function initTicketSystem(client) {
 
                 const embed = new EmbedBuilder()
                     .setColor(v.color)
-                    .setAuthor({ name: `FORMULARIO INICIAL • #${logDoc.ticketCode} | ${v.name}`, iconURL: v.logoUrl })
+                    .setAuthor({ name: `FORMULARIO INICIAL • ${logDoc.ticketCode} | ${v.name}`, iconURL: v.logoUrl })
                     .setTitle(`📋 Formulario enviado por ${logDoc.openerTag}`)
                     .setDescription(
-                        `👤 **Usuario:** <@${logDoc.openerId}> (\`${logDoc.openerId}\`)\n` +
+                        `👤 **Usuario:** <@${logDoc.openerId}>\n` +
                         `📂 **Categoría:** \`${logDoc.categoryLabel}\`\n\n` +
                         `────────────────────────────\n\n` +
                         fieldsText
@@ -1357,6 +1621,72 @@ function initTicketSystem(client) {
             }
         } catch (err) {
             console.error('⚠️ [TICKETS interactionCreate Error]:', err.message);
+        }
+    });
+
+    // 3. AUTO-SINCRONIZACIÓN EN TIEMPO REAL DE PERMISOS DE CATEGORÍAS
+    // Si en el futuro modificas los permisos de cualquier categoría de tickets en Discord,
+    // el bot actualiza automáticamente los permisos de TODOS los tickets abiertos dentro de esa categoría
+    // conservando siempre al creador del ticket y a los usuarios añadidos manualmente.
+    client.on('channelUpdate', async (oldChannel, newChannel) => {
+        try {
+            if (!newChannel || !newChannel.guild || newChannel.type !== ChannelType.GuildCategory) return;
+
+            const catIds = new Set(Object.values(getGuildTicketCategories(newChannel.guild)).filter(Boolean));
+            if (!catIds.has(newChannel.id)) return;
+
+            // Solo actuar si realmente cambiaron los permisos de la categoría
+            if (serializeOverwrites(oldChannel) === serializeOverwrites(newChannel)) return;
+
+            const childTickets = newChannel.guild.channels.cache.filter(
+                c => c.type === ChannelType.GuildText && c.parentId === newChannel.id
+            );
+            if (childTickets.size === 0) return;
+
+            let synced = 0;
+            for (const [, ticketCh] of childTickets) {
+                try {
+                    const activeDoc = await fetchActiveTicket(newChannel.guild.id, ticketCh.id);
+                    let openerId = activeDoc?.openerId || '';
+                    if (!openerId && ticketCh.topic) {
+                        const match = ticketCh.topic.match(/\((\d{17,20})\)/);
+                        if (match) openerId = match[1];
+                    }
+
+                    // Conservar todos los permisos individuales de usuarios ya presentes en el ticket (creador + añadidos)
+                    const extraMembers = [];
+                    for (const ow of ticketCh.permissionOverwrites.cache.values()) {
+                        if (ow.type === OverwriteType.Member && ow.id !== client.user.id) {
+                            extraMembers.push({
+                                id: ow.id,
+                                type: OverwriteType.Member,
+                                allow: ow.allow.bitfield,
+                                deny: ow.deny.bitfield
+                            });
+                        }
+                    }
+
+                    const { permissionOverwrites } = buildCategoryInheritedOverwrites(
+                        newChannel.guild,
+                        newChannel,
+                        openerId,
+                        client.user.id,
+                        extraMembers
+                    );
+
+                    await ticketCh.permissionOverwrites.set(
+                        permissionOverwrites,
+                        'Auto-sincronización de permisos de categoría de tickets'
+                    ).catch(() => {});
+                    synced++;
+                } catch (e) { }
+            }
+
+            if (synced > 0) {
+                guildManager.logGuild(newChannel.guild, '🔐', `Permisos de categoría "${newChannel.name}" sincronizados en ${synced} ticket(s) abierto(s)`);
+            }
+        } catch (err) {
+            console.error('⚠️ [TICKETS channelUpdate Error]:', err.message);
         }
     });
 }

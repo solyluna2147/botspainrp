@@ -58,6 +58,110 @@ let primaryConfigGetter = () => ({});
 let primaryConfigUpdater = async () => {};
 let discordClientRef = null;
 
+// ==========================================
+// CONSOLA LIMPIA Y ETIQUETADA POR SERVIDOR
+// ==========================================
+function getServerTag(guildOrId) {
+    if (!guildOrId) return 'VANTEX';
+    const gId = typeof guildOrId === 'string' ? guildOrId : guildOrId.id;
+    if (!gId) return 'VANTEX';
+    if (isPrimaryGuild(gId)) return 'VALLECAS RP';
+    const cfg = guildCache.get(String(gId)) || {};
+    if (cfg.BRAND_NAME && cfg.BRAND_NAME.trim()) return cfg.BRAND_NAME.trim().toUpperCase();
+    const guildObj = typeof guildOrId === 'object' ? guildOrId : discordClientRef?.guilds?.cache?.get(String(gId));
+    if (guildObj?.name) return guildObj.name.trim().toUpperCase();
+    return `SERVER ${String(gId).slice(-4)}`;
+}
+
+let cleanConsoleInstalled = false;
+const rawConsoleLog = console.log.bind(console);
+const rawConsoleWarn = console.warn.bind(console);
+let lastWlSyncLogAt = 0;
+const WL_SYNC_LOG_INTERVAL_MS = 60 * 60 * 1000; // 1 hora
+
+function logGuild(guildOrId, emoji, msg) {
+    rawConsoleLog(`${emoji || '📌'} [${getServerTag(guildOrId)}] ${msg}`);
+}
+
+function installCleanConsole() {
+    if (cleanConsoleInstalled) return;
+    cleanConsoleInstalled = true;
+
+    // Silenciar avisos cosméticos de deprecación (ephemeral / mongoose new) sin ocultar errores reales
+    const origEmitWarning = process.emitWarning.bind(process);
+    process.emitWarning = (warning, ...args) => {
+        const text = typeof warning === 'string' ? warning : (warning?.message || '');
+        if (
+            text.includes('Supplying "ephemeral"') ||
+            text.includes('the `new` option for `findOneAndUpdate()`')
+        ) {
+            return;
+        }
+        return origEmitWarning(warning, ...args);
+    };
+
+    const noisyPatterns = [
+        /\[DISCORD DEBUG\]/i,
+        /^\s*(URL:\s*wss:\/\/|compression:|Remaining:|shard id:|shard count:|Recommended Shards:|intents:|Total:\s*\d+)\s*$/i,
+        /\[DISCORD\]\s*(Longitud del Token|Intento de conexi|Promesa client\.login)/i,
+        /^={10,}$/,
+        /\[SOPORTE ALERT\]\s*Audio .* cargado/i
+    ];
+
+    console.log = (...args) => {
+        if (args.length === 0) return;
+        const first = typeof args[0] === 'string' ? args[0] : '';
+        if (!first) return rawConsoleLog(...args);
+
+        const trimmed = first.trim();
+        if (!trimmed) return;
+
+        // 1. Filtrar ruido técnico innecesario de arranque / WebSocket
+        if (noisyPatterns.some(rx => rx.test(trimmed))) return;
+
+        // 2. Limitar el log repetitivo de sincronización WL a 1 vez por hora (el proceso sigue funcionando igual)
+        if (trimmed.includes('[SINCRONIZACIÓN WL]')) {
+            const now = Date.now();
+            if (now - lastWlSyncLogAt < WL_SYNC_LOG_INTERVAL_MS) return;
+            lastWlSyncLogAt = now;
+            return rawConsoleLog('🔄 [VALLECAS RP] Revisión periódica de solicitudes Whitelist activa (próximo aviso en 1h).');
+        }
+
+        // 3. Formatear logs de [MULTI-SERVER <guildId>] -> ⚙️ [NOMBRE SERVIDOR]
+        const msMatch = trimmed.match(/\[MULTI-SERVER\s+(\d{17,20})\]\s*(.+)/);
+        if (msMatch) {
+            const [, gId, rest] = msMatch;
+            return rawConsoleLog(`⚙️ [${getServerTag(gId)}] ${rest}`);
+        }
+
+        // 4. Etiquetar logs propios de Vallecas RP (Whitelist, Auto-Calibración, Sync Valoraciones)
+        if (
+            trimmed.includes('[AUTO-CALIBRACIÓN') ||
+            trimmed.includes('[SYNC VALORACIONES]') ||
+            trimmed.includes('[RANKING AUTO-SYNC]')
+        ) {
+            const cleanRest = trimmed.replace(/^[^\[]*\[[^\]]+\]\s*/, '');
+            return rawConsoleLog(`🛡️ [VALLECAS RP] ${cleanRest}`);
+        }
+
+        // 5. Limpiar IDs numéricos largos en [COMANDO RECIBIDO]
+        if (trimmed.includes('[COMANDO RECIBIDO]')) {
+            const cleaned = trimmed.replace(/\s*\(\d{17,20}\)/g, '');
+            return rawConsoleLog(cleaned);
+        }
+
+        return rawConsoleLog(...args);
+    };
+
+    console.warn = (...args) => {
+        const first = typeof args[0] === 'string' ? args[0] : '';
+        if (first.includes('Supplying "ephemeral"') || first.includes('the `new` option for `findOneAndUpdate()`')) return;
+        return rawConsoleWarn(...args);
+    };
+}
+
+installCleanConsole();
+
 // Canales conocidos del servidor principal (para identificar Vallecas RP automáticamente)
 const PRIMARY_HINT_CHANNELS = [
     '1517530849661288455',
@@ -498,5 +602,7 @@ module.exports = {
     updateGuildConfig: setGuildConfigKey,
     setGuildConfigBulk,
     resolveGuildVisuals,
-    getAllSecondaryGuildConfigs
+    getAllSecondaryGuildConfigs,
+    getServerTag,
+    logGuild
 };

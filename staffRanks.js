@@ -133,7 +133,7 @@ async function flushAscensosBatch(client, guildId) {
             .setDescription(embedDescLines);
 
         await canalAscensos.send({ embeds: [embed], files });
-        console.log(`✅ [STAFF RANKS] Publicado lote de ${batch.length} ascenso(s) en ${canalAscensos.name} (${v.name}).`);
+        guildManager.logGuild(guildId, '📈', `Ascenso publicado en #${canalAscensos.name} (${batch.length} miembro/s)`);
     } catch (err) {
         console.error('❌ [STAFF RANKS] Error enviando lote de ascensos:', err);
     }
@@ -173,7 +173,7 @@ async function flushDescensosBatch(client, guildId) {
             .setDescription(embedDescLines);
 
         await canalDescensos.send({ embeds: [embed], files });
-        console.log(`✅ [STAFF RANKS] Publicado lote de ${batch.length} descenso(s) en ${canalDescensos.name} (${v.name}).`);
+        guildManager.logGuild(guildId, '📉', `Descenso publicado en #${canalDescensos.name} (${batch.length} miembro/s)`);
     } catch (err) {
         console.error('❌ [STAFF RANKS] Error enviando lote de descensos:', err);
     }

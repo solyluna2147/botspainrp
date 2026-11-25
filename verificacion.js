@@ -195,7 +195,7 @@ module.exports = function initVerificacion(client) {
                         const info = await message.channel.send(`✅ **Panel de Verificación publicado correctamente en <#${targetChannel.id}>.**`).catch(() => null);
                         if (info) setTimeout(() => info.delete().catch(() => {}), 5000);
                     }
-                    console.log(`🛡️ [VERIFICACIÓN] Panel publicado en #${targetChannel.name} (${message.guild.name}).`);
+                    guildManager.logGuild(message.guild, '🛡️', `Panel de Verificación publicado en #${targetChannel.name}`);
                 }
                 return;
             }
@@ -280,6 +280,7 @@ module.exports = function initVerificacion(client) {
             // Incrementar contador de verificados de este servidor y actualizar footer del panel
             const newCount = (vCfg.verifiedCount || 0) + 1;
             await guildManager.setGuildConfigKey(interaction.guild.id, 'VERIFICACION_COUNT', newCount).catch(() => {});
+            guildManager.logGuild(interaction.guild, '✅', `Usuario verificado: ${interaction.user.username} (Total: ${newCount})`);
 
             if (interaction.message) {
                 try {
