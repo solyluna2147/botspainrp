@@ -104,7 +104,8 @@ function getGuildState(guildId) {
             lastDisconnectAt: 0,
             welcomePlayedForSession: false,
             sessionStartedAt: 0,
-            userJoinTimes: new Map(), // userId -> { joinedAt, userTag, memberName }
+            warnedStaffs: new Map(), // staffId -> { id, tag, channelId, channelName, warnCount, firstWarnedAt }
+            userJoinTimes: new Map(), // userId -> { joinedAt, userTag, memberName, isStaff }
             staffAlertCount: 0,
             sanctionReportSent: false,
             nextAlertTurn: 'STAFF',
@@ -689,10 +690,34 @@ function getTargetStaffChannel(guild) {
 }
 
 /**
- * Envía el informe detallado al canal de sanciones de staff con el diseño limpio y thumbnail superior
+ * Comprueba si un Staff está actualmente ocupado atendiendo a un ciudadano en alguna sala de soporte
  */
-async function sendSanctionReport(guild, { motivo, staffsInvolucrados, targetChannelId, usuariosAfectados, tiempoEsperadoMs, avisosEmitidos, client }) {
+function isStaffBusyAttendingCitizen(guild, staffId) {
+    if (!guild || !staffId) return false;
+    const vc = getVoiceConfigForGuild(guild.id);
+    for (const supId of vc.soporteIds) {
+        const ch = guild.channels.cache.get(supId);
+        if (!ch || !ch.isVoiceBased()) continue;
+        if (!ch.members.has(staffId)) continue;
+        const hasCitizen = ch.members.some(m => !m.user.bot && !isMemberStaff(m));
+        if (hasCitizen) return true;
+    }
+    return false;
+}
+
+/**
+ * Envía el informe detallado al canal de sanciones de staff (100% fiable, cero falsos positivos)
+ */
+async function sendSanctionReport(guild, { reportType = 'TERCER_AVISO', motivo, staffsInvolucrados, targetChannelId, usuariosAfectados, tiempoEsperadoMs, avisosEmitidos, client }) {
     try {
+        // BARRERAS ESTRICTAS ANTI-FALSOS POSITIVOS:
+        // 1. Nunca emitir informe si no hay al menos 1 Staff real responsable
+        if (!Array.isArray(staffsInvolucrados) || staffsInvolucrados.length === 0) return;
+        // 2. Nunca emitir informe si no hay al menos 1 ciudadano real afectado (nunca por pruebas de Staff)
+        if (!Array.isArray(usuariosAfectados) || usuariosAfectados.length === 0) return;
+        // 3. Nunca emitir informe si realmente no se ha lanzado ningún aviso por voz a los Staffs
+        if (!avisosEmitidos || avisosEmitidos < 1) return;
+
         const vc = getVoiceConfigForGuild(guild?.id);
         if (!vc.sancionesTextId) return;
         let canalSanciones = guild.channels.cache.get(vc.sancionesTextId);
@@ -708,21 +733,21 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, targetCha
         }
 
         if (!canalSanciones) {
-            console.error(`❌ [SOPORTE ALERT] No se pudo obtener el canal de sanciones (${CANAL_SANCIONES_STAFF_ID})`);
+            console.error(`❌ [SOPORTE ALERT] No se pudo obtener el canal de sanciones (${vc.sancionesTextId})`);
             return;
         }
 
-        const staffLines = staffsInvolucrados.length > 0
-            ? staffsInvolucrados.map(s => `> <@${s.id}> ❗ \`(${s.user ? s.user.tag : s.id})\``).join('\n')
-            : '> ⚠️ *Ningún staff disponible con audio activo*';
+        const staffLines = staffsInvolucrados
+            .map(s => `> <@${s.id}> ❗ \`(${s.user ? s.user.tag : (s.tag || s.id)})\`${s.warnCount ? ` • \`${s.warnCount} aviso(s) ignorado(s)\`` : ''}`)
+            .join('\n');
 
-        const userLines = usuariosAfectados.length > 0
-            ? usuariosAfectados.map(u => `> <@${u.id}> ❗ \`(${u.tag})\` • Espera: \`${formatDuration(u.timeMs)}\``).join('\n')
-            : '> • *Usuarios no identificados*';
+        const userLines = usuariosAfectados
+            .map(u => `> <@${u.id}> ❗ \`(${u.tag})\` • Espera: \`${formatDuration(u.timeMs)}\``)
+            .join('\n');
 
-        const isAbandono = motivo.includes('ABANDONÓ');
-        const badgeTitle = isAbandono 
-            ? '🔴 USUARIO ABANDONÓ POR FALTA DE ATENCIÓN'
+        const isAbandono = reportType === 'ABANDONO';
+        const badgeTitle = isAbandono
+            ? '🔴 CIUDADANO ABANDONÓ SIN SER ATENDIDO'
             : '⚠️ LLAMADAS DE SOPORTE DESATENDIDAS (3er AVISO)';
         const embedColor = isAbandono ? 0xE74C3C : 0xE67E22;
 
@@ -743,22 +768,20 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, targetCha
                 `\u200B\n` +
                 `📌 **| Motivo del Informe:**\n` +
                 `> ${motivo}\n\n` +
-                `👤 **| Usuario(s) Afectado(s):**\n` +
+                `👤 **| Ciudadano(s) Afectado(s):**\n` +
                 `${userLines}\n\n` +
-                `🛡️ **| Staffs Sancionados:**\n` +
+                `🛡️ **| Staff(s) Responsable(s) Avisado(s):**\n` +
                 `${staffLines}\n\n` +
-                `⏱️ **| Tiempo de Espera:** \`${formatDuration(tiempoEsperadoMs)}\` • 📢 **Avisos Emitidos:** \`${avisosEmitidos} avisos\`\n\n` +
-                `⚖️ **Informe remitido automáticamente a la Administración de ${serverName}**`
+                `⏱️ **| Tiempo de Espera:** \`${formatDuration(tiempoEsperadoMs)}\` • 📢 **Avisos Emitidos:** \`${avisosEmitidos} aviso(s)\`\n\n` +
+                `⚖️ **Informe verificado y remitido automáticamente a la Administración de ${serverName}**`
             )
             .setFooter({
-                text: `${serverName} • Supervisión de Soporte`,
+                text: `${serverName} • Supervisión de Soporte Verificada`,
                 iconURL: iconUrl
             })
             .setTimestamp();
 
-        const mentionText = staffsInvolucrados.length > 0
-            ? `🔔 **Atención Staffs sancionados:** ${staffsInvolucrados.map(s => `<@${s.id}>`).join(' ')}`
-            : `🔔 **Aviso a Administración:**`;
+        const mentionText = `🔔 **Atención Staff(s) responsable(s):** ${staffsInvolucrados.map(s => `<@${s.id}>`).join(' ')}`;
 
         await canalSanciones.send({
             content: mentionText,
@@ -766,18 +789,17 @@ async function sendSanctionReport(guild, { motivo, staffsInvolucrados, targetCha
             files: files
         });
 
-        guildManager.logGuild(guild, '📋', 'Informe disciplinario de soporte publicado');
+        guildManager.logGuild(guild, '📋', `Informe disciplinario verificado publicado (${reportType})`);
 
         // Mover a los staffs al canal de STAFF AFK ÚNICAMENTE si ya se han emitido los 3 avisos completos
         // Y SOLO a los staffs presentes en el canal concreto donde sonó el 3er aviso
-        const esTercerAvisoDisciplinario = avisosEmitidos >= 3;
-        if (esTercerAvisoDisciplinario && staffsInvolucrados && staffsInvolucrados.length > 0) {
+        const esTercerAvisoDisciplinario = reportType === 'TERCER_AVISO' && avisosEmitidos >= 3;
+        if (esTercerAvisoDisciplinario && staffsInvolucrados.length > 0) {
             for (const staffMember of staffsInvolucrados) {
                 try {
                     if (staffMember.voice && staffMember.voice.channelId) {
-                        // Comprobación de canal: NUNCA mover a un staff que esté en otro canal (como soporte atendiendo)
                         if (vc.afkId && (!targetChannelId || staffMember.voice.channelId === targetChannelId)) {
-                            await staffMember.voice.setChannel(vc.afkId, 'Movido a STAFF AFK tras cumplirse los 3 avisos de soporte');
+                            await staffMember.voice.setChannel(vc.afkId, 'Movido a STAFF AFK tras ignorar los avisos de soporte');
                             guildManager.logGuild(guild, '🔀', `Staff ${staffMember.user ? staffMember.user.username : staffMember.id} movido a STAFF AFK tras 3 avisos`);
                         }
                     }
@@ -809,6 +831,7 @@ async function checkWaitRoom(guild, client) {
     if (waitingUsers.size === 0) {
         if (state.userJoinTimes.size > 0 || state.staffAlertCount > 0 || state.lastActionAt > 0 || state.welcomePlayedForSession) {
             state.userJoinTimes.clear();
+            state.warnedStaffs.clear();
             state.staffAlertCount = 0;
             state.sanctionReportSent = false;
             state.nextAlertTurn = 'STAFF';
@@ -836,7 +859,8 @@ async function checkWaitRoom(guild, client) {
             state.userJoinTimes.set(userId, {
                 joinedAt: now,
                 userTag: member.user.tag,
-                memberName: member.displayName
+                memberName: member.displayName,
+                isStaff: isMemberStaff(member)
             });
         } else {
             const data = state.userJoinTimes.get(userId);
@@ -906,32 +930,62 @@ async function checkWaitRoom(guild, client) {
             state.lastActionAt = Date.now();
             state.nextAlertTurn = 'USER'; // El siguiente turno le tocará al usuario en espera
 
-            // Si es el 3er aviso: mover a los staffs de ESE MISMO CANAL a AFK y enviar informe
+            // Registrar exactamente qué Staffs escucharon este aviso (libres y sin ensordecer en ese canal)
+            const listeningStaffsNow = target.channel.members.filter(m =>
+                !m.user.bot && isMemberStaff(m) && m.voice && !m.voice.deaf && !m.voice.selfDeaf
+            );
+            for (const [sid, sMember] of listeningStaffsNow) {
+                const prev = state.warnedStaffs.get(sid);
+                state.warnedStaffs.set(sid, {
+                    id: sid,
+                    tag: sMember.user ? sMember.user.tag : sid,
+                    channelId: target.channel.id,
+                    channelName: target.channel.name,
+                    warnCount: (prev ? prev.warnCount : 0) + 1,
+                    firstWarnedAt: prev ? prev.firstWarnedAt : Date.now()
+                });
+            }
+
+            // Si es el 3er aviso: SOLO sancionar/mover a AFK si hay al menos 1 CIUDADANO REAL esperando
+            // Y los Staffs de ese canal realmente recibieron al menos 2 avisos previos sin acudir
             if (state.staffAlertCount >= 3 && !state.sanctionReportSent) {
-                state.sanctionReportSent = true;
-
-                // OBTENER ÚNICAMENTE LOS STAFFS PRESENTES EN EL CANAL DONDE SE EMITIÓ EL 3er AVISO
-                const currentStaffsInTarget = target.channel.members.filter(m => !m.user.bot && isMemberStaff(m));
-                const staffsArray = Array.from(currentStaffsInTarget.values());
-
-                const usuariosList = [];
+                // Filtrar SOLO ciudadanos reales (ignorar Staffs haciendo pruebas en Espera de Soporte)
+                const realCitizens = [];
+                let maxCitizenWait = 0;
                 for (const [uid, udata] of state.userJoinTimes) {
-                    usuariosList.push({
+                    if (udata.isStaff) continue;
+                    const waitMs = now - udata.joinedAt;
+                    if (waitMs > maxCitizenWait) maxCitizenWait = waitMs;
+                    realCitizens.push({
                         id: uid,
                         tag: udata.userTag,
-                        timeMs: now - udata.joinedAt
+                        timeMs: waitMs
                     });
                 }
 
-                await sendSanctionReport(guild, {
-                    motivo: `El personal de ${target.channel.name} no acudió tras 2 avisos previos consecutivos. Se emitió la advertencia disciplinaria por voz.`,
-                    staffsInvolucrados: staffsArray,
-                    targetChannelId: target.channel.id, // ID exacto del canal donde sonó el aviso
-                    usuariosAfectados: usuariosList,
-                    tiempoEsperadoMs: maxWaitTime,
-                    avisosEmitidos: state.staffAlertCount,
-                    client: client
-                });
+                // Filtrar SOLO Staffs presentes en ese canal que escucharon al menos 2 avisos (evita culpar a alguien recién entrado)
+                const responsibleStaffs = [];
+                for (const [sid, sMember] of listeningStaffsNow) {
+                    const rec = state.warnedStaffs.get(sid);
+                    if (rec && rec.warnCount >= 2 && !isStaffBusyAttendingCitizen(guild, sid)) {
+                        sMember.warnCount = rec.warnCount;
+                        responsibleStaffs.push(sMember);
+                    }
+                }
+
+                if (realCitizens.length > 0 && responsibleStaffs.length > 0) {
+                    state.sanctionReportSent = true;
+                    await sendSanctionReport(guild, {
+                        reportType: 'TERCER_AVISO',
+                        motivo: `El personal presente en **${target.channel.name}** ignoró 3 avisos de voz consecutivos habiendo ciudadanos reales esperando en soporte.`,
+                        staffsInvolucrados: responsibleStaffs,
+                        targetChannelId: target.channel.id,
+                        usuariosAfectados: realCitizens,
+                        tiempoEsperadoMs: maxCitizenWait || maxWaitTime,
+                        avisosEmitidos: state.staffAlertCount,
+                        client: client
+                    });
+                }
             }
         }
     } else {
@@ -991,12 +1045,14 @@ function initSoporteAlert(client) {
             state.userJoinTimes.set(userId, {
                 joinedAt: Date.now(),
                 userTag: member ? member.user.tag : userId,
-                memberName: member ? member.displayName : userId
+                memberName: member ? member.displayName : userId,
+                isStaff: isMemberStaff(member)
             });
             if (wasEmpty) {
                 state.lastActionAt = Date.now();
                 state.sessionStartedAt = Date.now();
                 state.welcomePlayedForSession = false;
+                state.warnedStaffs.clear();
                 state.nextAlertTurn = 'STAFF';
                 state.staffAlertCount = 0;
                 state.sanctionReportSent = false;
@@ -1012,6 +1068,9 @@ function initSoporteAlert(client) {
             const userData = state.userJoinTimes.get(userId);
             const timeWaitingMs = userData ? (Date.now() - userData.joinedAt) : 0;
             const prevAlertCount = state.staffAlertCount;
+            const prevAlreadyReported = state.sanctionReportSent;
+            const prevWarnedSnapshot = new Map(state.warnedStaffs);
+            const leaverIsStaff = userData ? !!userData.isStaff : isMemberStaff(member);
 
             state.userJoinTimes.delete(userId);
 
@@ -1023,24 +1082,41 @@ function initSoporteAlert(client) {
                 state.lastActionAt = 0;
                 state.welcomePlayedForSession = false;
                 state.sessionStartedAt = 0;
+                state.warnedStaffs.clear();
                 abortPlaybackImmediately(guild, 'Sala de espera vacía. Desconectando bot');
             }
 
             // 2. ¿Fue movido a un canal de soporte por un staff o abandonó/se desconectó?
             const fueAtendidoEnSoporte = vc.soporteIds.includes(newState.channelId);
 
-            if (!fueAtendidoEnSoporte) {
-                // El usuario ABANDONÓ el canal de espera sin ser atendido
-                const superoTiempo = timeWaitingMs >= (settings.minutes * 60 * 1000);
-                if (prevAlertCount >= 1 || superoTiempo) {
-                    guildManager.logGuild(guild, '⚠️', `Usuario ${userData ? userData.userTag : userId} abandonó espera tras ${formatDuration(timeWaitingMs)} sin atención`);
+            // CONDICIONES ESTRICTAS 100% FIABLES PARA INFORME DE ABANDONO (cero falsos positivos):
+            // - Quien abandona DEBE ser un ciudadano real (NO un Staff haciendo pruebas)
+            // - NO fue atendido en soporte y NO se envió ya un informe en esta sesión
+            // - Se emitió al menos 1 aviso real por voz a Staffs disponibles (prevAlertCount >= 1)
+            // - El ciudadano esperó un tiempo mínimo real (>= 60 segundos o 2 ciclos)
+            // - Hay al menos 1 Staff REALMENTE responsable que recibió aviso por voz y sigue disponible sin atender a nadie
+            const minAbandonWaitMs = Math.max(60000, Math.round(settings.minutes * 60 * 1000 * 2));
+            if (!fueAtendidoEnSoporte && !leaverIsStaff && !prevAlreadyReported && prevAlertCount >= 1 && timeWaitingMs >= minAbandonWaitMs) {
+                const culpableStaffs = [];
+                for (const [sid, rec] of prevWarnedSnapshot.entries()) {
+                    const sMember = guild.members.cache.get(sid);
+                    if (!sMember || !sMember.voice || !sMember.voice.channelId) continue;
+                    // No culpar si está ensordecido o en AFK o si ya está atendiendo a otro ciudadano en soporte
+                    if (sMember.voice.deaf || sMember.voice.selfDeaf) continue;
+                    if (vc.afkId && sMember.voice.channelId === vc.afkId) continue;
+                    if (isStaffBusyAttendingCitizen(guild, sid)) continue;
 
-                    const target = getTargetStaffChannel(guild);
-                    const staffsList = target ? Array.from(target.staffs.values()) : [];
+                    sMember.warnCount = rec.warnCount;
+                    culpableStaffs.push(sMember);
+                }
+
+                if (culpableStaffs.length > 0) {
+                    guildManager.logGuild(guild, '⚠️', `Ciudadano ${userData ? userData.userTag : userId} abandonó espera tras ${formatDuration(timeWaitingMs)} con ${culpableStaffs.length} staff(s) avisado(s)`);
                     sendSanctionReport(guild, {
-                        motivo: 'El usuario se marchó de la sala de espera sin haber sido atendido tras esperar largo tiempo.',
-                        staffsInvolucrados: staffsList,
-                        targetChannelId: null, // No mover a nadie porque solo es reporte de abandono
+                        reportType: 'ABANDONO',
+                        motivo: `Un ciudadano abandonó la sala de espera tras **${formatDuration(timeWaitingMs)}** sin ser atendido pese a haber **${prevAlertCount} aviso(s) por voz** emitidos al equipo disponible.`,
+                        staffsInvolucrados: culpableStaffs,
+                        targetChannelId: null,
                         usuariosAfectados: [{
                             id: userId,
                             tag: userData ? userData.userTag : (member ? member.user.tag : userId),
@@ -1168,6 +1244,7 @@ function initSoporteAlert(client) {
                 try {
                     await setGuildActive(gId, false);
                     state.userJoinTimes.clear();
+                    state.warnedStaffs.clear();
                     state.staffAlertCount = 0;
                     state.sanctionReportSent = false;
                     state.nextAlertTurn = 'STAFF';

@@ -173,6 +173,7 @@ function createEmptyTokenStats() {
 
 let tokenStats = createEmptyTokenStats();
 let tokensPanelRef = null; // { channelId, messageId }
+let lastDailyResetPanelDate = ''; // Última fecha UTC (YYYY-MM-DD) en la que se auto-actualizó el panel al reiniciar cupos
 
 function ensureTodayTokenStats() {
     const today = getUtcDateKey();
@@ -274,9 +275,7 @@ function buildTokensPanelEmbed(guildId = null) {
 
     const now = new Date();
     const nextReset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0));
-    const diffMs = Math.max(0, nextReset.getTime() - now.getTime());
-    const resetH = Math.floor(diffMs / 3600000);
-    const resetM = Math.floor((diffMs % 3600000) / 60000);
+    const nextResetTs = Math.floor(nextReset.getTime() / 1000);
 
     const activeNucleusName = activeCycleIdx === 1 ? `Núcleo IA 1/${keyCount} (Principal)` : `Núcleo IA ${activeCycleIdx}/${keyCount} (Respaldo)`;
     const isPrimary = !guildId || guildManager.isPrimaryGuild(guildId);
@@ -315,10 +314,10 @@ function buildTokensPanelEmbed(guildId = null) {
             `> 📚 **Normativa en memoria:** \`${loadedSections}\` secciones oficiales\n` +
             `> 🛡️ **Canal Staff:** ${staffChText}\n` +
             `> 👥 **Canal Usuarios:** ${usersChText}\n` +
-            `> ⏳ **Reinicio de cupos:** en \`${resetH}h ${resetM}m\``
+            `> ⏳ **Próximo reinicio diario:** <t:${nextResetTs}:R> *(<t:${nextResetTs}:t>)*`
         )
         .setFooter({
-            text: `${serverName} • Se actualiza automáticamente tras cada consulta`,
+            text: `${serverName} • Auto-actualización tras consulta y al reinicio diario`,
             iconURL: logoUrl
         })
         .setTimestamp();
@@ -461,6 +460,10 @@ async function loadConfig() {
         const savedPanel = await BotSetting.findOne({ key: 'groq_tokens_panel' });
         if (savedPanel && savedPanel.value && savedPanel.value.channelId && savedPanel.value.messageId) {
             tokensPanelRef = savedPanel.value;
+        }
+        const savedDailyReset = await BotSetting.findOne({ key: 'groq_tokens_last_daily_reset' });
+        if (savedDailyReset && typeof savedDailyReset.value === 'string') {
+            lastDailyResetPanelDate = savedDailyReset.value;
         }
 
         // Cargar las páginas de la normativa directamente desde MongoDB o localmente
@@ -817,6 +820,52 @@ function isMemberStaff(member) {
  */
 function initConsultasAI(client) {
     loadConfig();
+
+    // Auto-actualización diaria (1 sola vez al día) justo cuando se reinicia el cupo diario (00:00:05 UTC)
+    const runDailyTokensPanelReset = async (reason = 'Reinicio diario 00:00 UTC') => {
+        try {
+            const todayUtc = getUtcDateKey();
+            if (lastDailyResetPanelDate === todayUtc) return;
+
+            ensureTodayTokenStats();
+            await saveTokenStats();
+            await updateTokensPanel(client);
+
+            lastDailyResetPanelDate = todayUtc;
+            await BotSetting.findOneAndUpdate(
+                { key: 'groq_tokens_last_daily_reset' },
+                { key: 'groq_tokens_last_daily_reset', value: todayUtc },
+                { upsert: true }
+            ).catch(() => {});
+
+            console.log(`🔄 [CONSULTAS AI] Panel de tokens actualizado automáticamente por nuevo día (${todayUtc} UTC • ${reason}).`);
+        } catch (e) {
+            console.error('⚠️ [CONSULTAS AI] Error en auto-actualización diaria del panel de tokens:', e.message);
+        }
+    };
+
+    const scheduleNextDailyTokensReset = () => {
+        const now = new Date();
+        // 00:00:05 UTC del día siguiente (5s de margen para asegurar cambio de fecha UTC limpio)
+        const nextMidnightUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 5));
+        const msUntilReset = Math.max(5000, nextMidnightUtc.getTime() - now.getTime());
+
+        setTimeout(async () => {
+            await runDailyTokensPanelReset('Cambio de día automático');
+            scheduleNextDailyTokensReset();
+        }, msUntilReset);
+    };
+
+    // Comprobar una vez al arrancar por si el reinicio ocurrió mientras el bot estaba reiniciando + programar 00:00:05 UTC
+    const startDailyResetScheduler = () => {
+        setTimeout(() => runDailyTokensPanelReset('Verificación al arrancar'), 8000);
+        scheduleNextDailyTokensReset();
+    };
+    if (client.isReady()) {
+        startDailyResetScheduler();
+    } else {
+        client.once('ready', startDailyResetScheduler);
+    }
 
     // Permite actualizar los canales en tiempo real cuando se usa !setcanal sin reiniciar el bot
     client.updateConsultasChannel = (key, channelId) => {
