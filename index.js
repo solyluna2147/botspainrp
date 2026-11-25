@@ -4197,7 +4197,8 @@ async function syncGuildPlantillasFromMongo(guildId) {
 
         // Si existe assets/<Servidor>/plantillas.json, asegurar que sus plantillas estén sincronizadas en su DB
         const localSeed = readGuildLocalPlantillasFile(guildId);
-        if (localSeed && localSeed.plantillas && docs.length === 0) {
+        if (localSeed && localSeed.plantillas && (docs.length === 0 || localSeed.syncOnBoot)) {
+            const seedKeys = Object.keys(localSeed.plantillas);
             let idx = 0;
             for (const [k, p] of Object.entries(localSeed.plantillas)) {
                 if (!p || !p.contenido) continue;
@@ -4214,6 +4215,9 @@ async function syncGuildPlantillasFromMongo(guildId) {
                     { upsert: true }
                 ).catch(() => {});
                 idx++;
+            }
+            if (localSeed.syncOnBoot && seedKeys.length > 0) {
+                await Model.deleteMany({ key: { $nin: seedKeys } }).catch(() => {});
             }
             docs = await Model.find({}).sort({ order: 1, createdAt: 1 }).lean();
         }
@@ -4521,7 +4525,7 @@ function buildSubmittedPostulacionEmbed({ member, text, attachments = [], guildI
     const isHeaderLine = (rawLine) => {
         const norm = cleanAlpha(rawLine);
         if (!norm) return false;
-        return /^(?:DATOS\s*OOC|DATOS\s*IC|INFORMACION\s*PERSONAL|EXPERIENCIA|POSTULACION|DISPONIBILIDAD|SITUACIONES\s*HIPOTETICAS|SITUACIONES\s*DE\s*ROL|SITUACIONES|ESTADISTICAS|INFORMACION\s*DE\s*CREADOR|INFORMACION\s*DE\s*LA\s*BANDA|SOBRE\s*EL\s*SERVIDOR|COMPROMISO|NEGOCIO|IC|OOC|NORMATIVA|REQUISITOS|HISTORIA|OBSERVACIONES)/i.test(norm) && norm.length < 65;
+        return /^(?:DATOS\s*OOC|DATOS\s*IC|INFORMACION\s*PERSONAL|INFORMACION\s*DEL?\s*(?:NEGOCIO|LA\s*ORGANIZACION|ORGANIZACION|LA\s*BANDA|CREADOR)|EXPERIENCIA|POSTULACION|DISPONIBILIDAD|SITUACIONES\s*HIPOTETICAS|SITUACIONES\s*DE\s*ROL|SITUACIONES|ESTADISTICAS|SOBRE\s*(?:EL\s*SERVIDOR|VILACITY)|COMPROMISO|NEGOCIO|IC|OOC|NORMATIVA|REQUISITOS|HISTORIA|OBSERVACIONES)/i.test(norm) && norm.length < 75;
     };
 
     // Limpiar y formatear encabezados como en el sistema de eventos: EMOJI **| TÍTULO:**
