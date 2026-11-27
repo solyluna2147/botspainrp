@@ -1211,7 +1211,7 @@ function initTxAdminModule(client, app) {
                                     `${answer.slice(0, 3400)}`
                             })],
                             components: [new ActionRowBuilder().addComponents(
-                                new ButtonBuilder().setCustomId('btn_tx_quick_ai').setLabel('Otra Consulta IA').setStyle(ButtonStyle.Primary).setEmoji('🤖'),
+                                new ButtonBuilder().setCustomId('btn_tx_quick_ai').setLabel('Consulta con AI').setStyle(ButtonStyle.Primary).setEmoji('🤖'),
                                 new ButtonBuilder().setCustomId('tx_nav_actions').setLabel('Moderar').setStyle(ButtonStyle.Secondary).setEmoji('⚡'),
                                 new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
                             )]

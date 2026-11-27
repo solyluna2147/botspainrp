@@ -190,7 +190,7 @@ function buildMainPanelPayload(guild, bridgeStatus, { includeFiles = true } = {}
                 emoji: '🔑'
             },
             {
-                label: 'Preguntar a la IA',
+                label: 'Consulta con AI',
                 description: 'Pregunta en lenguaje normal o pide acciones rápidas',
                 value: 'ai',
                 emoji: '🤖'
@@ -241,7 +241,7 @@ function buildMainPanelPayload(guild, bridgeStatus, { includeFiles = true } = {}
             .setEmoji('🔑'),
         new ButtonBuilder()
             .setCustomId('btn_tx_quick_ai')
-            .setLabel('Preguntar IA')
+            .setLabel('Consulta con AI')
             .setStyle(ButtonStyle.Primary)
             .setEmoji('🤖'),
         new ButtonBuilder()
@@ -321,7 +321,7 @@ function buildOwnerPermanentPanelPayload(guild, bridgeStatus, { includeFiles = t
                 emoji: '🔑'
             },
             {
-                label: 'Preguntar a la IA (Total)',
+                label: 'Consulta con AI (Total)',
                 description: 'Consulta datos en vivo o solicita cualquier acción',
                 value: 'ai',
                 emoji: '🤖'
@@ -391,7 +391,7 @@ function buildOwnerPermanentPanelPayload(guild, bridgeStatus, { includeFiles = t
     const btnRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('btn_tx_quick_ai')
-            .setLabel('Preguntar IA')
+            .setLabel('Consulta con AI')
             .setStyle(ButtonStyle.Primary)
             .setEmoji('🤖'),
         new ButtonBuilder()
@@ -455,7 +455,7 @@ function buildEphemeralHubPayload(guild, bridgeStatus, userSession, isOwner) {
         .setTimestamp();
 
     const options = [
-        { label: 'Preguntar a la IA', description: 'Consulta en lenguaje normal o pide acciones', value: 'ai', emoji: '🤖' },
+        { label: 'Consulta con AI', description: 'Consulta en lenguaje normal o pide acciones', value: 'ai', emoji: '🤖' },
         { label: 'Conectados y Staffs', description: 'Ver quién está online y qué Staffs hay dentro', value: 'players', emoji: '👥' },
         { label: 'Buscar Jugador', description: 'Ficha, Discord, horas jugadas y sanciones', value: 'search_player', emoji: '🔎' },
         { label: 'Bans y Warns', description: 'Historial completo con filtros y páginas', value: 'sanctions', emoji: '⚖️' },
@@ -1153,9 +1153,14 @@ function buildActionResultPayload(guild, { ok, bridgeAction, txUsername, message
     }
     buttons.push(
         new ButtonBuilder()
+            .setCustomId('btn_tx_quick_ai')
+            .setLabel('Consulta con AI')
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji('🤖'),
+        new ButtonBuilder()
             .setCustomId('tx_nav_actions')
             .setLabel('Otras Acciones')
-            .setStyle(ButtonStyle.Primary)
+            .setStyle(ButtonStyle.Secondary)
             .setEmoji('⚡'),
         new ButtonBuilder()
             .setCustomId('tx_nav_hub')
@@ -1293,12 +1298,12 @@ function buildLoginModal() {
 function buildAiQueryModal() {
     const modal = new ModalBuilder()
         .setCustomId('modal_tx_ai_query')
-        .setTitle('🧠 Asistente IA de txAdmin');
+        .setTitle('🤖 Asistente IA de txAdmin');
 
     const qIn = new TextInputBuilder()
         .setCustomId('tx_ai_prompt')
-        .setLabel('¿Qué quieres consultar o pedir en txAdmin?')
-        .setPlaceholder('Ej: Busca baneos de esta semana / Antecedentes de Hugoo / Analiza últimos errores')
+        .setLabel('¿Qué quieres consultar o hacer en txAdmin?')
+        .setPlaceholder('Ej: Warns del ID 2 / Quita el warn WJNH-UM8Y / Pon anuncio: reinicio en 5 min')
         .setStyle(TextInputStyle.Paragraph)
         .setRequired(true)
         .setMinLength(3)
@@ -1314,8 +1319,8 @@ function buildSearchPlayerModal() {
 
     const qIn = new TextInputBuilder()
         .setCustomId('tx_player_query')
-        .setLabel('Nombre, License, Discord ID o Server ID')
-        .setPlaceholder('Ej: Hugoo / license:abc123 / discord:418558... / 14')
+        .setLabel('ID conectado, Discord ID o Nombre')
+        .setPlaceholder('Ej: 2 / 418558256840179722 / EL JONNY')
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
         .setMinLength(1)
@@ -1332,10 +1337,10 @@ function buildActionModal(actionKey) {
     if (actionKey === 'tx_ban') {
         modal.addComponents(
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId('target').setLabel('ID conectado o Identificador (license/dc)').setStyle(TextInputStyle.Short).setRequired(true)
+                new TextInputBuilder().setCustomId('target').setLabel('ID conectado, Discord ID o Nombre').setPlaceholder('Ej: 2 / 418558256840179722 / EL JONNY').setStyle(TextInputStyle.Short).setRequired(true)
             ),
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId('duration').setLabel('Duración (permanent, 2h, 1d, 7d, 30d)').setValue('permanent').setStyle(TextInputStyle.Short).setRequired(true)
+                new TextInputBuilder().setCustomId('duration').setLabel('Duración (permanent, 2h, 1d, 7d, 1mes)').setValue('permanent').setStyle(TextInputStyle.Short).setRequired(true)
             ),
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder().setCustomId('reason').setLabel('Motivo del baneo').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(400)
@@ -1344,16 +1349,16 @@ function buildActionModal(actionKey) {
     } else if (actionKey === 'tx_revoke_action') {
         modal.addComponents(
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId('actionId').setLabel('Action ID exacto de txAdmin (ej: A1B2-C3D4)').setStyle(TextInputStyle.Short).setRequired(true)
+                new TextInputBuilder().setCustomId('actionId').setLabel('Action ID, ID conectado, Discord o Nombre').setPlaceholder('Ej: WJNH-UM8Y / 2 / 418558256840179722 / EL JONNY').setStyle(TextInputStyle.Short).setRequired(true)
             ),
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId('reason').setLabel('Motivo de la revocación (opcional)').setStyle(TextInputStyle.Paragraph).setRequired(false).setMaxLength(300)
+                new TextInputBuilder().setCustomId('reason').setLabel('Motivo (opcional)').setStyle(TextInputStyle.Paragraph).setRequired(false).setMaxLength(300)
             )
         );
     } else if (actionKey === 'tx_warn' || actionKey === 'tx_kick') {
         modal.addComponents(
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId('target').setLabel('ID conectado del jugador (Server ID)').setStyle(TextInputStyle.Short).setRequired(true)
+                new TextInputBuilder().setCustomId('target').setLabel('ID conectado, Discord ID o Nombre').setPlaceholder('Ej: 2 / 418558256840179722 / EL JONNY').setStyle(TextInputStyle.Short).setRequired(true)
             ),
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder().setCustomId('reason').setLabel('Motivo').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(400)
