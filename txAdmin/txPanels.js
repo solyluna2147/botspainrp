@@ -554,19 +554,19 @@ function buildOnlinePlayersPayload(guild, data, page = 0, filterMode = 'all') {
 
     const navRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId(`tx_pg_players_${Math.max(0, safePage - 1)}_${curMode}`)
+            .setCustomId(`tx_pg_players_${Math.max(0, safePage - 1)}_${curMode}_prev`)
             .setLabel('Anterior')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('⬅️')
             .setDisabled(safePage <= 0),
         new ButtonBuilder()
-            .setCustomId(`tx_pg_players_${Math.min(totalPages - 1, safePage + 1)}_${curMode}`)
+            .setCustomId(`tx_pg_players_${Math.min(totalPages - 1, safePage + 1)}_${curMode}_next`)
             .setLabel('Siguiente')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('➡️')
             .setDisabled(safePage >= totalPages - 1),
         new ButtonBuilder()
-            .setCustomId(`tx_pg_players_0_${nextMode}`)
+            .setCustomId(`tx_pg_players_0_${nextMode}_tog`)
             .setLabel(showingStaffOnly ? `Ver Todos (${totalCount})` : `Solo Staffs (${staffCount})`)
             .setStyle(showingStaffOnly ? ButtonStyle.Secondary : ButtonStyle.Success)
             .setEmoji(showingStaffOnly ? '👥' : '🛡️'),
@@ -647,7 +647,7 @@ function buildSanctionsPayload(guild, data, page = 0, filterKey = 'all') {
 
     const navRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId(`tx_pg_sanctions_${Math.max(0, safePage - 1)}_${filterKey}`)
+            .setCustomId(`tx_pg_sanctions_${Math.max(0, safePage - 1)}_${filterKey}_prev`)
             .setLabel('Anterior')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('⬅️')
@@ -658,7 +658,7 @@ function buildSanctionsPayload(guild, data, page = 0, filterKey = 'all') {
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(true),
         new ButtonBuilder()
-            .setCustomId(`tx_pg_sanctions_${Math.min(totalPages - 1, safePage + 1)}_${filterKey}`)
+            .setCustomId(`tx_pg_sanctions_${Math.min(totalPages - 1, safePage + 1)}_${filterKey}_next`)
             .setLabel('Siguiente')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('➡️')
@@ -772,7 +772,7 @@ function buildPlayerProfilePayload(guild, data, query, page = 0) {
     const safeQ = encodeURIComponent(query.slice(0, 40));
     const navRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId(`tx_pg_player_${Math.max(0, safePage - 1)}_${safeQ}`)
+            .setCustomId(`tx_pg_player_prev_${Math.max(0, safePage - 1)}_${safeQ}`)
             .setLabel('Anterior')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('⬅️')
@@ -783,7 +783,7 @@ function buildPlayerProfilePayload(guild, data, query, page = 0) {
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(true),
         new ButtonBuilder()
-            .setCustomId(`tx_pg_player_${Math.min(totalPages - 1, safePage + 1)}_${safeQ}`)
+            .setCustomId(`tx_pg_player_next_${Math.min(totalPages - 1, safePage + 1)}_${safeQ}`)
             .setLabel('Siguiente')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('➡️')
@@ -832,10 +832,10 @@ function buildStaffActivityPayload(guild, data, page = 0, viewMode = 'ranking') 
             embeds: [embed],
             components: [
                 new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId(`tx_pg_staff_${Math.max(0, safePage - 1)}_adminlog`).setLabel('Anterior').setStyle(ButtonStyle.Secondary).setEmoji('⬅️').setDisabled(safePage <= 0),
+                    new ButtonBuilder().setCustomId(`tx_pg_staff_${Math.max(0, safePage - 1)}_adminlog_prev`).setLabel('Anterior').setStyle(ButtonStyle.Secondary).setEmoji('⬅️').setDisabled(safePage <= 0),
                     new ButtonBuilder().setCustomId('tx_pg_info_disabled').setLabel(`Pág. ${safePage + 1} / ${totalPages}`).setStyle(ButtonStyle.Secondary).setDisabled(true),
-                    new ButtonBuilder().setCustomId(`tx_pg_staff_${Math.min(totalPages - 1, safePage + 1)}_adminlog`).setLabel('Siguiente').setStyle(ButtonStyle.Secondary).setEmoji('➡️').setDisabled(safePage >= totalPages - 1),
-                    new ButtonBuilder().setCustomId('tx_pg_staff_0_ranking').setLabel('Ver Ranking').setStyle(ButtonStyle.Primary).setEmoji('🏆'),
+                    new ButtonBuilder().setCustomId(`tx_pg_staff_${Math.min(totalPages - 1, safePage + 1)}_adminlog_next`).setLabel('Siguiente').setStyle(ButtonStyle.Secondary).setEmoji('➡️').setDisabled(safePage >= totalPages - 1),
+                    new ButtonBuilder().setCustomId('tx_pg_staff_0_ranking_tab').setLabel('Ver Ranking').setStyle(ButtonStyle.Primary).setEmoji('🏆'),
                     new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Danger).setEmoji('↩️')
                 )
             ]
@@ -872,10 +872,10 @@ function buildStaffActivityPayload(guild, data, page = 0, viewMode = 'ranking') 
         embeds: [embed],
         components: [
             new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`tx_pg_staff_${Math.max(0, safePage - 1)}_ranking`).setLabel('Anterior').setStyle(ButtonStyle.Secondary).setEmoji('⬅️').setDisabled(safePage <= 0),
+                new ButtonBuilder().setCustomId(`tx_pg_staff_${Math.max(0, safePage - 1)}_ranking_prev`).setLabel('Anterior').setStyle(ButtonStyle.Secondary).setEmoji('⬅️').setDisabled(safePage <= 0),
                 new ButtonBuilder().setCustomId('tx_pg_info_disabled').setLabel(`Pág. ${safePage + 1} / ${totalPages}`).setStyle(ButtonStyle.Secondary).setDisabled(true),
-                new ButtonBuilder().setCustomId(`tx_pg_staff_${Math.min(totalPages - 1, safePage + 1)}_ranking`).setLabel('Siguiente').setStyle(ButtonStyle.Secondary).setEmoji('➡️').setDisabled(safePage >= totalPages - 1),
-                new ButtonBuilder().setCustomId('tx_pg_staff_0_adminlog').setLabel('Ver Registros').setStyle(ButtonStyle.Primary).setEmoji('📜'),
+                new ButtonBuilder().setCustomId(`tx_pg_staff_${Math.min(totalPages - 1, safePage + 1)}_ranking_next`).setLabel('Siguiente').setStyle(ButtonStyle.Secondary).setEmoji('➡️').setDisabled(safePage >= totalPages - 1),
+                new ButtonBuilder().setCustomId('tx_pg_staff_0_adminlog_tab').setLabel('Ver Registros').setStyle(ButtonStyle.Primary).setEmoji('📜'),
                 new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Danger).setEmoji('↩️')
             )
         ]
@@ -950,9 +950,9 @@ function buildServerAndResourcesPayload(guild, data, page = 0, tab = 'overview')
             embeds: [embed],
             components: [
                 new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId(`tx_pg_srv_${Math.max(0, safePage - 1)}_console_errors`).setLabel('Anterior').setStyle(ButtonStyle.Secondary).setEmoji('⬅️').setDisabled(safePage <= 0),
+                    new ButtonBuilder().setCustomId(`tx_pg_srv_${Math.max(0, safePage - 1)}_console_errors_prev`).setLabel('Anterior').setStyle(ButtonStyle.Secondary).setEmoji('⬅️').setDisabled(safePage <= 0),
                     new ButtonBuilder().setCustomId('tx_pg_info_disabled').setLabel(`Pág. ${safePage + 1} / ${totalPages}`).setStyle(ButtonStyle.Secondary).setDisabled(true),
-                    new ButtonBuilder().setCustomId(`tx_pg_srv_${Math.min(totalPages - 1, safePage + 1)}_console_errors`).setLabel('Siguiente').setStyle(ButtonStyle.Secondary).setEmoji('➡️').setDisabled(safePage >= totalPages - 1),
+                    new ButtonBuilder().setCustomId(`tx_pg_srv_${Math.min(totalPages - 1, safePage + 1)}_console_errors_next`).setLabel('Siguiente').setStyle(ButtonStyle.Secondary).setEmoji('➡️').setDisabled(safePage >= totalPages - 1),
                     new ButtonBuilder().setCustomId(`tx_pg_srv_${safePage}_console_errors_ref`).setLabel('Actualizar').setStyle(ButtonStyle.Primary).setEmoji('🔄'),
                     new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Danger).setEmoji('↩️')
                 ),
@@ -994,9 +994,9 @@ function buildServerAndResourcesPayload(guild, data, page = 0, tab = 'overview')
         embeds: [embed],
         components: [
             new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`tx_pg_srv_${Math.max(0, safePage - 1)}_${tab}`).setLabel('Anterior').setStyle(ButtonStyle.Secondary).setEmoji('⬅️').setDisabled(safePage <= 0),
+                new ButtonBuilder().setCustomId(`tx_pg_srv_${Math.max(0, safePage - 1)}_${tab}_prev`).setLabel('Anterior').setStyle(ButtonStyle.Secondary).setEmoji('⬅️').setDisabled(safePage <= 0),
                 new ButtonBuilder().setCustomId('tx_pg_info_disabled').setLabel(`Pág. ${safePage + 1} / ${totalPages}`).setStyle(ButtonStyle.Secondary).setDisabled(true),
-                new ButtonBuilder().setCustomId(`tx_pg_srv_${Math.min(totalPages - 1, safePage + 1)}_${tab}`).setLabel('Siguiente').setStyle(ButtonStyle.Secondary).setEmoji('➡️').setDisabled(safePage >= totalPages - 1),
+                new ButtonBuilder().setCustomId(`tx_pg_srv_${Math.min(totalPages - 1, safePage + 1)}_${tab}_next`).setLabel('Siguiente').setStyle(ButtonStyle.Secondary).setEmoji('➡️').setDisabled(safePage >= totalPages - 1),
                 new ButtonBuilder().setCustomId(`tx_pg_srv_${safePage}_${tab}_ref`).setLabel('Actualizar').setStyle(ButtonStyle.Primary).setEmoji('🔄'),
                 new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Danger).setEmoji('↩️')
             ),

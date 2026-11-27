@@ -451,13 +451,14 @@ function initTxAdminModule(client, app) {
 
         const respond = async (rawPayload) => {
             const payload = decorateForDemo(rawPayload, isDemo);
+            const logErr = (e) => console.error('⚠️ [TXADMIN respond Error]:', e?.message || e);
             let res;
             if (isFreshReply) {
-                if (interaction.deferred || interaction.replied) res = await interaction.editReply(payload).catch(() => {});
-                else res = await interaction.reply({ ...payload, ephemeral: true }).catch(() => {});
+                if (interaction.deferred || interaction.replied) res = await interaction.editReply(payload).catch(logErr);
+                else res = await interaction.reply({ ...payload, ephemeral: true }).catch(logErr);
             } else {
-                if (interaction.deferred || interaction.replied) res = await interaction.editReply(payload).catch(() => {});
-                else res = await interaction.update(payload).catch(() => {});
+                if (interaction.deferred || interaction.replied) res = await interaction.editReply(payload).catch(logErr);
+                else res = await interaction.update(payload).catch(logErr);
             }
             scheduleAutoDelete(interaction);
             return res;
@@ -841,7 +842,7 @@ function initTxAdminModule(client, app) {
                 }
 
                 if (cid.startsWith('tx_pg_players_')) {
-                    const clean = cid.replace(/_ref$/, '');
+                    const clean = cid.replace(/_(prev|next|ref|tog)$/, '');
                     const parts = clean.split('_');
                     const page = parseInt(parts[3], 10) || 0;
                     const mode = parts[4] === 'staff' ? 'staff' : 'all';
@@ -849,14 +850,14 @@ function initTxAdminModule(client, app) {
                 }
 
                 if (cid.startsWith('tx_pg_sanctions_')) {
-                    const parts = cid.replace(/_ref$/, '').split('_');
+                    const parts = cid.replace(/_(prev|next|ref)$/, '').split('_');
                     const page = parseInt(parts[3], 10) || 0;
                     const filterKey = parts.slice(4).join('_') || 'all';
                     return renderSection(interaction, 'sanctions', { isFreshReply: false, page, filter: filterKey, isDemo });
                 }
 
                 if (cid.startsWith('tx_pg_player_')) {
-                    const rest = cid.slice('tx_pg_player_'.length);
+                    const rest = cid.slice('tx_pg_player_'.length).replace(/^(prev|next)_/, '');
                     const sep = rest.indexOf('_');
                     const page = parseInt(rest.slice(0, sep), 10) || 0;
                     const query = decodeURIComponent(rest.slice(sep + 1));
@@ -866,7 +867,8 @@ function initTxAdminModule(client, app) {
                         await interaction.editReply(decorateForDemo(
                             panels.buildPlayerProfilePayload(interaction.guild, data, query, page),
                             isDemo
-                        )).catch(() => {});
+                        )).catch(e => console.error('⚠️ [TXADMIN player pg Error]:', e?.message));
+                        scheduleAutoDelete(interaction);
                     } catch (err) {
                         await interaction.editReply({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, { title: '⚠️┃Error', description: err.message, color: 0xF39C12 })]
@@ -876,14 +878,14 @@ function initTxAdminModule(client, app) {
                 }
 
                 if (cid.startsWith('tx_pg_staff_')) {
-                    const parts = cid.split('_');
+                    const parts = cid.replace(/_(prev|next|tab)$/, '').split('_');
                     const page = parseInt(parts[3], 10) || 0;
                     const mode = parts[4] || 'ranking';
                     return renderSection(interaction, 'staff_activity', { isFreshReply: false, page, filter: mode, isDemo });
                 }
 
                 if (cid.startsWith('tx_pg_srv_')) {
-                    const clean = cid.replace(/_ref$/, '');
+                    const clean = cid.replace(/_(prev|next|ref)$/, '');
                     const parts = clean.split('_');
                     const page = parseInt(parts[3], 10) || 0;
                     const tab = parts.slice(4).join('_') || 'overview';
