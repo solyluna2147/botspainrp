@@ -342,7 +342,8 @@ async function callAiWithTools(messages, tools) {
  * Ejecuta una consulta en lenguaje natural sobre txAdmin usando Tool Calling real.
  * Devuelve { answer, proposedAction } donde proposedAction (si existe) requiere confirmación humana.
  */
-async function runTxAiQuery({ guildId, userId, userTag, promptText, hasLinkedSession }) {
+async function runTxAiQuery({ guildId, userId, userTag, promptText, hasLinkedSession, dispatchFn = null }) {
+    const execBridge = typeof dispatchFn === 'function' ? dispatchFn : dispatchToBridge;
     const gVis = guildManager.resolveGuildVisuals(guildId);
     const serverName = gVis.name || 'SERVIDOR RP';
 
@@ -410,9 +411,9 @@ async function runTxAiQuery({ guildId, userId, userTag, promptText, hasLinkedSes
                 continue;
             }
 
-            // Herramienta de solo lectura: ejecutar contra el puente real del servidor
+            // Herramienta de solo lectura: ejecutar contra el puente real del servidor (o sandbox en modo test)
             try {
-                const toolData = await dispatchToBridge(guildId, `read_${fnName}`, fnArgs, 20000);
+                const toolData = await execBridge(guildId, `read_${fnName}`, fnArgs, 20000);
                 // Limitar tamaño de JSON para mantener contexto rápido y eficiente en tokens
                 let serialized = JSON.stringify(toolData);
                 if (serialized.length > 9000) {

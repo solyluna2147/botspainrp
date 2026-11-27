@@ -2,7 +2,10 @@
 // MÓDULO INDEPENDIENTE: CENTRO DE CONTROL INTERACTIVO TXADMIN + IA
 // ============================================================================
 // Comandos disponibles:
-//   - !panel-tx / !panel-txadmin : Publica el panel interactivo permanente en el canal Staff
+//   - !panel-txadmin             : Publica el panel interactivo permanente para Staff
+//   - !panel-txowner             : (Solo Creador) Publica el panel maestro permanente del Creador
+//   - !panel-txadmintest         : (Solo Creador) Panel de TESTEO Staff con datos simulados en vivo
+//   - !panel-txownertest         : (Solo Creador) Panel de TESTEO Creador con datos simulados en vivo
 //   - !tx-setup                  : (Solo Creador) Genera/muestra token del puente y plantilla .env
 //   - !tx-logs [#canal | off]    : Configura el canal de auditoría de acciones txAdmin
 
@@ -12,11 +15,12 @@ const guildManager = require('../guildManager');
 const bridgeHub = require('./bridgeHub');
 const txAiEngine = require('./txAiEngine');
 const panels = require('./txPanels');
+const demoSandbox = require('./txDemoSandbox');
 
 const PRIMARY_STAFF_ROLE_ID = '1538191116610838691';
 const OWNER_IDS = new Set(['418558256840179722', '1308814761269395527']);
 
-// Confirmaciones humanas pendientes (confirmId -> { guildId, userId, userTag, bridgeAction, params, txUsername, expiresAt })
+// Confirmaciones humanas pendientes (confirmId -> { guildId, userId, userTag, bridgeAction, params, txUsername, isDemo, expiresAt })
 const pendingConfirmations = new Map();
 
 function isBotOwner(userId) {
@@ -38,7 +42,7 @@ function getUserSessionFromStatus(bridgeStatus, userId) {
     return (bridgeStatus.sessions || []).find(s => String(s.discordUserId) === String(userId)) || null;
 }
 
-function createPendingConfirmation({ guildId, userId, userTag, bridgeAction, params, txUsername }) {
+function createPendingConfirmation({ guildId, userId, userTag, bridgeAction, params, txUsername, isDemo = false }) {
     const confirmId = crypto.randomBytes(6).toString('hex');
     pendingConfirmations.set(confirmId, {
         guildId: String(guildId),
@@ -47,13 +51,55 @@ function createPendingConfirmation({ guildId, userId, userTag, bridgeAction, par
         bridgeAction,
         params,
         txUsername,
+        isDemo: Boolean(isDemo),
         expiresAt: Date.now() + 60000
     });
     setTimeout(() => pendingConfirmations.delete(confirmId), 65000);
     return confirmId;
 }
 
-async function sendTxAuditLog(client, guild, { actorUser, txUsername, actionKey, params, ok, resultMsg }) {
+// Prefija todos los customId con "demo_" cuando estamos dentro de !panel-txadmintest / !panel-txownertest
+function decorateForDemo(payload, isDemo) {
+    if (!isDemo || !payload) return payload;
+    if (Array.isArray(payload.components)) {
+        for (const row of payload.components) {
+            if (!row || !Array.isArray(row.components)) continue;
+            for (const comp of row.components) {
+                const curId = comp?.data?.custom_id;
+                if (curId && !curId.startsWith('demo_') && typeof comp.setCustomId === 'function') {
+                    comp.setCustomId(`demo_${curId}`.slice(0, 100));
+                }
+            }
+        }
+    }
+    if (Array.isArray(payload.embeds) && payload.embeds[0]?.data) {
+        const first = payload.embeds[0];
+        const fText = first.data.footer?.text || '';
+        if (!fText.includes('MODO TEST')) {
+            first.setFooter({
+                text: `🧪 MODO TEST • ${fText || 'Sandbox txAdmin'}`,
+                ...(first.data.footer?.icon_url ? { iconURL: first.data.footer.icon_url } : {})
+            });
+        }
+    }
+    return payload;
+}
+
+function decorateModalForDemo(modal, isDemo) {
+    if (!isDemo || !modal) return modal;
+    const curId = modal?.data?.custom_id;
+    if (curId && !curId.startsWith('demo_') && typeof modal.setCustomId === 'function') {
+        modal.setCustomId(`demo_${curId}`);
+    }
+    const curTitle = modal?.data?.title || '';
+    if (!curTitle.includes('[TEST]') && typeof modal.setTitle === 'function') {
+        modal.setTitle(`🧪 ${curTitle}`.slice(0, 45));
+    }
+    return modal;
+}
+
+async function sendTxAuditLog(client, guild, { actorUser, txUsername, actionKey, params, ok, resultMsg, isDemo = false }) {
+    if (isDemo) return; // En modo test no contaminar el canal real de auditoría
     try {
         const gId = guild?.id;
         const gCfg = guildManager.getGuildConfig(gId) || {};
@@ -92,7 +138,6 @@ async function sendTxAuditLog(client, guild, { actorUser, txUsername, actionKey,
 function initTxAdminModule(client, app) {
     // 1. Montar los endpoints seguros del puente Reverse-RPC en Express
     bridgeHub.mountBridgeRoutes(app, async (guildId, event) => {
-        // Eventos opcionales enviados desde el recurso Lua (ej: reinicio programado)
         if (!event || !event.type) return;
         const guild = client.guilds.cache.get(String(guildId));
         if (!guild) return;
@@ -108,7 +153,7 @@ function initTxAdminModule(client, app) {
         await ch.send({ embeds: [embed] }).catch(() => {});
     });
 
-    // 2. Comandos de configuración y publicación del panel permanente
+    // 2. Comandos de configuración y publicación de paneles
     client.on('messageCreate', async (message) => {
         try {
             if (!message.guild || message.author.bot) return;
@@ -116,7 +161,7 @@ function initTxAdminModule(client, app) {
             const lower = raw.toLowerCase();
             const gId = message.guild.id;
 
-            // !panel-txadmin (Panel permanente para Staff)
+            // !panel-txadmin (Panel real permanente para Staff)
             if (['!panel-txadmin', '!panel-tx', '!paneltx', '!txpanel'].includes(lower)) {
                 if (!isMemberStaff(message.member)) return;
                 await message.delete().catch(() => {});
@@ -126,13 +171,49 @@ function initTxAdminModule(client, app) {
                 return;
             }
 
-            // !panel-txowner (Panel permanente exclusivo del Creador)
+            // !panel-txowner (Panel real permanente exclusivo del Creador)
             if (['!panel-txowner', '!paneltxowner', '!panel-tx-owner'].includes(lower)) {
                 if (!isBotOwner(message.author.id)) return;
                 await message.delete().catch(() => {});
                 const status = bridgeHub.getBridgeStatus(gId);
                 const payload = panels.buildOwnerPermanentPanelPayload(message.guild, status);
                 await message.channel.send(payload).catch(e => console.error('⚠️ [TXADMIN] Error enviando panel owner:', e.message));
+                return;
+            }
+
+            // !panel-txadmintest (Panel de TESTEO Staff con datos simulados y tú ya registrado)
+            if (['!panel-txadmintest', '!paneltxadmintest', '!panel-txtest'].includes(lower)) {
+                if (!isBotOwner(message.author.id)) return;
+                await message.delete().catch(() => {});
+                const demoStatus = demoSandbox.getDemoBridgeStatus(gId, message.author);
+                const payload = decorateForDemo(panels.buildMainPanelPayload(message.guild, demoStatus), true);
+                await message.channel.send(payload).catch(e => console.error('⚠️ [TXADMIN] Error enviando panel staff test:', e.message));
+                return;
+            }
+
+            // !panel-txownertest (Panel de TESTEO Creador con sesiones y admins simulados)
+            if (['!panel-txownertest', '!paneltxownertest'].includes(lower)) {
+                if (!isBotOwner(message.author.id)) return;
+                await message.delete().catch(() => {});
+                const demoStatus = demoSandbox.getDemoBridgeStatus(gId, message.author);
+                const payload = decorateForDemo(panels.buildOwnerPermanentPanelPayload(message.guild, demoStatus), true);
+                await message.channel.send(payload).catch(e => console.error('⚠️ [TXADMIN] Error enviando panel owner test:', e.message));
+                return;
+            }
+
+            // !tx-resettest (Reinicia los datos simulados del sandbox)
+            if (lower === '!tx-resettest') {
+                if (!isBotOwner(message.author.id)) return;
+                await message.delete().catch(() => {});
+                demoSandbox.resetDemoState(gId, message.author);
+                const ok = await message.channel.send({
+                    embeds: [panels.buildNoticeEmbed(message.guild, {
+                        title: '🧪┃Datos de Testeo Reiniciados',
+                        description: 'Se han restaurado las sesiones, jugadores, sanciones y recursos de prueba.',
+                        color: 0x2ECC71
+                    })]
+                }).catch(() => null);
+                if (ok) setTimeout(() => ok.delete().catch(() => {}), 5000);
                 return;
             }
 
@@ -164,7 +245,7 @@ function initTxAdminModule(client, app) {
                 return;
             }
 
-            // !tx-setup (Exclusivo Creador — genera el token secreto de este servidor y lo envía por DM)
+            // !tx-setup (Exclusivo Creador)
             if (lower === '!tx-setup' || lower === '!tx-setup regenerar') {
                 if (!isBotOwner(message.author.id)) return;
                 await message.delete().catch(() => {});
@@ -264,14 +345,22 @@ function initTxAdminModule(client, app) {
         } catch (_) {}
     });
 
-    // Helper interno para renderizar vistas con actualización limpia (reply vs update/editReply)
-    async function renderSection(interaction, section, { isFreshReply = false, page = 0, filter = null } = {}) {
+    // Helper unificado para renderizar secciones (funciona igual en modo REAL y modo TEST)
+    async function renderSection(interaction, section, { isFreshReply = false, page = 0, filter = null, isDemo = false } = {}) {
         const gId = interaction.guild?.id;
-        const status = bridgeHub.getBridgeStatus(gId);
+        const getStatus = () => isDemo
+            ? demoSandbox.getDemoBridgeStatus(gId, interaction.user)
+            : bridgeHub.getBridgeStatus(gId);
+        const dispatch = (action, payload = {}, timeoutMs = 15000) => isDemo
+            ? demoSandbox.dispatchDemoAction(gId, action, payload, interaction.user)
+            : bridgeHub.dispatchToBridge(gId, action, payload, timeoutMs);
+
+        const status = getStatus();
         const userSession = getUserSessionFromStatus(status, interaction.user.id);
         const owner = isBotOwner(interaction.user.id);
 
-        const respond = async (payload) => {
+        const respond = async (rawPayload) => {
+            const payload = decorateForDemo(rawPayload, isDemo);
             if (isFreshReply) {
                 if (interaction.deferred || interaction.replied) return interaction.editReply(payload).catch(() => {});
                 return interaction.reply({ ...payload, ephemeral: true }).catch(() => {});
@@ -280,10 +369,10 @@ function initTxAdminModule(client, app) {
             return interaction.update(payload).catch(() => {});
         };
 
-        // Modales directos (no admiten defer previo)
-        if (section === 'login') return interaction.showModal(panels.buildLoginModal());
-        if (section === 'ai') return interaction.showModal(panels.buildAiQueryModal());
-        if (section === 'search_player') return interaction.showModal(panels.buildSearchPlayerModal());
+        // Modales directos
+        if (section === 'login') return interaction.showModal(decorateModalForDemo(panels.buildLoginModal(), isDemo));
+        if (section === 'ai') return interaction.showModal(decorateModalForDemo(panels.buildAiQueryModal(), isDemo));
+        if (section === 'search_player') return interaction.showModal(decorateModalForDemo(panels.buildSearchPlayerModal(), isDemo));
 
         if (section === 'hub') {
             return respond(panels.buildEphemeralHubPayload(interaction.guild, status, userSession, owner));
@@ -309,21 +398,20 @@ function initTxAdminModule(client, app) {
                 else await interaction.deferUpdate().catch(() => {});
                 let admins = [];
                 try {
-                    const res = await bridgeHub.dispatchToBridge(gId, 'read_list_tx_admins', {}, 15000);
+                    const res = await dispatch('read_list_tx_admins', {});
                     admins = res?.admins || [];
                 } catch (_) {}
-                return respond(panels.buildOwnerMasterPayload(interaction.guild, bridgeHub.getBridgeStatus(gId), admins, true));
+                return respond(panels.buildOwnerMasterPayload(interaction.guild, getStatus(), admins, true));
             }
             return respond(panels.buildOwnerMasterPayload(interaction.guild, status, [], false));
         }
 
-        // Las siguientes secciones consultan datos reales del puente -> defer inmediato para no caducar los 3s de Discord
         if (isFreshReply) await interaction.deferReply({ ephemeral: true }).catch(() => {});
         else await interaction.deferUpdate().catch(() => {});
 
         try {
             if (section === 'players') {
-                const data = await bridgeHub.dispatchToBridge(gId, 'read_list_online_players', {}, 15000);
+                const data = await dispatch('read_list_online_players', {});
                 return respond(panels.buildOnlinePlayersPayload(interaction.guild, data, page));
             }
 
@@ -337,13 +425,13 @@ function initTxAdminModule(client, app) {
                 else if (filterKey === 'week') { queryArgs.type = 'all'; queryArgs.status = 'all'; queryArgs.rangeDays = 7; }
                 else { queryArgs.type = 'all'; queryArgs.status = 'all'; }
 
-                const data = await bridgeHub.dispatchToBridge(gId, 'read_query_sanctions', queryArgs, 15000);
+                const data = await dispatch('read_query_sanctions', queryArgs);
                 return respond(panels.buildSanctionsPayload(interaction.guild, data, page, filterKey));
             }
 
             if (section === 'staff_activity') {
                 const viewMode = filter || 'ranking';
-                const data = await bridgeHub.dispatchToBridge(gId, 'read_get_staff_activity', { includeAdminLog: viewMode === 'adminlog' }, 15000);
+                const data = await dispatch('read_get_staff_activity', { includeAdminLog: viewMode === 'adminlog' });
                 return respond(panels.buildStaffActivityPayload(interaction.guild, data, page, viewMode));
             }
 
@@ -351,11 +439,11 @@ function initTxAdminModule(client, app) {
                 const tab = filter || 'overview';
                 let data = {};
                 if (tab === 'overview') {
-                    data.overview = await bridgeHub.dispatchToBridge(gId, 'read_get_server_overview', {}, 15000);
+                    data.overview = await dispatch('read_get_server_overview', {});
                 } else if (tab === 'console_errors') {
-                    data = await bridgeHub.dispatchToBridge(gId, 'read_get_console_errors', { lines: 60 }, 15000);
+                    data = await dispatch('read_get_console_errors', { lines: 60 });
                 } else {
-                    data = await bridgeHub.dispatchToBridge(gId, 'read_get_server_resources', { filter: tab === 'res_stopped' ? 'stopped' : 'all' }, 15000);
+                    data = await dispatch('read_get_server_resources', { filter: tab === 'res_stopped' ? 'stopped' : 'all' });
                 }
                 return respond(panels.buildServerAndResourcesPayload(interaction.guild, data, page, tab));
             }
@@ -373,10 +461,13 @@ function initTxAdminModule(client, app) {
         }
     }
 
-    // 4. Manejador unificado de interacciones (Select Menus, Botones, Modales)
+    // 4. Manejador unificado de interacciones (Producción + Sandbox Test)
     client.on('interactionCreate', async (interaction) => {
         try {
-            const cid = interaction.customId || '';
+            const rawCid = interaction.customId || '';
+            const isDemo = rawCid.startsWith('demo_');
+            const cid = isDemo ? rawCid.slice(5) : rawCid;
+
             const isOurInteraction =
                 cid.startsWith('select_tx_') ||
                 cid.startsWith('btn_tx_') ||
@@ -385,7 +476,6 @@ function initTxAdminModule(client, app) {
 
             if (!isOurInteraction) return;
 
-            // Verificar permisos de Staff en TODO el módulo txAdmin
             if (!isMemberStaff(interaction.member)) {
                 return interaction.reply({
                     embeds: [panels.buildNoticeEmbed(interaction.guild, {
@@ -398,6 +488,12 @@ function initTxAdminModule(client, app) {
             }
 
             const gId = interaction.guild?.id;
+            const getStatus = () => isDemo
+                ? demoSandbox.getDemoBridgeStatus(gId, interaction.user)
+                : bridgeHub.getBridgeStatus(gId);
+            const dispatch = (action, payload = {}, timeoutMs = 15000) => isDemo
+                ? demoSandbox.dispatchDemoAction(gId, action, payload, interaction.user)
+                : bridgeHub.dispatchToBridge(gId, action, payload, timeoutMs);
 
             // ------------------------------------------------------------
             // A. MENÚS DESPLEGABLES
@@ -405,29 +501,23 @@ function initTxAdminModule(client, app) {
             if (interaction.isStringSelectMenu()) {
                 const val = interaction.values[0];
 
-                // Menú del panel permanente del canal -> abre vista efímera privada
                 if (cid === 'select_tx_main_menu') {
-                    return renderSection(interaction, val, { isFreshReply: true });
+                    return renderSection(interaction, val, { isFreshReply: true, isDemo });
                 }
-
-                // Menú interno dentro de la consola efímera -> edita el mismo mensaje
                 if (cid === 'select_tx_ephemeral_nav') {
-                    return renderSection(interaction, val, { isFreshReply: false });
+                    return renderSection(interaction, val, { isFreshReply: false, isDemo });
                 }
-
                 if (cid === 'select_tx_sanctions_filter') {
-                    return renderSection(interaction, 'sanctions', { isFreshReply: false, page: 0, filter: val });
+                    return renderSection(interaction, 'sanctions', { isFreshReply: false, page: 0, filter: val, isDemo });
                 }
-
                 if (cid === 'select_tx_server_tab') {
-                    return renderSection(interaction, 'server_status', { isFreshReply: false, page: 0, filter: val });
+                    return renderSection(interaction, 'server_status', { isFreshReply: false, page: 0, filter: val, isDemo });
                 }
-
                 if (cid === 'select_tx_action_pick') {
-                    return interaction.showModal(panels.buildActionModal(val));
+                    return interaction.showModal(decorateModalForDemo(panels.buildActionModal(val), isDemo));
                 }
 
-                // Menú del Panel Permanente del Creador (!panel-txowner)
+                // Menú del Panel Permanente del Creador (!panel-txowner / !panel-txownertest)
                 if (cid === 'select_tx_owner_panel') {
                     if (!isBotOwner(interaction.user.id)) {
                         return interaction.reply({
@@ -441,19 +531,36 @@ function initTxAdminModule(client, app) {
                     }
 
                     if (val === 'manage_sessions') {
-                        return renderSection(interaction, 'owner_panel', { isFreshReply: true });
+                        return renderSection(interaction, 'owner_panel', { isFreshReply: true, isDemo });
                     }
                     if (val === 'view_admins') {
-                        return renderSection(interaction, 'owner_panel', { isFreshReply: true, filter: 'admins' });
+                        return renderSection(interaction, 'owner_panel', { isFreshReply: true, filter: 'admins', isDemo });
                     }
                     if (val === 'toggle_readonly') {
-                        const cur = Boolean((guildManager.getGuildConfig(gId) || {}).TX_READ_ONLY_MODE);
-                        await guildManager.setGuildConfigKey(gId, 'TX_READ_ONLY_MODE', !cur);
-                        const freshStatus = bridgeHub.getBridgeStatus(gId);
-                        await interaction.update(panels.buildOwnerPermanentPanelPayload(interaction.guild, freshStatus, { includeFiles: false })).catch(() => {});
+                        if (isDemo) {
+                            demoSandbox.toggleDemoReadOnly(gId);
+                        } else {
+                            const cur = Boolean((guildManager.getGuildConfig(gId) || {}).TX_READ_ONLY_MODE);
+                            await guildManager.setGuildConfigKey(gId, 'TX_READ_ONLY_MODE', !cur);
+                        }
+                        const freshStatus = getStatus();
+                        await interaction.update(decorateForDemo(
+                            panels.buildOwnerPermanentPanelPayload(interaction.guild, freshStatus, { includeFiles: false }),
+                            isDemo
+                        )).catch(() => {});
                         return;
                     }
                     if (val === 'send_env_dm') {
+                        if (isDemo) {
+                            return interaction.reply({
+                                embeds: [panels.buildNoticeEmbed(interaction.guild, {
+                                    title: '🧪┃Simulación de Envío de Credenciales',
+                                    description: 'En el panel real (`!panel-txowner`), esta opción genera/recupera tu `TX_BRIDGE_SECRET` real y te envía el bloque `.env` por Mensaje Directo.',
+                                    color: 0x2ECC71
+                                })],
+                                ephemeral: true
+                            }).catch(() => {});
+                        }
                         let secret = bridgeHub.getBridgeSecretForGuild(gId);
                         if (!secret) {
                             secret = bridgeHub.generateBridgeSecret();
@@ -502,9 +609,9 @@ function initTxAdminModule(client, app) {
                     if (!isBotOwner(interaction.user.id)) return;
                     await interaction.deferUpdate().catch(() => {});
                     try {
-                        await bridgeHub.dispatchToBridge(gId, 'session_revoke', { discordUserId: val }, 15000);
-                        const freshStatus = bridgeHub.getBridgeStatus(gId);
-                        const payload = panels.buildOwnerMasterPayload(interaction.guild, freshStatus, [], false);
+                        await dispatch('session_revoke', { discordUserId: val });
+                        const freshStatus = getStatus();
+                        const payload = decorateForDemo(panels.buildOwnerMasterPayload(interaction.guild, freshStatus, [], false), isDemo);
                         await interaction.editReply(payload).catch(() => {});
                     } catch (err) {
                         await interaction.editReply({
@@ -524,22 +631,22 @@ function initTxAdminModule(client, app) {
             // ------------------------------------------------------------
             if (interaction.isButton()) {
                 if (cid === 'btn_tx_quick_login') {
-                    return interaction.showModal(panels.buildLoginModal());
+                    return interaction.showModal(decorateModalForDemo(panels.buildLoginModal(), isDemo));
                 }
                 if (cid === 'btn_tx_quick_ai') {
-                    return interaction.showModal(panels.buildAiQueryModal());
+                    return interaction.showModal(decorateModalForDemo(panels.buildAiQueryModal(), isDemo));
                 }
                 if (cid === 'tx_open_search_modal') {
-                    return interaction.showModal(panels.buildSearchPlayerModal());
+                    return interaction.showModal(decorateModalForDemo(panels.buildSearchPlayerModal(), isDemo));
                 }
                 if (cid === 'btn_tx_refresh_main') {
-                    const status = bridgeHub.getBridgeStatus(gId);
-                    const payload = panels.buildMainPanelPayload(interaction.guild, status, { includeFiles: false });
+                    const status = getStatus();
+                    const payload = decorateForDemo(panels.buildMainPanelPayload(interaction.guild, status, { includeFiles: false }), isDemo);
                     await interaction.update(payload).catch(() => {});
                     return;
                 }
 
-                // Botones del Panel Permanente del Creador (!panel-txowner)
+                // Botones del Panel Permanente del Creador (!panel-txowner / !panel-txownertest)
                 if (cid.startsWith('btn_tx_owner_')) {
                     if (!isBotOwner(interaction.user.id)) {
                         return interaction.reply({
@@ -552,36 +659,37 @@ function initTxAdminModule(client, app) {
                         }).catch(() => {});
                     }
                     if (cid === 'btn_tx_owner_refresh_panel') {
-                        const status = bridgeHub.getBridgeStatus(gId);
-                        await interaction.update(panels.buildOwnerPermanentPanelPayload(interaction.guild, status, { includeFiles: false })).catch(() => {});
+                        const status = getStatus();
+                        await interaction.update(decorateForDemo(
+                            panels.buildOwnerPermanentPanelPayload(interaction.guild, status, { includeFiles: false }),
+                            isDemo
+                        )).catch(() => {});
                         return;
                     }
                     if (cid === 'btn_tx_owner_open_sessions') {
-                        return renderSection(interaction, 'owner_panel', { isFreshReply: true });
+                        return renderSection(interaction, 'owner_panel', { isFreshReply: true, isDemo });
                     }
                     if (cid === 'btn_tx_owner_open_admins') {
-                        return renderSection(interaction, 'owner_panel', { isFreshReply: true, filter: 'admins' });
+                        return renderSection(interaction, 'owner_panel', { isFreshReply: true, filter: 'admins', isDemo });
                     }
                 }
+
                 if (cid === 'tx_nav_hub') {
-                    return renderSection(interaction, 'hub', { isFreshReply: false });
+                    return renderSection(interaction, 'hub', { isFreshReply: false, isDemo });
                 }
 
-                // Paginación: Jugadores conectados
                 if (cid.startsWith('tx_pg_players_')) {
                     const page = parseInt(cid.split('_')[3], 10) || 0;
-                    return renderSection(interaction, 'players', { isFreshReply: false, page });
+                    return renderSection(interaction, 'players', { isFreshReply: false, page, isDemo });
                 }
 
-                // Paginación: Sanciones
                 if (cid.startsWith('tx_pg_sanctions_')) {
                     const parts = cid.replace(/_ref$/, '').split('_');
                     const page = parseInt(parts[3], 10) || 0;
                     const filterKey = parts.slice(4).join('_') || 'all';
-                    return renderSection(interaction, 'sanctions', { isFreshReply: false, page, filter: filterKey });
+                    return renderSection(interaction, 'sanctions', { isFreshReply: false, page, filter: filterKey, isDemo });
                 }
 
-                // Paginación: Ficha de Jugador
                 if (cid.startsWith('tx_pg_player_')) {
                     const rest = cid.slice('tx_pg_player_'.length);
                     const sep = rest.indexOf('_');
@@ -589,8 +697,11 @@ function initTxAdminModule(client, app) {
                     const query = decodeURIComponent(rest.slice(sep + 1));
                     await interaction.deferUpdate().catch(() => {});
                     try {
-                        const data = await bridgeHub.dispatchToBridge(gId, 'read_search_player', { query }, 15000);
-                        await interaction.editReply(panels.buildPlayerProfilePayload(interaction.guild, data, query, page)).catch(() => {});
+                        const data = await dispatch('read_search_player', { query });
+                        await interaction.editReply(decorateForDemo(
+                            panels.buildPlayerProfilePayload(interaction.guild, data, query, page),
+                            isDemo
+                        )).catch(() => {});
                     } catch (err) {
                         await interaction.editReply({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, { title: '⚠️┃Error', description: err.message, color: 0xF39C12 })]
@@ -599,24 +710,21 @@ function initTxAdminModule(client, app) {
                     return;
                 }
 
-                // Paginación: Actividad de Staff / admin.log
                 if (cid.startsWith('tx_pg_staff_')) {
                     const parts = cid.split('_');
                     const page = parseInt(parts[3], 10) || 0;
                     const mode = parts[4] || 'ranking';
-                    return renderSection(interaction, 'staff_activity', { isFreshReply: false, page, filter: mode });
+                    return renderSection(interaction, 'staff_activity', { isFreshReply: false, page, filter: mode, isDemo });
                 }
 
-                // Paginación: Estado / Recursos / Errores
                 if (cid.startsWith('tx_pg_srv_')) {
                     const clean = cid.replace(/_ref$/, '');
                     const parts = clean.split('_');
                     const page = parseInt(parts[3], 10) || 0;
                     const tab = parts.slice(4).join('_') || 'overview';
-                    return renderSection(interaction, 'server_status', { isFreshReply: false, page, filter: tab });
+                    return renderSection(interaction, 'server_status', { isFreshReply: false, page, filter: tab, isDemo });
                 }
 
-                // Botones exclusivos del Panel Maestro del Creador
                 if (cid.startsWith('tx_owner_')) {
                     if (!isBotOwner(interaction.user.id)) {
                         return interaction.reply({
@@ -630,28 +738,38 @@ function initTxAdminModule(client, app) {
                     }
 
                     if (cid === 'tx_owner_view_admins') {
-                        return renderSection(interaction, 'owner_panel', { isFreshReply: false, filter: 'admins' });
+                        return renderSection(interaction, 'owner_panel', { isFreshReply: false, filter: 'admins', isDemo });
                     }
                     if (cid === 'tx_owner_view_sessions') {
-                        return renderSection(interaction, 'owner_panel', { isFreshReply: false });
+                        return renderSection(interaction, 'owner_panel', { isFreshReply: false, isDemo });
                     }
                     if (cid === 'tx_owner_toggle_readonly') {
-                        const cur = Boolean((guildManager.getGuildConfig(gId) || {}).TX_READ_ONLY_MODE);
-                        await guildManager.setGuildConfigKey(gId, 'TX_READ_ONLY_MODE', !cur);
-                        const freshStatus = bridgeHub.getBridgeStatus(gId);
-                        await interaction.update(panels.buildOwnerMasterPayload(interaction.guild, freshStatus, [], false)).catch(() => {});
+                        if (isDemo) {
+                            demoSandbox.toggleDemoReadOnly(gId);
+                        } else {
+                            const cur = Boolean((guildManager.getGuildConfig(gId) || {}).TX_READ_ONLY_MODE);
+                            await guildManager.setGuildConfigKey(gId, 'TX_READ_ONLY_MODE', !cur);
+                        }
+                        const freshStatus = getStatus();
+                        await interaction.update(decorateForDemo(
+                            panels.buildOwnerMasterPayload(interaction.guild, freshStatus, [], false),
+                            isDemo
+                        )).catch(() => {});
                         return;
                     }
                     if (cid === 'tx_owner_revoke_all') {
                         await interaction.deferUpdate().catch(() => {});
-                        await bridgeHub.dispatchToBridge(gId, 'session_revoke_all', {}, 15000).catch(() => {});
-                        const freshStatus = bridgeHub.getBridgeStatus(gId);
-                        await interaction.editReply(panels.buildOwnerMasterPayload(interaction.guild, freshStatus, [], false)).catch(() => {});
+                        await dispatch('session_revoke_all', {}).catch(() => {});
+                        const freshStatus = getStatus();
+                        await interaction.editReply(decorateForDemo(
+                            panels.buildOwnerMasterPayload(interaction.guild, freshStatus, [], false),
+                            isDemo
+                        )).catch(() => {});
                         return;
                     }
                 }
 
-                // Botones de confirmación humana (Confirmar / Cancelar acción real en txAdmin)
+                // Confirmación humana: Cancelar
                 if (cid.startsWith('tx_confirm_no_')) {
                     const confirmId = cid.replace('tx_confirm_no_', '');
                     const pending = pendingConfirmations.get(confirmId);
@@ -659,7 +777,7 @@ function initTxAdminModule(client, app) {
                         return interaction.reply({ content: '⛔ Solo quien solicitó esta acción puede cancelarla.', ephemeral: true }).catch(() => {});
                     }
                     pendingConfirmations.delete(confirmId);
-                    await interaction.update({
+                    await interaction.update(decorateForDemo({
                         embeds: [panels.buildNoticeEmbed(interaction.guild, {
                             title: '❌┃Acción Cancelada',
                             description: 'No se ha enviado ningún cambio a txAdmin.',
@@ -668,16 +786,17 @@ function initTxAdminModule(client, app) {
                         components: [new ActionRowBuilder().addComponents(
                             new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Volver al Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
                         )]
-                    }).catch(() => {});
+                    }, isDemo)).catch(() => {});
                     return;
                 }
 
+                // Confirmación humana: Confirmar y Ejecutar
                 if (cid.startsWith('tx_confirm_yes_')) {
                     const confirmId = cid.replace('tx_confirm_yes_', '');
                     const pending = pendingConfirmations.get(confirmId);
                     if (!pending || Date.now() > pending.expiresAt) {
                         pendingConfirmations.delete(confirmId);
-                        return interaction.update({
+                        return interaction.update(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                 title: '⌛┃Confirmación Caducada',
                                 description: 'Han pasado más de 60 segundos. Vuelve a solicitar la acción para confirmar.',
@@ -686,7 +805,7 @@ function initTxAdminModule(client, app) {
                             components: [new ActionRowBuilder().addComponents(
                                 new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Volver al Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
                             )]
-                        }).catch(() => {});
+                        }, isDemo)).catch(() => {});
                     }
 
                     if (pending.userId !== interaction.user.id) {
@@ -700,24 +819,24 @@ function initTxAdminModule(client, app) {
                         }).catch(() => {});
                     }
 
-                    const status = bridgeHub.getBridgeStatus(gId);
+                    const status = getStatus();
                     if (status.readOnlyMode) {
                         pendingConfirmations.delete(confirmId);
-                        return interaction.update({
+                        return interaction.update(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                 title: '🔒┃Modo Solo Lectura Activo',
                                 description: 'El creador ha pausado temporalmente la ejecución de acciones administrativas en txAdmin.',
                                 color: 0xF39C12
                             })],
                             components: []
-                        }).catch(() => {});
+                        }, isDemo)).catch(() => {});
                     }
 
                     pendingConfirmations.delete(confirmId);
                     await interaction.deferUpdate().catch(() => {});
 
                     try {
-                        const result = await bridgeHub.dispatchToBridge(gId, pending.bridgeAction, {
+                        const result = await dispatch(pending.bridgeAction, {
                             discordUserId: interaction.user.id,
                             discordTag: interaction.user.tag || interaction.user.username,
                             params: pending.params
@@ -729,10 +848,11 @@ function initTxAdminModule(client, app) {
                             actionKey: pending.bridgeAction,
                             params: pending.params,
                             ok: true,
-                            resultMsg: result?.message || 'Acción aplicada en txAdmin correctamente.'
+                            resultMsg: result?.message || 'Acción aplicada en txAdmin correctamente.',
+                            isDemo
                         });
 
-                        await interaction.editReply({
+                        await interaction.editReply(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                 title: '✅┃Acción Ejecutada en txAdmin',
                                 description:
@@ -744,7 +864,7 @@ function initTxAdminModule(client, app) {
                             components: [new ActionRowBuilder().addComponents(
                                 new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Volver al Menú').setStyle(ButtonStyle.Primary).setEmoji('↩️')
                             )]
-                        }).catch(() => {});
+                        }, isDemo)).catch(() => {});
                     } catch (execErr) {
                         await sendTxAuditLog(client, interaction.guild, {
                             actorUser: interaction.user,
@@ -752,10 +872,11 @@ function initTxAdminModule(client, app) {
                             actionKey: pending.bridgeAction,
                             params: pending.params,
                             ok: false,
-                            resultMsg: execErr.message
+                            resultMsg: execErr.message,
+                            isDemo
                         });
 
-                        await interaction.editReply({
+                        await interaction.editReply(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                 title: '❌┃txAdmin Rechazó o Falló la Acción',
                                 description: `${execErr.message}`,
@@ -764,7 +885,7 @@ function initTxAdminModule(client, app) {
                             components: [new ActionRowBuilder().addComponents(
                                 new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Volver al Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
                             )]
-                        }).catch(() => {});
+                        }, isDemo)).catch(() => {});
                     }
                     return;
                 }
@@ -774,25 +895,24 @@ function initTxAdminModule(client, app) {
             // C. ENVÍO DE MODALES (LOGIN, IA, BÚSQUEDA, ACCIONES)
             // ------------------------------------------------------------
             if (interaction.isModalSubmit()) {
-                // 1. Login individual en txAdmin
                 if (cid === 'modal_tx_login') {
                     await interaction.deferReply({ ephemeral: true }).catch(() => {});
                     const txUsername = interaction.fields.getTextInputValue('tx_user').trim();
                     const txPassword = interaction.fields.getTextInputValue('tx_pass');
 
                     try {
-                        const res = await bridgeHub.dispatchToBridge(gId, 'session_login', {
+                        const res = await dispatch('session_login', {
                             discordUserId: interaction.user.id,
                             discordTag: interaction.user.tag || interaction.user.username,
                             txUsername,
                             txPassword
-                        }, 15000);
+                        });
 
                         const permsText = res?.master
                             ? '`MASTER (Acceso total)`'
                             : `\`${(res?.permissions || []).join(', ') || 'Permisos de txAdmin'}\``;
 
-                        await interaction.editReply({
+                        await interaction.editReply(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                 title: '✅┃Sesión de txAdmin Vinculada',
                                 description:
@@ -806,43 +926,44 @@ function initTxAdminModule(client, app) {
                             components: [new ActionRowBuilder().addComponents(
                                 new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Abrir Consola Interactiva').setStyle(ButtonStyle.Primary).setEmoji('🧭')
                             )]
-                        }).catch(() => {});
+                        }, isDemo)).catch(() => {});
                     } catch (err) {
-                        await interaction.editReply({
+                        await interaction.editReply(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                 title: '❌┃Error al Iniciar Sesión en txAdmin',
                                 description: `${err.message}`,
                                 color: 0xE74C3C
                             })]
-                        }).catch(() => {});
+                        }, isDemo)).catch(() => {});
                     }
                     return;
                 }
 
-                // 2. Búsqueda de jugador / antecedentes
                 if (cid === 'modal_tx_search_player') {
                     await interaction.deferReply({ ephemeral: true }).catch(() => {});
                     const query = interaction.fields.getTextInputValue('tx_player_query').trim();
                     try {
-                        const data = await bridgeHub.dispatchToBridge(gId, 'read_search_player', { query }, 15000);
-                        await interaction.editReply(panels.buildPlayerProfilePayload(interaction.guild, data, query, 0)).catch(() => {});
+                        const data = await dispatch('read_search_player', { query });
+                        await interaction.editReply(decorateForDemo(
+                            panels.buildPlayerProfilePayload(interaction.guild, data, query, 0),
+                            isDemo
+                        )).catch(() => {});
                     } catch (err) {
-                        await interaction.editReply({
+                        await interaction.editReply(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                 title: '⚠️┃No se pudo realizar la búsqueda',
                                 description: err.message,
                                 color: 0xF39C12
                             })]
-                        }).catch(() => {});
+                        }, isDemo)).catch(() => {});
                     }
                     return;
                 }
 
-                // 3. Consulta / Solicitud en lenguaje natural con IA (Tool Calling real)
                 if (cid === 'modal_tx_ai_query') {
                     await interaction.deferReply({ ephemeral: true }).catch(() => {});
                     const promptText = interaction.fields.getTextInputValue('tx_ai_prompt').trim();
-                    const status = bridgeHub.getBridgeStatus(gId);
+                    const status = getStatus();
                     const userSession = getUserSessionFromStatus(status, interaction.user.id);
 
                     try {
@@ -851,12 +972,13 @@ function initTxAdminModule(client, app) {
                             userId: interaction.user.id,
                             userTag: interaction.user.tag || interaction.user.username,
                             promptText,
-                            hasLinkedSession: Boolean(userSession)
+                            hasLinkedSession: Boolean(userSession),
+                            dispatchFn: isDemo ? (gid, act, pl) => demoSandbox.dispatchDemoAction(gid, act, pl, interaction.user) : null
                         });
 
                         if (proposedAction) {
                             if (status.readOnlyMode) {
-                                return interaction.editReply({
+                                return interaction.editReply(decorateForDemo({
                                     embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                         title: '🔒┃Acción Bloqueada (Solo Lectura)',
                                         description: `${answer.slice(0, 2500)}\n\n────────────────────────────\n⚠️ *El creador tiene activado el **Modo Solo Lectura**, por lo que no se pueden confirmar acciones administrativas ahora.*`,
@@ -865,11 +987,11 @@ function initTxAdminModule(client, app) {
                                     components: [new ActionRowBuilder().addComponents(
                                         new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
                                     )]
-                                }).catch(() => {});
+                                }, isDemo)).catch(() => {});
                             }
 
                             if (!userSession) {
-                                return interaction.editReply({
+                                return interaction.editReply(decorateForDemo({
                                     embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                         title: '🔑┃Inicia Sesión para Confirmar Acciones',
                                         description: `${answer.slice(0, 2500)}\n\n────────────────────────────\n🔒 *Para ejecutar **${panels.ACTION_LABELS[proposedAction.bridgeAction] || proposedAction.bridgeAction}** en txAdmin, primero vincula tu cuenta con el botón de abajo.*`,
@@ -879,7 +1001,7 @@ function initTxAdminModule(client, app) {
                                         new ButtonBuilder().setCustomId('btn_tx_quick_login').setLabel('Iniciar Sesión txAdmin').setStyle(ButtonStyle.Primary).setEmoji('🔑'),
                                         new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
                                     )]
-                                }).catch(() => {});
+                                }, isDemo)).catch(() => {});
                             }
 
                             const confirmId = createPendingConfirmation({
@@ -888,20 +1010,20 @@ function initTxAdminModule(client, app) {
                                 userTag: interaction.user.tag || interaction.user.username,
                                 bridgeAction: proposedAction.bridgeAction,
                                 params: proposedAction.params,
-                                txUsername: userSession.txUsername
+                                txUsername: userSession.txUsername,
+                                isDemo
                             });
 
-                            return interaction.editReply(panels.buildConfirmationPayload(interaction.guild, {
+                            return interaction.editReply(decorateForDemo(panels.buildConfirmationPayload(interaction.guild, {
                                 confirmId,
                                 bridgeAction: proposedAction.bridgeAction,
                                 params: proposedAction.params,
                                 txUsername: userSession.txUsername,
                                 aiAnswer: answer
-                            })).catch(() => {});
+                            }), isDemo)).catch(() => {});
                         }
 
-                        // Consulta pura de solo lectura
-                        await interaction.editReply({
+                        await interaction.editReply(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                 title: '🧠┃Respuesta IA • Datos Reales txAdmin',
                                 description:
@@ -913,45 +1035,44 @@ function initTxAdminModule(client, app) {
                                 new ButtonBuilder().setCustomId('btn_tx_quick_ai').setLabel('Otra Consulta IA').setStyle(ButtonStyle.Primary).setEmoji('🧠'),
                                 new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
                             )]
-                        }).catch(() => {});
+                        }, isDemo)).catch(() => {});
                     } catch (err) {
-                        await interaction.editReply({
+                        await interaction.editReply(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                 title: '⚠️┃Error en Consulta IA txAdmin',
                                 description: err.message,
                                 color: 0xE74C3C
                             })]
-                        }).catch(() => {});
+                        }, isDemo)).catch(() => {});
                     }
                     return;
                 }
 
-                // 4. Envío de formulario de acción directa (pasa por confirmación obligatoria)
                 if (cid.startsWith('modal_tx_act_')) {
                     const actionKey = cid.replace('modal_tx_act_', '');
-                    const status = bridgeHub.getBridgeStatus(gId);
+                    const status = getStatus();
                     const userSession = getUserSessionFromStatus(status, interaction.user.id);
 
                     if (status.readOnlyMode) {
-                        return interaction.reply({
+                        return interaction.reply(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                 title: '🔒┃Modo Solo Lectura Activo',
                                 description: 'El creador ha bloqueado las acciones administrativas temporalmente.',
                                 color: 0xF39C12
                             })],
                             ephemeral: true
-                        }).catch(() => {});
+                        }, isDemo)).catch(() => {});
                     }
 
                     if (!userSession) {
-                        return interaction.reply({
+                        return interaction.reply(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                 title: '🔑┃Sesión txAdmin Requerida',
                                 description: 'Debes iniciar sesión con tu cuenta de txAdmin antes de ejecutar acciones.',
                                 color: 0xF39C12
                             })],
                             ephemeral: true
-                        }).catch(() => {});
+                        }, isDemo)).catch(() => {});
                     }
 
                     const params = {};
@@ -965,16 +1086,17 @@ function initTxAdminModule(client, app) {
                         userTag: interaction.user.tag || interaction.user.username,
                         bridgeAction: actionKey,
                         params,
-                        txUsername: userSession.txUsername
+                        txUsername: userSession.txUsername,
+                        isDemo
                     });
 
                     await interaction.reply({
-                        ...panels.buildConfirmationPayload(interaction.guild, {
+                        ...decorateForDemo(panels.buildConfirmationPayload(interaction.guild, {
                             confirmId,
                             bridgeAction: actionKey,
                             params,
                             txUsername: userSession.txUsername
-                        }),
+                        }), isDemo),
                         ephemeral: true
                     }).catch(() => {});
                     return;
