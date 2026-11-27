@@ -536,6 +536,9 @@ function initTxAdminModule(client, app) {
                     if (val === 'view_admins') {
                         return renderSection(interaction, 'owner_panel', { isFreshReply: true, filter: 'admins', isDemo });
                     }
+                    if (val === 'server_control') {
+                        return interaction.showModal(decorateModalForDemo(panels.buildActionModal('tx_server_control'), isDemo));
+                    }
                     if (val === 'toggle_readonly') {
                         if (isDemo) {
                             demoSandbox.toggleDemoReadOnly(gId);
@@ -973,6 +976,7 @@ function initTxAdminModule(client, app) {
                             userTag: interaction.user.tag || interaction.user.username,
                             promptText,
                             hasLinkedSession: Boolean(userSession),
+                            isOwner: isBotOwner(interaction.user.id),
                             dispatchFn: isDemo ? (gid, act, pl) => demoSandbox.dispatchDemoAction(gid, act, pl, interaction.user) : null
                         });
 
@@ -1050,6 +1054,16 @@ function initTxAdminModule(client, app) {
 
                 if (cid.startsWith('modal_tx_act_')) {
                     const actionKey = cid.replace('modal_tx_act_', '');
+                    if (actionKey === 'tx_server_control' && !isBotOwner(interaction.user.id)) {
+                        return interaction.reply({
+                            embeds: [panels.buildNoticeEmbed(interaction.guild, {
+                                title: '⛔┃Acción Exclusiva del Creador',
+                                description: 'Reiniciar, detener o arrancar el servidor solo puede ejecutarse desde `!panel-txowner`.',
+                                color: 0xE74C3C
+                            })],
+                            ephemeral: true
+                        }).catch(() => {});
+                    }
                     const status = getStatus();
                     const userSession = getUserSessionFromStatus(status, interaction.user.id);
 

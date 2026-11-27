@@ -22,7 +22,6 @@ const ACTION_LABELS = {
     tx_revoke_action: '🔓 Revocar Sanción (Desban / Retirar Warn)',
     tx_warn: '⚠️ Enviar Advertencia (Warn)',
     tx_kick: '👢 Expulsar Jugador (Kick)',
-    tx_whitelist: '📋 Gestión de Whitelist',
     tx_resource_action: '🧩 Control de Recurso FiveM',
     tx_server_control: '🔄 Control del Servidor FXServer',
     tx_announcement: '📢 Enviar Anuncio Global'
@@ -178,7 +177,7 @@ function buildMainPanelPayload(guild, bridgeStatus, { includeFiles = true } = {}
             },
             {
                 label: 'Ejecutar Acción Administrativa',
-                description: 'Ban, Desban, Warn, Kick, Whitelist, Recursos, Anuncio o Reinicio',
+                description: 'Ban, Desban, Warn, Kick, Recursos o Anuncio',
                 value: 'actions',
                 emoji: '⚡'
             }
@@ -283,6 +282,12 @@ function buildOwnerPermanentPanelPayload(guild, bridgeStatus, { includeFiles = t
                 description: 'Envía por privado el bloque txBridge/.env actual de este servidor',
                 value: 'send_env_dm',
                 emoji: '🔐'
+            },
+            {
+                label: 'Reiniciar / Detener / Arrancar Servidor',
+                description: 'Control directo del proceso FXServer en txAdmin (Solo Creador)',
+                value: 'server_control',
+                emoji: '🔄'
             }
         ]);
 
@@ -349,7 +354,7 @@ function buildEphemeralHubPayload(guild, bridgeStatus, userSession, isOwner) {
         { label: 'Historial de Sanciones', description: 'Baneos y warnings con filtros y paginación', value: 'sanctions', emoji: '⚖️' },
         { label: 'Actividad del Staff y Admin Log', description: 'Ranking y últimas acciones administrativas', value: 'staff_activity', emoji: '🛡️' },
         { label: 'Estado, Recursos y Errores', description: 'Uptime, recursos y fxserver.log', value: 'server_status', emoji: '🖥️' },
-        { label: 'Ejecutar Acción Administrativa', description: 'Ban, Desban, Warn, Kick, Whitelist, Recursos...', value: 'actions', emoji: '⚡' },
+        { label: 'Ejecutar Acción Administrativa', description: 'Ban, Desban, Warn, Kick, Recursos, Anuncio...', value: 'actions', emoji: '⚡' },
         { label: 'Iniciar / Actualizar Sesión txAdmin', description: 'Vincular o refrescar tu cuenta de txAdmin', value: 'login', emoji: '🔑' }
     ];
     if (isOwner) {
@@ -610,7 +615,7 @@ function buildPlayerProfilePayload(guild, data, query, page = 0) {
         .setDescription(
             `> 🆔 **IDs:** ${idsText}\n` +
             `> 📅 **1.ª Conexión:** ${fmtTs(p.tsJoined)} • 🕒 **Última:** ${fmtRel(p.tsLastConnection)}\n` +
-            `> ⏱️ **Tiempo jugado:** \`${fmtPlaytime(p.playTime)}\` • 📋 **Whitelist:** ${p.tsWhitelisted ? '✅ `Aprobado`' : '❌ `No`'}\n` +
+            `> ⏱️ **Tiempo jugado:** \`${fmtPlaytime(p.playTime)}\`\n` +
             `${notesText}\n` +
             `${charSection}` +
             `────────────────────────────\n\n` +
@@ -886,10 +891,8 @@ function buildActionsMenuPayload(guild, userSession, readOnlyMode) {
             { label: 'Desbanear / Retirar Advertencia', description: 'Revocar un ban o warn usando su Action ID', value: 'tx_revoke_action', emoji: '🔓' },
             { label: 'Enviar Advertencia (Warn)', description: 'Warn oficial en txAdmin al jugador conectado', value: 'tx_warn', emoji: '⚠️' },
             { label: 'Expulsar Jugador (Kick)', description: 'Expulsar del servidor con motivo', value: 'tx_kick', emoji: '👢' },
-            { label: 'Gestión de Whitelist', description: 'Añadir o retirar identificador de la Whitelist', value: 'tx_whitelist', emoji: '📋' },
             { label: 'Control de Recurso FiveM', description: 'ensure / stop / restart / refresh de un recurso', value: 'tx_resource_action', emoji: '🧩' },
-            { label: 'Enviar Anuncio Global', description: 'Anuncio oficial dentro del servidor FiveM', value: 'tx_announcement', emoji: '📢' },
-            { label: 'Reiniciar / Detener / Arrancar Servidor', description: 'Control directo del proceso FXServer en txAdmin', value: 'tx_server_control', emoji: '🔄' }
+            { label: 'Enviar Anuncio Global', description: 'Anuncio oficial dentro del servidor FiveM', value: 'tx_announcement', emoji: '📢' }
         ]);
 
     const btnRow = new ActionRowBuilder().addComponents(
@@ -1139,15 +1142,6 @@ function buildActionModal(actionKey) {
             ),
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder().setCustomId('reason').setLabel('Motivo').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(400)
-            )
-        );
-    } else if (actionKey === 'tx_whitelist') {
-        modal.addComponents(
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId('operation').setLabel('Operación: add (añadir) o remove (quitar)').setValue('add').setStyle(TextInputStyle.Short).setRequired(true)
-            ),
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId('identifier').setLabel('Identificador (license:... o discord:...)').setStyle(TextInputStyle.Short).setRequired(true)
             )
         );
     } else if (actionKey === 'tx_resource_action') {

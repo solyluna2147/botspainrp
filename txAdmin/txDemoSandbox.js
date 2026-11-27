@@ -148,7 +148,6 @@ function createInitialDemoState(requesterUser) {
         '[27/11/2026 09:31:02] [LoLamento_Founder] Executed command: restart vila_hud',
         '[27/11/2026 09:15:44] [admin_luis] Banned ElMakiRP (TX91-B4K2) - VDM reiterado en zona segura',
         '[27/11/2026 08:48:19] [carlos_mod] Warned Hugoo (TX84-Q7L3) - Mal uso de /me y /do en comisaría',
-        '[27/11/2026 08:12:05] [marta_soporte] Whitelisted license:49ef55ab66cd7749 (Aitana_VLC)',
         '[27/11/2026 07:30:00] [txAdmin] Scheduled restart completed successfully',
         '[26/11/2026 23:44:12] [LoLamento_Founder] Revoked action TX77-K9Q2 (TorettoES)',
         '[26/11/2026 22:18:55] [carlos_mod] Banned ZetaKing (TX81-R5N8) - Combat Log (F8 quit)',
