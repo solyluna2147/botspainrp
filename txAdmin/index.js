@@ -542,7 +542,7 @@ function initTxAdminModule(client, app) {
                 } else {
                     data = await dispatch('read_get_server_resources', { filter: tab === 'res_stopped' ? 'stopped' : 'all' });
                 }
-                return respond(panels.buildServerAndResourcesPayload(interaction.guild, data, page, tab));
+                return respond(panels.buildServerAndResourcesPayload(interaction.guild, data, page, tab, owner));
             }
         } catch (err) {
             return respond({
@@ -592,6 +592,83 @@ function initTxAdminModule(client, app) {
                 ? demoSandbox.dispatchDemoAction(gId, action, payload, interaction.user)
                 : bridgeHub.dispatchToBridge(gId, action, payload, timeoutMs);
 
+            // Helper directo para control del servidor (Reiniciar / Encender / Apagar) en 1 clic con confirmación
+            const openDirectServerConfirm = async (operation, isFreshReply = true) => {
+                if (!isBotOwner(interaction.user.id)) {
+                    await interaction.reply({
+                        embeds: [panels.buildNoticeEmbed(interaction.guild, {
+                            title: '⛔┃Acción Exclusiva del Creador',
+                            description: 'Reiniciar, encender o apagar el servidor está reservado al creador.',
+                            color: 0xE74C3C
+                        })],
+                        ephemeral: true
+                    }).catch(() => {});
+                    scheduleAutoDelete(interaction);
+                    return;
+                }
+                const status = getStatus();
+                const userSession = getUserSessionFromStatus(status, interaction.user.id);
+                const replyOrUpdate = async (payload) => {
+                    const dec = decorateForDemo(payload, isDemo);
+                    if (isFreshReply) await interaction.reply({ ...dec, ephemeral: true }).catch(e => console.error('⚠️ [TXADMIN srvctl]:', e?.message));
+                    else await interaction.update(dec).catch(e => console.error('⚠️ [TXADMIN srvctl]:', e?.message));
+                    scheduleAutoDelete(interaction);
+                };
+                if (status.readOnlyMode) {
+                    return replyOrUpdate({
+                        embeds: [panels.buildNoticeEmbed(interaction.guild, {
+                            title: '🔒┃Modo Solo Lectura Activo',
+                            description: 'Desactiva el Modo Solo Lectura antes de controlar el servidor.',
+                            color: 0xF39C12
+                        })],
+                        components: [new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
+                        )]
+                    });
+                }
+                if (!userSession) {
+                    return replyOrUpdate({
+                        embeds: [panels.buildNoticeEmbed(interaction.guild, {
+                            title: '🔑┃Inicia Sesión Primero',
+                            description: 'Vincula tu cuenta de txAdmin antes de reiniciar, encender o apagar el servidor.',
+                            color: 0xF39C12
+                        })],
+                        components: [new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId('btn_tx_quick_login').setLabel('Iniciar Sesión').setStyle(ButtonStyle.Primary).setEmoji('🔑'),
+                            new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
+                        )]
+                    });
+                }
+                if (!panels.canExecuteTxAction(userSession, 'tx_server_control', true)) {
+                    return replyOrUpdate({
+                        embeds: [panels.buildNoticeEmbed(interaction.guild, {
+                            title: '⛔┃Sin Permiso en txAdmin',
+                            description: `Tu cuenta (\`${userSession.txUsername}\`) no tiene permiso \`control.server\` en txAdmin.`,
+                            color: 0xE74C3C
+                        })],
+                        components: [new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
+                        )]
+                    });
+                }
+                const params = { operation, reason: `Control directo desde Discord (${operation.toUpperCase()})` };
+                const confirmId = createPendingConfirmation({
+                    guildId: gId,
+                    userId: interaction.user.id,
+                    userTag: interaction.user.tag || interaction.user.username,
+                    bridgeAction: 'tx_server_control',
+                    params,
+                    txUsername: userSession.txUsername,
+                    isDemo
+                });
+                return replyOrUpdate(panels.buildConfirmationPayload(interaction.guild, {
+                    confirmId,
+                    bridgeAction: 'tx_server_control',
+                    params,
+                    txUsername: userSession.txUsername
+                }));
+            };
+
             // ------------------------------------------------------------
             // A. MENÚS DESPLEGABLES
             // ------------------------------------------------------------
@@ -604,6 +681,13 @@ function initTxAdminModule(client, app) {
                     return out;
                 }
                 if (cid === 'select_tx_ephemeral_nav') {
+                    if (val === 'srv_restart') return openDirectServerConfirm('restart', false);
+                    if (val === 'srv_start') return openDirectServerConfirm('start', false);
+                    if (val === 'srv_stop') return openDirectServerConfirm('stop', false);
+                    if (val === 'kick_all') {
+                        if (!isBotOwner(interaction.user.id)) return interaction.deferUpdate().catch(() => {});
+                        return interaction.showModal(decorateModalForDemo(panels.buildActionModal('tx_kick_all'), isDemo));
+                    }
                     return renderSection(interaction, val, { isFreshReply: false, isDemo });
                 }
                 if (cid === 'select_tx_sanctions_filter') {
@@ -646,6 +730,17 @@ function initTxAdminModule(client, app) {
 
                     if (['login', 'ai', 'players', 'search_player', 'sanctions', 'staff_activity', 'server_status', 'actions'].includes(val)) {
                         const out = await renderSection(interaction, val, { isFreshReply: true, isDemo });
+                        resetPermanentSelectMenu(interaction, isDemo, true);
+                        return out;
+                    }
+                    if (val === 'srv_restart' || val === 'srv_start' || val === 'srv_stop') {
+                        const op = val.replace('srv_', '');
+                        const out = await openDirectServerConfirm(op, true);
+                        resetPermanentSelectMenu(interaction, isDemo, true);
+                        return out;
+                    }
+                    if (val === 'kick_all') {
+                        const out = await interaction.showModal(decorateModalForDemo(panels.buildActionModal('tx_kick_all'), isDemo));
                         resetPermanentSelectMenu(interaction, isDemo, true);
                         return out;
                     }
@@ -763,6 +858,12 @@ function initTxAdminModule(client, app) {
                 if (cid === 'btn_tx_quick_players') {
                     return renderSection(interaction, 'players', { isFreshReply: true, page: 0, filter: 'all', isDemo });
                 }
+                if (cid === 'btn_tx_quick_actions') {
+                    return renderSection(interaction, 'actions', { isFreshReply: true, isDemo });
+                }
+                if (cid === 'tx_srv_ctl_restart') return openDirectServerConfirm('restart', false);
+                if (cid === 'tx_srv_ctl_start') return openDirectServerConfirm('start', false);
+                if (cid === 'tx_srv_ctl_stop') return openDirectServerConfirm('stop', false);
                 if (cid === 'tx_open_search_modal') {
                     return interaction.showModal(decorateModalForDemo(panels.buildSearchPlayerModal(), isDemo));
                 }
@@ -829,11 +930,31 @@ function initTxAdminModule(client, app) {
                     if (cid === 'btn_tx_owner_open_actions') {
                         return renderSection(interaction, 'actions', { isFreshReply: true, isDemo });
                     }
+                    if (cid === 'btn_tx_owner_open_players') {
+                        return renderSection(interaction, 'players', { isFreshReply: true, page: 0, filter: 'all', isDemo });
+                    }
                     if (cid === 'btn_tx_owner_open_sessions') {
                         return renderSection(interaction, 'owner_panel', { isFreshReply: true, isDemo });
                     }
                     if (cid === 'btn_tx_owner_open_admins') {
                         return renderSection(interaction, 'owner_panel', { isFreshReply: true, filter: 'admins', isDemo });
+                    }
+                    if (cid === 'btn_tx_owner_srv_restart') return openDirectServerConfirm('restart', true);
+                    if (cid === 'btn_tx_owner_srv_start') return openDirectServerConfirm('start', true);
+                    if (cid === 'btn_tx_owner_srv_stop') return openDirectServerConfirm('stop', true);
+                    if (cid === 'btn_tx_owner_toggle_readonly') {
+                        if (isDemo) {
+                            demoSandbox.toggleDemoReadOnly(gId);
+                        } else {
+                            const cur = Boolean((guildManager.getGuildConfig(gId) || {}).TX_READ_ONLY_MODE);
+                            await guildManager.setGuildConfigKey(gId, 'TX_READ_ONLY_MODE', !cur);
+                        }
+                        const freshStatus = getStatus();
+                        await interaction.update(decorateForDemo(
+                            panels.buildOwnerPermanentPanelPayload(interaction.guild, freshStatus, { includeFiles: false }),
+                            isDemo
+                        )).catch(() => {});
+                        return;
                     }
                 }
 
@@ -1232,7 +1353,7 @@ function initTxAdminModule(client, app) {
 
                 if (cid.startsWith('modal_tx_act_')) {
                     const actionKey = cid.replace('modal_tx_act_', '');
-                    if (actionKey === 'tx_server_control' && !isBotOwner(interaction.user.id)) {
+                    if ((actionKey === 'tx_server_control' || actionKey === 'tx_kick_all') && !isBotOwner(interaction.user.id)) {
                         return interaction.reply({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                 title: '⛔┃Acción Exclusiva del Creador',

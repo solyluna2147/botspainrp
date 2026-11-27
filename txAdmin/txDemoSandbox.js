@@ -462,6 +462,18 @@ async function dispatchDemoAction(guildId, action, payload = {}, requesterUser =
         return { executedAs: execAs, message: `🧪 **[TEST]** Advertencia \`${newId}\` enviada a \`${p.target}\` y añadida al historial.` };
     }
 
+    if (action === 'tx_dm') {
+        st.adminLogLines.unshift(`[TEST] [${execAs}] DM to ${p.target}: ${p.message}`);
+        if (sess) sess.lastAction = `DM ${p.target}`;
+        return { executedAs: execAs, message: `🧪 **[TEST]** Mensaje privado enviado a \`${p.target}\`: *"${String(p.message || '').slice(0, 120)}"*` };
+    }
+
+    if (action === 'tx_kick_all') {
+        st.adminLogLines.unshift(`[TEST] [${execAs}] Kicked ALL players: ${p.reason}`);
+        if (sess) sess.lastAction = 'Kick All';
+        return { executedAs: execAs, message: `🧪 **[TEST]** Expulsión masiva ejecutada (\`${p.reason || 'Mantenimiento'}\`).` };
+    }
+
     if (action === 'tx_kick') {
         st.adminLogLines.unshift(`[TEST] [${execAs}] Kicked ${p.target} - ${p.reason}`);
         if (sess) sess.lastAction = `Kick ${p.target}`;

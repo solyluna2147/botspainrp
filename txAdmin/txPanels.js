@@ -21,7 +21,9 @@ const ACTION_PERMISSIONS = {
     tx_ban: ['players.ban'],
     tx_revoke_action: ['players.ban', 'players.warn'],
     tx_warn: ['players.warn'],
+    tx_dm: ['players.direct_message', 'players.message'],
     tx_kick: ['players.kick'],
+    tx_kick_all: ['control.server'],
     tx_resource_action: ['commands.resources', 'console.write'],
     tx_announcement: ['announcement', 'players.message', 'console.write'],
     tx_server_control: ['control.server']
@@ -37,7 +39,7 @@ function hasTxPermission(userSession, requiredPerms = []) {
 }
 
 function canExecuteTxAction(userSession, actionKey, isOwner = false) {
-    if (actionKey === 'tx_server_control' && !isOwner) return false;
+    if ((actionKey === 'tx_server_control' || actionKey === 'tx_kick_all') && !isOwner) return false;
     if (!userSession) return false;
     const req = ACTION_PERMISSIONS[actionKey];
     return hasTxPermission(userSession, req);
@@ -45,22 +47,26 @@ function canExecuteTxAction(userSession, actionKey, isOwner = false) {
 
 const ACTION_LABELS = {
     tx_warn: '⚠️ Poner Warn',
+    tx_dm: '💬 Mensaje Privado (DM)',
     tx_kick: '👢 Expulsar (Kick)',
     tx_ban: '🔨 Banear Jugador',
     tx_revoke_action: '🔓 Quitar Ban / Warn',
     tx_announcement: '📢 Anuncio en Pantalla',
     tx_resource_action: '🧩 Reiniciar / Parar Script',
-    tx_server_control: '🔄 Reiniciar / Apagar Servidor'
+    tx_server_control: '🔄 Reiniciar / Apagar / Encender Servidor',
+    tx_kick_all: '💥 Expulsar a Todos (Kick All)'
 };
 
 const ACTION_REPEAT_LABELS = {
     tx_warn: 'Poner otro Warn',
+    tx_dm: 'Enviar otro DM',
     tx_kick: 'Expulsar a otro',
     tx_ban: 'Banear a otro',
     tx_revoke_action: 'Quitar otro Ban/Warn',
     tx_announcement: 'Enviar otro Anuncio',
     tx_resource_action: 'Gestionar otro Script',
-    tx_server_control: 'Otro Control Servidor'
+    tx_server_control: 'Otro Control Servidor',
+    tx_kick_all: 'Otro Kick All'
 };
 
 const PARAM_LABELS = {
@@ -250,6 +256,11 @@ function buildMainPanelPayload(guild, bridgeStatus, { includeFiles = true } = {}
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('👥'),
         new ButtonBuilder()
+            .setCustomId('btn_tx_quick_actions')
+            .setLabel('Moderar')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('⚡'),
+        new ButtonBuilder()
             .setCustomId('btn_tx_refresh_main')
             .setLabel('Actualizar')
             .setStyle(ButtonStyle.Secondary)
@@ -312,7 +323,7 @@ function buildOwnerPermanentPanelPayload(guild, bridgeStatus, { includeFiles = t
 
     const ownerMenu = new StringSelectMenuBuilder()
         .setCustomId('select_tx_owner_panel')
-        .setPlaceholder('👑 Elige cualquier herramienta o consulta...')
+        .setPlaceholder('👑 Menú Completo de Creador — elige cualquier herramienta...')
         .addOptions([
             {
                 label: 'Iniciar / Cambiar Mi Sesión',
@@ -322,7 +333,7 @@ function buildOwnerPermanentPanelPayload(guild, bridgeStatus, { includeFiles = t
             },
             {
                 label: 'Consulta con AI (Total)',
-                description: 'Consulta datos en vivo o solicita cualquier acción',
+                description: 'Consulta datos en vivo o solicita cualquier acción con IA',
                 value: 'ai',
                 emoji: '🤖'
             },
@@ -357,10 +368,34 @@ function buildOwnerPermanentPanelPayload(guild, bridgeStatus, { includeFiles = t
                 emoji: '🖥️'
             },
             {
-                label: 'Moderar / Acciones + Servidor',
-                description: 'Warn, Kick, Ban, Desban, Anuncio, Scripts y Reinicio',
+                label: 'Moderar Jugadores y Scripts',
+                description: 'Warn, DM, Kick, Ban, Desban, Anuncio y Scripts',
                 value: 'actions',
                 emoji: '⚡'
+            },
+            {
+                label: 'Reiniciar Servidor FiveM',
+                description: 'Reinicia el servidor al instante (con confirmación)',
+                value: 'srv_restart',
+                emoji: '🔄'
+            },
+            {
+                label: 'Encender Servidor FiveM',
+                description: 'Arranca el servidor si está detenido (con confirmación)',
+                value: 'srv_start',
+                emoji: '🟢'
+            },
+            {
+                label: 'Apagar Servidor FiveM',
+                description: 'Detiene el servidor FiveM (con confirmación)',
+                value: 'srv_stop',
+                emoji: '🛑'
+            },
+            {
+                label: 'Expulsar a Todos (Kick All)',
+                description: 'Saca a todos los jugadores conectados antes de mantenimiento',
+                value: 'kick_all',
+                emoji: '💥'
             },
             {
                 label: 'Sesiones de Staff',
@@ -400,15 +435,15 @@ function buildOwnerPermanentPanelPayload(guild, bridgeStatus, { includeFiles = t
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('⚡'),
         new ButtonBuilder()
+            .setCustomId('btn_tx_owner_open_players')
+            .setLabel('Conectados')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('👥'),
+        new ButtonBuilder()
             .setCustomId('btn_tx_owner_open_sessions')
             .setLabel('Sesiones')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('🔐'),
-        new ButtonBuilder()
-            .setCustomId('btn_tx_owner_open_admins')
-            .setLabel('Admins')
-            .setStyle(ButtonStyle.Secondary)
-            .setEmoji('📋'),
         new ButtonBuilder()
             .setCustomId('btn_tx_owner_refresh_panel')
             .setLabel('Actualizar')
@@ -416,11 +451,40 @@ function buildOwnerPermanentPanelPayload(guild, bridgeStatus, { includeFiles = t
             .setEmoji('🔄')
     );
 
+    const serverControlRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('btn_tx_owner_srv_restart')
+            .setLabel('Reiniciar Server')
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji('🔄'),
+        new ButtonBuilder()
+            .setCustomId('btn_tx_owner_srv_start')
+            .setLabel('Encender Server')
+            .setStyle(ButtonStyle.Success)
+            .setEmoji('🟢'),
+        new ButtonBuilder()
+            .setCustomId('btn_tx_owner_srv_stop')
+            .setLabel('Apagar Server')
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji('🛑'),
+        new ButtonBuilder()
+            .setCustomId('btn_tx_owner_open_admins')
+            .setLabel('Admins txAdmin')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('📋'),
+        new ButtonBuilder()
+            .setCustomId('btn_tx_owner_toggle_readonly')
+            .setLabel(bridgeStatus.readOnlyMode ? 'Activar Acciones' : 'Solo Lectura')
+            .setStyle(bridgeStatus.readOnlyMode ? ButtonStyle.Success : ButtonStyle.Secondary)
+            .setEmoji(bridgeStatus.readOnlyMode ? '🔓' : '🔒')
+    );
+
     const payload = {
         embeds: [embed],
         components: [
             new ActionRowBuilder().addComponents(ownerMenu),
-            btnRow
+            btnRow,
+            serverControlRow
         ]
     };
     if (includeFiles && files.length > 0) payload.files = files;
@@ -465,18 +529,44 @@ function buildEphemeralHubPayload(guild, bridgeStatus, userSession, isOwner) {
         { label: 'Iniciar / Cambiar Sesión', description: 'Vincular o refrescar tu cuenta de txAdmin', value: 'login', emoji: '🔑' }
     ];
     if (isOwner) {
-        options.push({
-            label: 'Panel de Creador',
-            description: 'Sesiones Staff, Admins txAdmin y Solo Lectura',
-            value: 'owner_panel',
-            emoji: '👑'
-        });
+        options.push(
+            {
+                label: 'Reiniciar Servidor FiveM',
+                description: 'Reinicia el servidor FiveM al instante',
+                value: 'srv_restart',
+                emoji: '🔄'
+            },
+            {
+                label: 'Encender Servidor FiveM',
+                description: 'Arranca el servidor FiveM si está parado',
+                value: 'srv_start',
+                emoji: '🟢'
+            },
+            {
+                label: 'Apagar Servidor FiveM',
+                description: 'Detiene el servidor FiveM',
+                value: 'srv_stop',
+                emoji: '🛑'
+            },
+            {
+                label: 'Panel de Creador',
+                description: 'Sesiones Staff, Admins txAdmin y Solo Lectura',
+                value: 'owner_panel',
+                emoji: '👑'
+            }
+        );
     }
 
     const menu = new StringSelectMenuBuilder()
         .setCustomId('select_tx_ephemeral_nav')
         .setPlaceholder('🧭 Cambiar de sección...')
         .addOptions(options);
+
+    const quickRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_tx_quick_ai').setLabel('Consulta con AI').setStyle(ButtonStyle.Primary).setEmoji('🤖'),
+        new ButtonBuilder().setCustomId('tx_nav_actions').setLabel('Moderar').setStyle(ButtonStyle.Secondary).setEmoji('⚡'),
+        new ButtonBuilder().setCustomId('tx_pg_players_0_all_ref').setLabel('Conectados').setStyle(ButtonStyle.Secondary).setEmoji('👥')
+    );
 
     embed.setFooter({
         text: `${serverName} • ${AUTOCLEAN_FOOTER_HINT}`,
@@ -485,7 +575,7 @@ function buildEphemeralHubPayload(guild, bridgeStatus, userSession, isOwner) {
 
     return {
         embeds: [embed],
-        components: [new ActionRowBuilder().addComponents(menu)]
+        components: [new ActionRowBuilder().addComponents(menu), quickRow]
     };
 }
 
@@ -885,7 +975,7 @@ function buildStaffActivityPayload(guild, data, page = 0, viewMode = 'ranking') 
 // ============================================================================
 // 7. VISTA PAGINADA: ESTADO DEL SERVIDOR, RECURSOS Y ERRORES DE CONSOLA
 // ============================================================================
-function buildServerAndResourcesPayload(guild, data, page = 0, tab = 'overview') {
+function buildServerAndResourcesPayload(guild, data, page = 0, tab = 'overview', isOwner = false) {
     const { v, iconUrl, serverName } = resolveIcon(guild, guild?.id);
 
     const tabMenu = new StringSelectMenuBuilder()
@@ -893,8 +983,8 @@ function buildServerAndResourcesPayload(guild, data, page = 0, tab = 'overview')
         .setPlaceholder('🖥️ Cambiar vista técnica...')
         .addOptions([
             { label: 'Resumen General y Rendimiento', value: 'overview', emoji: '📊', default: tab === 'overview' },
-            { label: 'Todos los Recursos FiveM', value: 'res_all', emoji: '🧩', default: tab === 'res_all' },
-            { label: 'Solo Recursos Detenidos / Error', value: 'res_stopped', emoji: '🔴', default: tab === 'res_stopped' },
+            { label: 'Todos los Scripts FiveM', value: 'res_all', emoji: '🧩', default: tab === 'res_all' },
+            { label: 'Solo Scripts Detenidos / Error', value: 'res_stopped', emoji: '🔴', default: tab === 'res_stopped' },
             { label: 'Últimos Errores de Consola', value: 'console_errors', emoji: '🚨', default: tab === 'console_errors' }
         ]);
 
@@ -906,22 +996,33 @@ function buildServerAndResourcesPayload(guild, data, page = 0, tab = 'overview')
             .setTitle('🖥️┃Estado y Rendimiento del Servidor')
             .setDescription(
                 `> 🟢 **Servidor FiveM:** ${ov.online ? '`ONLINE`' : '🔴 `OFFLINE`'} • 👥 **Jugadores:** \`${ov.playersCount ?? 0}/${ov.maxClients ?? '?'}\`\n` +
-                `> ⏱️ **Tiempo activo:** \`${ov.uptime || 'N/D'}\` • 🧩 **Recursos:** \`${ov.startedResources ?? '?'}\` activos / \`${ov.stoppedResources ?? '?'}\` detenidos\n` +
+                `> ⏱️ **Tiempo activo:** \`${ov.uptime || 'N/D'}\` • 🧩 **Scripts:** \`${ov.startedResources ?? '?'}\` activos / \`${ov.stoppedResources ?? '?'}\` detenidos\n` +
                 `> 💻 **Rendimiento:** \`${ov.hostCpu || 'N/D'}\` • \`${ov.hostRam || 'N/D'}\`\n` +
                 `> 🚨 **Alertas recientes en consola:** \`${ov.recentErrorsCount ?? 0}\` errores • \`${ov.recentHitchesCount ?? 0}\` hitches\n\n` +
                 `────────────────────────────\n` +
-                `💡 *Usa el desplegable inferior para inspeccionar recursos iniciados/detenidos o ver los últimos errores de consola.*`
+                `💡 *Usa el desplegable inferior para ver scripts o errores de consola.*`
             )
-            .setFooter({ text: `${serverName} • Monitor en Vivo`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
+            .setFooter({ text: `${serverName} • Monitor en Vivo • ${AUTOCLEAN_FOOTER_HINT}`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
             .setTimestamp();
+
+        const overviewBtns = [
+            new ButtonBuilder().setCustomId('tx_pg_srv_0_overview_ref').setLabel('Actualizar').setStyle(ButtonStyle.Primary).setEmoji('🔄')
+        ];
+        if (isOwner) {
+            overviewBtns.push(
+                new ButtonBuilder().setCustomId('tx_srv_ctl_restart').setLabel('Reiniciar').setStyle(ButtonStyle.Secondary).setEmoji('🔄'),
+                new ButtonBuilder().setCustomId('tx_srv_ctl_start').setLabel('Encender').setStyle(ButtonStyle.Success).setEmoji('🟢'),
+                new ButtonBuilder().setCustomId('tx_srv_ctl_stop').setLabel('Apagar').setStyle(ButtonStyle.Danger).setEmoji('🛑')
+            );
+        }
+        overviewBtns.push(
+            new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
+        );
 
         return {
             embeds: [embed],
             components: [
-                new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('tx_pg_srv_0_overview_ref').setLabel('Actualizar').setStyle(ButtonStyle.Primary).setEmoji('🔄'),
-                    new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Danger).setEmoji('↩️')
-                ),
+                new ActionRowBuilder().addComponents(...overviewBtns),
                 new ActionRowBuilder().addComponents(tabMenu)
             ]
         };
@@ -1013,12 +1114,14 @@ function buildActionsMenuPayload(guild, userSession, readOnlyMode, isOwner = fal
 
     const allActionOptions = [
         { label: 'Poner Warn', description: 'Envía aviso rojo en pantalla al jugador y lo guarda', value: 'tx_warn', emoji: '⚠️' },
+        { label: 'Mensaje Privado (DM)', description: 'Envía un aviso privado en pantalla a un jugador online', value: 'tx_dm', emoji: '💬' },
         { label: 'Expulsar (Kick)', description: 'Saca del servidor en vivo al jugador con un motivo', value: 'tx_kick', emoji: '👢' },
         { label: 'Banear Jugador', description: 'Baneo temporal (2h, 1d, 7d...) o permanente', value: 'tx_ban', emoji: '🔨' },
-        { label: 'Quitar Ban / Warn', description: 'Desbanea o retira un Warn usando su ID de sanción', value: 'tx_revoke_action', emoji: '🔓' },
+        { label: 'Quitar Ban / Warn', description: 'Desbanea o retira un Warn por Action ID, ID o Discord', value: 'tx_revoke_action', emoji: '🔓' },
         { label: 'Anuncio en Pantalla', description: 'Publica un aviso global visible para todo el servidor', value: 'tx_announcement', emoji: '📢' },
         { label: 'Reiniciar / Parar Script', description: 'restart, ensure, stop o refresh de un script', value: 'tx_resource_action', emoji: '🧩' },
-        { label: 'Reiniciar / Apagar Servidor', description: 'Reiniciar, detener o encender FiveM (Solo Creador)', value: 'tx_server_control', emoji: '🔄' }
+        { label: 'Reiniciar / Apagar / Encender Servidor', description: 'Control directo del servidor FiveM (Solo Creador)', value: 'tx_server_control', emoji: '🔄' },
+        { label: 'Expulsar a Todos (Kick All)', description: 'Saca a todos los jugadores conectados (Solo Creador)', value: 'tx_kick_all', emoji: '💥' }
     ];
 
     // Mostrar ÚNICAMENTE las acciones permitidas por los permisos reales de la cuenta de txAdmin del usuario
@@ -1353,6 +1456,21 @@ function buildActionModal(actionKey) {
             ),
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder().setCustomId('reason').setLabel('Motivo (opcional)').setStyle(TextInputStyle.Paragraph).setRequired(false).setMaxLength(300)
+            )
+        );
+    } else if (actionKey === 'tx_dm') {
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('target').setLabel('ID conectado, Discord ID o Nombre').setPlaceholder('Ej: 2 / 418558256840179722 / EL JONNY').setStyle(TextInputStyle.Short).setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('message').setLabel('Mensaje privado en pantalla').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(400)
+            )
+        );
+    } else if (actionKey === 'tx_kick_all') {
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('reason').setLabel('Motivo para expulsar a todos').setValue('Mantenimiento del servidor').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(200)
             )
         );
     } else if (actionKey === 'tx_warn' || actionKey === 'tx_kick') {

@@ -190,6 +190,35 @@ const TX_AI_TOOLS = [
     {
         type: 'function',
         function: {
+            name: 'propose_dm',
+            description: 'Propone enviar un mensaje privado (DM en pantalla dentro del juego) a un jugador conectado en txAdmin.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    target: { type: 'string', description: 'ID conectado (ej: 2), Discord ID (ej: 418558...) o nombre del jugador.' },
+                    message: { type: 'string', description: 'Texto del mensaje privado.' }
+                },
+                required: ['target', 'message']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'propose_kick_all',
+            description: 'Propone expulsar a TODOS los jugadores conectados del servidor FiveM (exclusivo del Creador).',
+            parameters: {
+                type: 'object',
+                properties: {
+                    reason: { type: 'string', description: 'Motivo de la expulsión masiva.' }
+                },
+                required: ['reason']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'propose_kick',
             description: 'Propone expulsar (Kick en vivo) a un jugador conectado en txAdmin.',
             parameters: {
@@ -252,13 +281,15 @@ const PROPOSAL_TOOL_MAP = {
     propose_ban: 'tx_ban',
     propose_revoke_action: 'tx_revoke_action',
     propose_warn: 'tx_warn',
+    propose_dm: 'tx_dm',
     propose_kick: 'tx_kick',
+    propose_kick_all: 'tx_kick_all',
     propose_resource_action: 'tx_resource_action',
     propose_server_control: 'tx_server_control',
     propose_announcement: 'tx_announcement'
 };
 
-async function callAiWithTools(messages, tools) {
+async function callAiWithTools(messages, tools, toolChoice = 'auto') {
     const apiKeys = getConfiguredAiKeys();
     if (apiKeys.length === 0) {
         throw new Error('No hay claves de motor IA configuradas en el servidor.');
@@ -290,7 +321,7 @@ async function callAiWithTools(messages, tools) {
             };
             if (tools && tools.length > 0) {
                 body.tools = tools;
-                body.tool_choice = 'auto';
+                body.tool_choice = toolChoice || 'auto';
             }
 
             const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -485,9 +516,8 @@ async function runTxAiQuery({ guildId, userId, userTag, promptText, userSession 
         if (!userSession) return false; // Sin sesión txAdmin no propone acciones
         return canExecuteTxAction(userSession, mappedAction, isOwner);
     });
-    const allowedActionNames = allowedTools
-        .map(t => t.function?.name)
-        .filter(n => Boolean(PROPOSAL_TOOL_MAP[n]));
+    const allowedProposalTools = allowedTools.filter(t => Boolean(PROPOSAL_TOOL_MAP[t.function?.name]));
+    const allowedActionNames = allowedProposalTools.map(t => t.function?.name);
 
     const gVis = guildManager.resolveGuildVisuals(guildId);
     const serverName = gVis.name || 'SERVIDOR RP';
@@ -497,10 +527,10 @@ async function runTxAiQuery({ guildId, userId, userTag, promptText, userSession 
         `REGLAS CRÍTICAS DE PRECISIÓN, ACCIONES, DISEÑO Y PRIVACIDAD:\n` +
         `1. NUNCA inventes datos, jugadores, sanciones, fechas, Action IDs ni errores. Llama SIEMPRE a las herramientas disponibles para obtener datos reales en vivo.\n` +
         `2. DETECCIÓN DE STAFFS / ADMINS CONECTADOS: Cuando pregunten por "staffs conectados", "admins online", "personas con tx conectadas" o similar, llama a list_online_players con onlyStaff=true (o revisa staffsOnline e isTxAdmin). NUNCA busques la palabra "tx" en el nombre del jugador.\n` +
-        `3. EJECUCIÓN DE ACCIONES PARA EL STAFF (Warn, Kick, Ban, Quitar Ban/Warn, Anuncio, Scripts, Control Servidor):\n` +
+        `3. EJECUCIÓN DE ACCIONES PARA EL STAFF (Warn, DM privado, Kick, Kick All, Ban, Quitar Ban/Warn, Anuncio, Scripts, Reiniciar/Apagar/Encender Servidor):\n` +
         `   - Acciones autorizadas para este Staff ahora mismo: ${allowedActionNames.length > 0 ? allowedActionNames.join(', ') : 'NINGUNA (sin sesión vinculada o sin permisos en txAdmin)'}.\n` +
-        `   - Cuando el Staff pida HACER una acción (ej: "pon un warn al id 2 por PG", "quita el warn WJNH-UM8Y", "quítale el último warn al id 2", "desbanea a EL JONNY", "manda un anuncio diciendo...", "reinicia el script...", "expulsa al id 2"): si necesitas verificar el Action ID o jugador real, consulta primero con lectura y luego LLAMA DIRECTAMENTE a la herramienta propose_* correspondiente.\n` +
-        `   - NUNCA digas que la acción ya se ejecutó: explica brevemente los detalles exactos y avisa de que solo tiene que pulsar **✅ Confirmar y Ejecutar** abajo.\n` +
+        `   - REGLA DE ORO: ESTÁ TERMINANTEMENTE PROHIBIDO escribir "Propuesta registrada" o "pulsa Confirmar y Ejecutar" si NO has llamado de verdad mediante tool_calls a una función propose_* en este mismo turno. Sin llamar a la herramienta propose_*, el bot NO mostrará el botón de confirmar.\n` +
+        `   - Cuando el Staff pida ejecutar una acción (ej: "reinicia el servidor", "apaga el server", "enciende el servidor", "pon un warn al id 2 por PG", "quita el warn WJNH-UM8Y", "manda un dm al id 2", "manda un anuncio...", "reinicia el script...", "expulsa a todos", "banea al id 2..."): LLAMA INMEDIATAMENTE a la herramienta propose_* correspondiente (tras lectura solo si te falta un dato).\n` +
         `   - Si pide una acción para la que NO tiene herramienta autorizada, indícale amablemente que necesita iniciar sesión o que su cuenta de txAdmin no tiene ese permiso.\n` +
         `4. CERO DATOS TÉCNICOS SOBRANTES: NUNCA muestres ping, Steam ID, license ni license2. Para cada jugador muestra únicamente su **ID**, su **Nombre**, su **Discord** (<@ID>) y, si es Staff, su **cuenta de txAdmin**.\n` +
         `5. LISTADOS DE WARNS / BANS DETALLADOS: Cuando muestres sanciones de un jugador o del historial, incluye SIEMPRE el **Action ID** en negrita y código (ej. **\`WJNH-UM8Y\`**), el estado (🔴 \`ACTIVO\` / 🟣 \`REVOCADO\` / ⚪ \`EXPIRADO\`), el motivo, el admin autor y la fecha usando exactamente el \`dateDiscord\` devuelto por la herramienta (ej. <t:...:f>), para que el Staff pueda copiar o pedir quitar ese Action ID al instante.\n` +
@@ -517,14 +547,63 @@ async function runTxAiQuery({ guildId, userId, userTag, promptText, userSession 
     ];
 
     let proposedAction = null;
+    let forcedRetryDone = false;
+
+    const looksLikeHallucinatedProposal = (txt) =>
+        /propuesta registrada|confirmar y ejecutar|pulsa.*confirmar|bot[oó]n.*confirmar/i.test(String(txt || ''));
 
     // Hasta 4 rondas de Tool Calling (ej. buscar jugador -> encontrar actionId -> proponer revocación -> redactar resumen)
     for (let step = 0; step < 4; step++) {
-        const aiMsg = await callAiWithTools(messages, allowedTools);
+        const aiMsg = await callAiWithTools(messages, allowedTools, 'auto');
         const toolCalls = Array.isArray(aiMsg.tool_calls) ? aiMsg.tool_calls : [];
 
         if (toolCalls.length === 0) {
-            const answer = (aiMsg.content || '').trim() || 'No pude generar un resumen con los datos disponibles.';
+            const draft = (aiMsg.content || '').trim();
+            // RED DE SEGURIDAD: Si el modelo escribió "Propuesta registrada / pulsa Confirmar" SIN llamar a ninguna tool propose_*,
+            // forzar 1 llamada real con tool_choice: 'required' para que el botón ✅ Confirmar y Ejecutar SIEMPRE aparezca.
+            if (!proposedAction && !forcedRetryDone && allowedProposalTools.length > 0 && looksLikeHallucinatedProposal(draft)) {
+                forcedRetryDone = true;
+                messages.push({ role: 'assistant', content: draft });
+                messages.push({
+                    role: 'user',
+                    content: 'SISTEMA: No invocaste ninguna función propose_* en el turno anterior, por lo que no se ha generado el botón de confirmación. Invoca AHORA la función propose_* correspondiente para registrar la propuesta real.'
+                });
+                const forcedMsg = await callAiWithTools(messages, allowedProposalTools, 'required');
+                const forcedCalls = Array.isArray(forcedMsg.tool_calls) ? forcedMsg.tool_calls : [];
+                if (forcedCalls.length > 0) {
+                    messages.push({ role: 'assistant', content: forcedMsg.content || '', tool_calls: forcedCalls });
+                    for (const fc of forcedCalls) {
+                        const fnName = fc.function?.name;
+                        let fnArgs = {};
+                        try { fnArgs = fc.function?.arguments ? JSON.parse(fc.function.arguments) : {}; } catch (_) {}
+                        if (PROPOSAL_TOOL_MAP[fnName]) {
+                            proposedAction = {
+                                bridgeAction: PROPOSAL_TOOL_MAP[fnName],
+                                toolName: fnName,
+                                params: fnArgs,
+                                requestedBy: userId,
+                                requestedByTag: userTag
+                            };
+                            messages.push({
+                                role: 'tool',
+                                tool_call_id: fc.id,
+                                content: JSON.stringify({
+                                    ok: true,
+                                    status: 'AWAITING_HUMAN_CONFIRMATION',
+                                    message: 'Propuesta registrada. El bot mostrará el botón Confirmar y Ejecutar ahora.'
+                                })
+                            });
+                        }
+                    }
+                    if (proposedAction) {
+                        const cleanSummary = draft || 'Propuesta lista para confirmar en txAdmin.';
+                        pushAiTurn(guildId, userId, promptText, cleanSummary);
+                        return { answer: cleanSummary, proposedAction };
+                    }
+                }
+            }
+
+            const answer = draft || 'No pude generar un resumen con los datos disponibles.';
             pushAiTurn(guildId, userId, promptText, answer);
             return { answer, proposedAction };
         }
