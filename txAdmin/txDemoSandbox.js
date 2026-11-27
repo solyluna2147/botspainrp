@@ -56,11 +56,11 @@ function createInitialDemoState(requesterUser) {
     ];
 
     const admins = [
-        { name: 'LoLamento_Founder', master: true, permissions: ['all_permissions'] },
-        { name: 'admin_luis', master: false, permissions: ['players.warn', 'players.kick', 'players.ban', 'players.whitelist', 'commands.resources'] },
-        { name: 'carlos_mod', master: false, permissions: ['players.warn', 'players.kick', 'players.ban', 'players.whitelist'] },
-        { name: 'marta_soporte', master: false, permissions: ['players.warn', 'players.kick'] },
-        { name: 'dani_dev', master: false, permissions: ['commands.resources', 'control.server', 'console.view'] }
+        { name: 'LoLamento_Founder', master: true, discordId: ownerId, providerIds: [`discord:${ownerId}`], permissions: ['all_permissions'] },
+        { name: 'admin_luis', master: false, discordId: '200000000000000023', providerIds: ['discord:200000000000000023'], permissions: ['players.warn', 'players.kick', 'players.ban', 'commands.resources'] },
+        { name: 'carlos_mod', master: false, discordId: '100000000000000001', providerIds: ['discord:100000000000000001'], permissions: ['players.warn', 'players.kick', 'players.ban'] },
+        { name: 'marta_soporte', master: false, discordId: '100000000000000003', providerIds: ['discord:100000000000000003'], permissions: ['players.warn', 'players.kick'] },
+        { name: 'dani_dev', master: false, discordId: null, providerIds: [], permissions: ['commands.resources', 'control.server', 'console.view'] }
     ];
 
     const onlinePlayers = [
@@ -261,10 +261,50 @@ async function dispatchDemoAction(guildId, action, payload = {}, requesterUser =
 
     if (action === 'read_list_online_players') {
         const q = String(payload.search || '').trim().toLowerCase();
-        const players = q
-            ? st.onlinePlayers.filter(p => String(p.id) === q || p.name.toLowerCase().includes(q) || p.identifiers.some(i => i.toLowerCase().includes(q)))
-            : st.onlinePlayers;
-        return { online: true, maxClients: 128, uptime: '6h 18m', players };
+        const onlyStaff = Boolean(payload.onlyStaff);
+        const enriched = st.onlinePlayers.map(p => {
+            const discRaw = (p.identifiers || []).find(i => /^discord:\d+/i.test(i));
+            const discordId = discRaw ? discRaw.replace(/^discord:/i, '') : null;
+            const adm = st.admins.find(a =>
+                (discordId && a.discordId === discordId) ||
+                (p.identifiers || []).some(id => (a.providerIds || []).includes(id.toLowerCase()))
+            );
+            return {
+                id: p.id,
+                name: p.name,
+                discordId,
+                identifiers: p.identifiers,
+                character: p.character || null,
+                isTxAdmin: Boolean(adm),
+                txAdminName: adm?.name || null,
+                txAdminMaster: Boolean(adm?.master)
+            };
+        });
+        const staffsOnline = enriched.filter(p => p.isTxAdmin).map(p => ({
+            id: p.id,
+            name: p.name,
+            discordId: p.discordId,
+            txAdminName: p.txAdminName,
+            isMaster: p.txAdminMaster
+        }));
+        let players = onlyStaff ? enriched.filter(p => p.isTxAdmin) : enriched;
+        if (q) {
+            players = players.filter(p =>
+                String(p.id) === q ||
+                p.name.toLowerCase().includes(q) ||
+                String(p.txAdminName || '').toLowerCase().includes(q) ||
+                String(p.discordId || '').includes(q)
+            );
+        }
+        return {
+            online: true,
+            maxClients: 128,
+            uptime: '6h 18m',
+            totalOnline: enriched.length,
+            staffOnlineCount: staffsOnline.length,
+            staffsOnline,
+            players
+        };
     }
 
     if (action === 'read_search_player') {

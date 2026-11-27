@@ -185,10 +185,10 @@ function dispatchToBridge(guildId, action, payload = {}, timeoutMs = 20000) {
     const gId = String(guildId || '');
     const status = getBridgeStatus(gId);
     if (!status.secretConfigured) {
-        return Promise.reject(new Error('Este servidor todavía no tiene configurado el puente txAdmin. El creador debe usar `!tx-setup`.'));
+        return Promise.reject(new Error('Este servidor todavía no está vinculado con el sistema txAdmin. Contacta con la administración del bot.'));
     }
     if (!status.online) {
-        return Promise.reject(new Error('El puente local/VPS de txAdmin está desconectado en este momento. Enciende `txBridge` en la máquina del servidor FiveM.'));
+        return Promise.reject(new Error('No hay conexión activa con el servidor FiveM / txAdmin en este momento.'));
     }
 
     return new Promise((resolve, reject) => {

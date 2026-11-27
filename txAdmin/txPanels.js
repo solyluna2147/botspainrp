@@ -17,15 +17,65 @@ const {
 } = require('discord.js');
 const guildManager = require('../guildManager');
 
-const ACTION_LABELS = {
-    tx_ban: '🔨 Banear Jugador',
-    tx_revoke_action: '🔓 Revocar Sanción (Desban / Retirar Warn)',
-    tx_warn: '⚠️ Enviar Advertencia (Warn)',
-    tx_kick: '👢 Expulsar Jugador (Kick)',
-    tx_resource_action: '🧩 Control de Recurso FiveM',
-    tx_server_control: '🔄 Control del Servidor FXServer',
-    tx_announcement: '📢 Enviar Anuncio Global'
+const ACTION_PERMISSIONS = {
+    tx_ban: ['players.ban'],
+    tx_revoke_action: ['players.ban', 'players.warn'],
+    tx_warn: ['players.warn'],
+    tx_kick: ['players.kick'],
+    tx_resource_action: ['commands.resources', 'console.write'],
+    tx_announcement: ['announcement', 'players.message', 'console.write'],
+    tx_server_control: ['control.server']
 };
+
+function hasTxPermission(userSession, requiredPerms = []) {
+    if (!userSession) return false;
+    if (userSession.master) return true;
+    const perms = Array.isArray(userSession.permissions) ? userSession.permissions : [];
+    if (perms.includes('all_permissions')) return true;
+    if (!requiredPerms || requiredPerms.length === 0) return true;
+    return requiredPerms.some(p => perms.includes(p));
+}
+
+function canExecuteTxAction(userSession, actionKey, isOwner = false) {
+    if (actionKey === 'tx_server_control' && !isOwner) return false;
+    if (!userSession) return false;
+    const req = ACTION_PERMISSIONS[actionKey];
+    return hasTxPermission(userSession, req);
+}
+
+const ACTION_LABELS = {
+    tx_warn: '⚠️ Poner Warn',
+    tx_kick: '👢 Expulsar (Kick)',
+    tx_ban: '🔨 Banear Jugador',
+    tx_revoke_action: '🔓 Quitar Ban / Warn',
+    tx_announcement: '📢 Anuncio en Pantalla',
+    tx_resource_action: '🧩 Reiniciar / Parar Script',
+    tx_server_control: '🔄 Reiniciar / Apagar Servidor'
+};
+
+const ACTION_REPEAT_LABELS = {
+    tx_warn: 'Poner otro Warn',
+    tx_kick: 'Expulsar a otro',
+    tx_ban: 'Banear a otro',
+    tx_revoke_action: 'Quitar otro Ban/Warn',
+    tx_announcement: 'Enviar otro Anuncio',
+    tx_resource_action: 'Gestionar otro Script',
+    tx_server_control: 'Otro Control Servidor'
+};
+
+const PARAM_LABELS = {
+    target: '👤 Jugador / ID',
+    duration: '⏳ Duración',
+    reason: '📝 Motivo',
+    actionId: '🆔 ID de Sanción',
+    actionType: '⚖️ Tipo',
+    targetName: '👤 Jugador',
+    operation: '⚙️ Operación',
+    resourceName: '🧩 Script',
+    message: '📢 Mensaje'
+};
+
+const AUTOCLEAN_FOOTER_HINT = '⏳ Autoeliminación: 2 min';
 
 function resolveIcon(guild, guildId, bannerType = null) {
     const v = guildManager.resolveGuildVisuals(guildId, bannerType);
@@ -75,7 +125,7 @@ function buildNoticeEmbed(guild, { title, description, color = null, footerText 
         .setTitle(title)
         .setDescription(description || '\u200B')
         .setFooter({
-            text: footerText || `${serverName} • Panel Interactivo txAdmin`,
+            text: footerText || `${serverName} • ${AUTOCLEAN_FOOTER_HINT}`,
             ...(iconUrl ? { iconURL: iconUrl } : {})
         })
         .setTimestamp();
@@ -89,13 +139,13 @@ function buildNoticeEmbed(guild, { title, description, color = null, footerText 
 function buildMainPanelPayload(guild, bridgeStatus, { includeFiles = true } = {}) {
     const { v, iconUrl, bannerUrl, files, serverName } = resolveIcon(guild, guild?.id, 'txadmin');
     const onlineTxt = bridgeStatus.online
-        ? `🟢 \`Conectado\` *(latencia: \`${bridgeStatus.latencyMs ?? 0}ms\` • modo: \`${bridgeStatus.info?.mode || 'local'}\`)*`
+        ? '🟢 `En línea y sincronizado`'
         : (bridgeStatus.secretConfigured
-            ? '🔴 `Puente desconectado` *(esperando que arranque `txBridge` en el PC/VPS)*'
-            : '🟡 `Sin configurar` *(el creador debe usar `!tx-setup`)*');
+            ? '🔴 `Sin conexión con el servidor`'
+            : '🟡 `Pendiente de activación`');
 
     const modeTxt = bridgeStatus.readOnlyMode
-        ? '🔒 `Solo Lectura` *(acciones bloqueadas por el Creador)*'
+        ? '🔒 `Solo Lectura` *(acciones pausadas temporalmente)*'
         : '🟢 `Lectura + Acciones Activas`';
 
     const linkedCount = (bridgeStatus.sessions || []).length;
@@ -109,13 +159,13 @@ function buildMainPanelPayload(guild, bridgeStatus, { includeFiles = true } = {}
         .setTitle('🛡️┃GESTIÓN INTEGRAL DE TXADMIN + ASISTENTE IA')
         .setDescription(
             `Bienvenido al **Centro de Control Interactivo de txAdmin** exclusivo del equipo de Staff de **${serverName}**.\n\n` +
-            `📡┃**Estado de Conexión**\n` +
-            `> • **Puente FiveM/txAdmin:** ${onlineTxt}\n` +
+            `📡┃**Estado del Sistema**\n` +
+            `> • **Enlace con txAdmin:** ${onlineTxt}\n` +
             `> • **Modo de Operación:** ${modeTxt}\n` +
             `> • **Sesiones Staff vinculadas:** \`${linkedCount}\` activas\n\n` +
             `────────────────────────────\n\n` +
             `📋┃**¿Cómo funciona este panel?**\n` +
-            `> 1️⃣ **Inicia sesión una sola vez** con tu cuenta de txAdmin desde el menú de abajo *(queda permanente hasta que el creador la cierre)*.\n` +
+            `> 1️⃣ **Inicia sesión una sola vez** con tu cuenta de txAdmin desde el menú de abajo *(queda permanente hasta que administración la cierre)*.\n` +
             `> 2️⃣ **Selecciona cualquier sección del menú:** todo se abre en privado *(solo para ti)* con **paginación, filtros y edición en el mismo mensaje** para mantener el canal 100% limpio.\n` +
             `> 3️⃣ **Usa el Asistente IA** para consultar antecedentes, baneos, recursos o errores en lenguaje natural — toda acción requiere tu **confirmación por botón**.\n\n` +
             `💡 *Este panel es permanente. Ninguna interacción ensucia este canal.*`
@@ -131,53 +181,53 @@ function buildMainPanelPayload(guild, bridgeStatus, { includeFiles = true } = {}
 
     const mainMenu = new StringSelectMenuBuilder()
         .setCustomId('select_tx_main_menu')
-        .setPlaceholder('🛡️ Selecciona una opción del panel de txAdmin...')
+        .setPlaceholder('🛡️ Elige qué quieres ver o hacer en txAdmin...')
         .addOptions([
             {
-                label: 'Iniciar Sesión en txAdmin',
-                description: 'Vincula tu cuenta personal de txAdmin (1 sola vez, permanente)',
+                label: 'Iniciar / Cambiar Sesión',
+                description: 'Vincula tu cuenta de txAdmin (solo 1 vez, queda guardada)',
                 value: 'login',
                 emoji: '🔑'
             },
             {
-                label: 'Asistente IA de txAdmin',
-                description: 'Consulta datos reales o solicita acciones en lenguaje natural',
+                label: 'Preguntar a la IA',
+                description: 'Pregunta en lenguaje normal o pide acciones rápidas',
                 value: 'ai',
-                emoji: '🧠'
+                emoji: '🤖'
             },
             {
-                label: 'Jugadores Conectados',
-                description: 'Lista en vivo paginada con ID, ping e identificadores',
+                label: 'Conectados y Staffs',
+                description: 'Ver quién está online ahora y qué Staffs hay dentro',
                 value: 'players',
                 emoji: '👥'
             },
             {
-                label: 'Buscar Jugador / Antecedentes',
-                description: 'Perfil completo, conexiones, notas, sanciones y personajes',
+                label: 'Buscar Jugador',
+                description: 'Ver ficha, Discord, horas jugadas y sanciones de alguien',
                 value: 'search_player',
                 emoji: '🔎'
             },
             {
-                label: 'Historial de Sanciones',
-                description: 'Baneos activos/expirados/revocados y Warnings paginados',
+                label: 'Bans y Warns',
+                description: 'Historial completo de sanciones con filtros y páginas',
                 value: 'sanctions',
                 emoji: '⚖️'
             },
             {
-                label: 'Actividad del Staff y Admin Log',
-                description: 'Ranking de sanciones por admin y últimos cambios en admin.log',
+                label: 'Actividad del Staff',
+                description: 'Ranking de moderación y últimas acciones de los Staffs',
                 value: 'staff_activity',
                 emoji: '🛡️'
             },
             {
-                label: 'Estado, Recursos y Errores',
-                description: 'Rendimiento, recursos iniciados/detenidos y errores de consola',
+                label: 'Estado, Scripts y Errores',
+                description: 'Salud del servidor, scripts activos y errores recientes',
                 value: 'server_status',
                 emoji: '🖥️'
             },
             {
-                label: 'Ejecutar Acción Administrativa',
-                description: 'Ban, Desban, Warn, Kick, Recursos o Anuncio',
+                label: 'Moderar / Acciones',
+                description: 'Poner Warn, Kick, Ban, Desban, Anuncio o Reiniciar Script',
                 value: 'actions',
                 emoji: '⚡'
             }
@@ -186,17 +236,22 @@ function buildMainPanelPayload(guild, bridgeStatus, { includeFiles = true } = {}
     const quickRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('btn_tx_quick_login')
-            .setLabel('Mi Sesión txAdmin')
+            .setLabel('Mi Sesión')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('🔑'),
         new ButtonBuilder()
             .setCustomId('btn_tx_quick_ai')
-            .setLabel('Consulta IA')
+            .setLabel('Preguntar IA')
             .setStyle(ButtonStyle.Primary)
-            .setEmoji('🧠'),
+            .setEmoji('🤖'),
+        new ButtonBuilder()
+            .setCustomId('btn_tx_quick_players')
+            .setLabel('Conectados')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('👥'),
         new ButtonBuilder()
             .setCustomId('btn_tx_refresh_main')
-            .setLabel('Actualizar Estado')
+            .setLabel('Actualizar')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('🔄')
     );
@@ -218,10 +273,10 @@ function buildMainPanelPayload(guild, bridgeStatus, { includeFiles = true } = {}
 function buildOwnerPermanentPanelPayload(guild, bridgeStatus, { includeFiles = true } = {}) {
     const { iconUrl, bannerUrl, files, serverName } = resolveIcon(guild, guild?.id, 'txadmin');
     const onlineTxt = bridgeStatus.online
-        ? `🟢 \`Conectado\` *(latencia: \`${bridgeStatus.latencyMs ?? 0}ms\` • modo: \`${bridgeStatus.info?.mode || 'local'}\`)*`
+        ? '🟢 `En línea y sincronizado`'
         : (bridgeStatus.secretConfigured
-            ? '🔴 `Puente desconectado` *(esperando `txBridge`)*'
-            : '🟡 `Sin configurar` *(pulsa "Generar Credenciales" o usa `!tx-setup`)*');
+            ? '🔴 `Sin conexión con el servidor`'
+            : '🟡 `Pendiente de activación`');
 
     const sessions = Array.isArray(bridgeStatus.sessions) ? bridgeStatus.sessions : [];
     const sessPreview = sessions.length > 0
@@ -237,10 +292,10 @@ function buildOwnerPermanentPanelPayload(guild, bridgeStatus, { includeFiles = t
         .setTitle('👑┃CONTROL MAESTRO TXADMIN (EXCLUSIVO CREADOR)')
         .setDescription(
             `Panel de administración superior de **txAdmin** exclusivo para el creador del bot en **${serverName}**.\n\n` +
-            `📡┃**Estado del Puente y Seguridad**\n` +
-            `> • **Puente FiveM/txAdmin:** ${onlineTxt}\n` +
+            `📡┃**Estado del Enlace y Seguridad**\n` +
+            `> • **Enlace con txAdmin:** ${onlineTxt}\n` +
             `> • **Modo de Operación:** ${bridgeStatus.readOnlyMode ? '🔒 `SOLO LECTURA (acciones bloqueadas)`' : '🟢 `Lectura + Acciones Activas`'}\n` +
-            `> • **Token de Conexión:** ${bridgeStatus.secretConfigured ? '✅ `Configurado`' : '❌ `No generado`'}\n\n` +
+            `> • **Vinculación:** ${bridgeStatus.secretConfigured ? '✅ `Configurada`' : '❌ `Pendiente`'}\n\n` +
             `────────────────────────────\n\n` +
             `👥┃**Sesiones de Staff Vinculadas (${sessions.length})**\n` +
             `${sessPreview}\n\n` +
@@ -257,54 +312,106 @@ function buildOwnerPermanentPanelPayload(guild, bridgeStatus, { includeFiles = t
 
     const ownerMenu = new StringSelectMenuBuilder()
         .setCustomId('select_tx_owner_panel')
-        .setPlaceholder('👑 Selecciona una herramienta de Creador...')
+        .setPlaceholder('👑 Elige cualquier herramienta o consulta...')
         .addOptions([
             {
-                label: 'Gestionar / Cerrar Sesiones de Staff',
-                description: 'Ver todas las sesiones activas y revocar acceso individual o total',
-                value: 'manage_sessions',
+                label: 'Iniciar / Cambiar Mi Sesión',
+                description: 'Vincula tu cuenta personal de txAdmin (solo 1 vez)',
+                value: 'login',
                 emoji: '🔑'
             },
             {
-                label: 'Ver Admins Registrados en txAdmin',
-                description: 'Leer admins.json en vivo con los permisos reales de cada admin',
+                label: 'Preguntar a la IA (Total)',
+                description: 'Consulta datos en vivo o solicita cualquier acción',
+                value: 'ai',
+                emoji: '🤖'
+            },
+            {
+                label: 'Conectados y Staffs',
+                description: 'Ver jugadores online ahora y qué Staffs hay dentro',
+                value: 'players',
+                emoji: '👥'
+            },
+            {
+                label: 'Buscar Jugador',
+                description: 'Ficha, Discord, horas jugadas y sanciones de alguien',
+                value: 'search_player',
+                emoji: '🔎'
+            },
+            {
+                label: 'Bans y Warns',
+                description: 'Historial completo de sanciones con filtros y páginas',
+                value: 'sanctions',
+                emoji: '⚖️'
+            },
+            {
+                label: 'Actividad del Staff',
+                description: 'Ranking de moderación y registro de acciones',
+                value: 'staff_activity',
+                emoji: '🛡️'
+            },
+            {
+                label: 'Estado, Scripts y Errores',
+                description: 'Salud del servidor, scripts activos y consola',
+                value: 'server_status',
+                emoji: '🖥️'
+            },
+            {
+                label: 'Moderar / Acciones + Servidor',
+                description: 'Warn, Kick, Ban, Desban, Anuncio, Scripts y Reinicio',
+                value: 'actions',
+                emoji: '⚡'
+            },
+            {
+                label: 'Sesiones de Staff',
+                description: 'Ver qué Staffs tienen sesión activa y cerrarla al instante',
+                value: 'manage_sessions',
+                emoji: '🔐'
+            },
+            {
+                label: 'Lista de Admins txAdmin',
+                description: 'Ver cuentas configuradas en txAdmin, Discord y permisos',
                 value: 'view_admins',
                 emoji: '📋'
             },
             {
-                label: 'Alternar Modo Solo Lectura / Activo',
-                description: 'Bloquear o permitir acciones administrativas desde Discord al instante',
+                label: 'Pausar / Activar Acciones',
+                description: 'Activa o desactiva el Modo Solo Lectura al instante',
                 value: 'toggle_readonly',
                 emoji: '🔒'
             },
             {
-                label: 'Recibir Credenciales .env por DM',
-                description: 'Envía por privado el bloque txBridge/.env actual de este servidor',
+                label: 'Claves de Enlace (DM)',
+                description: 'Recibe la configuración privada de conexión por DM',
                 value: 'send_env_dm',
-                emoji: '🔐'
-            },
-            {
-                label: 'Reiniciar / Detener / Arrancar Servidor',
-                description: 'Control directo del proceso FXServer en txAdmin (Solo Creador)',
-                value: 'server_control',
-                emoji: '🔄'
+                emoji: '📩'
             }
         ]);
 
     const btnRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId('btn_tx_owner_open_sessions')
-            .setLabel('Sesiones Staff')
+            .setCustomId('btn_tx_quick_ai')
+            .setLabel('Preguntar IA')
             .setStyle(ButtonStyle.Primary)
-            .setEmoji('👥'),
+            .setEmoji('🤖'),
+        new ButtonBuilder()
+            .setCustomId('btn_tx_owner_open_actions')
+            .setLabel('Moderar')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('⚡'),
+        new ButtonBuilder()
+            .setCustomId('btn_tx_owner_open_sessions')
+            .setLabel('Sesiones')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('🔐'),
         new ButtonBuilder()
             .setCustomId('btn_tx_owner_open_admins')
-            .setLabel('Admins txAdmin')
+            .setLabel('Admins')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('📋'),
         new ButtonBuilder()
             .setCustomId('btn_tx_owner_refresh_panel')
-            .setLabel('Actualizar Panel')
+            .setLabel('Actualizar')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('🔄')
     );
@@ -337,7 +444,7 @@ function buildEphemeralHubPayload(guild, bridgeStatus, userSession, isOwner) {
         })
         .setTitle('🧭┃MENÚ INTERACTIVO DE CONTROL')
         .setDescription(
-            `> 📡 **Puente:** ${bridgeStatus.online ? '🟢 `Conectado`' : '🔴 `Desconectado`'}\n` +
+            `> 📡 **Conexión:** ${bridgeStatus.online ? '🟢 `En línea`' : '🔴 `Desconectado`'}\n` +
             `> 🔑 **Tu sesión:** ${sessionLine}\n\n` +
             `Elige en el desplegable inferior a qué módulo quieres cambiar. Todo se actualiza **en este mismo mensaje**.`
         )
@@ -348,19 +455,19 @@ function buildEphemeralHubPayload(guild, bridgeStatus, userSession, isOwner) {
         .setTimestamp();
 
     const options = [
-        { label: 'Asistente IA de txAdmin', description: 'Consultar o proponer acciones en lenguaje natural', value: 'ai', emoji: '🧠' },
-        { label: 'Jugadores Conectados', description: 'Lista paginada en vivo', value: 'players', emoji: '👥' },
-        { label: 'Buscar Jugador / Antecedentes', description: 'Ficha completa por nombre, license o Discord', value: 'search_player', emoji: '🔎' },
-        { label: 'Historial de Sanciones', description: 'Baneos y warnings con filtros y paginación', value: 'sanctions', emoji: '⚖️' },
-        { label: 'Actividad del Staff y Admin Log', description: 'Ranking y últimas acciones administrativas', value: 'staff_activity', emoji: '🛡️' },
-        { label: 'Estado, Recursos y Errores', description: 'Uptime, recursos y fxserver.log', value: 'server_status', emoji: '🖥️' },
-        { label: 'Ejecutar Acción Administrativa', description: 'Ban, Desban, Warn, Kick, Recursos, Anuncio...', value: 'actions', emoji: '⚡' },
-        { label: 'Iniciar / Actualizar Sesión txAdmin', description: 'Vincular o refrescar tu cuenta de txAdmin', value: 'login', emoji: '🔑' }
+        { label: 'Preguntar a la IA', description: 'Consulta en lenguaje normal o pide acciones', value: 'ai', emoji: '🤖' },
+        { label: 'Conectados y Staffs', description: 'Ver quién está online y qué Staffs hay dentro', value: 'players', emoji: '👥' },
+        { label: 'Buscar Jugador', description: 'Ficha, Discord, horas jugadas y sanciones', value: 'search_player', emoji: '🔎' },
+        { label: 'Bans y Warns', description: 'Historial completo con filtros y páginas', value: 'sanctions', emoji: '⚖️' },
+        { label: 'Actividad del Staff', description: 'Ranking y últimas acciones de los Staffs', value: 'staff_activity', emoji: '🛡️' },
+        { label: 'Estado, Scripts y Errores', description: 'Salud del servidor, scripts y consola', value: 'server_status', emoji: '🖥️' },
+        { label: 'Moderar / Acciones', description: 'Warn, Kick, Ban, Desban, Anuncio y Scripts', value: 'actions', emoji: '⚡' },
+        { label: 'Iniciar / Cambiar Sesión', description: 'Vincular o refrescar tu cuenta de txAdmin', value: 'login', emoji: '🔑' }
     ];
     if (isOwner) {
         options.push({
-            label: 'Panel Maestro del Creador',
-            description: 'Sesiones activas, admins.json y modo solo lectura',
+            label: 'Panel de Creador',
+            description: 'Sesiones Staff, Admins txAdmin y Solo Lectura',
             value: 'owner_panel',
             emoji: '👑'
         });
@@ -371,6 +478,11 @@ function buildEphemeralHubPayload(guild, bridgeStatus, userSession, isOwner) {
         .setPlaceholder('🧭 Cambiar de sección...')
         .addOptions(options);
 
+    embed.setFooter({
+        text: `${serverName} • ${AUTOCLEAN_FOOTER_HINT}`,
+        ...(iconUrl ? { iconURL: iconUrl } : {})
+    });
+
     return {
         embeds: [embed],
         components: [new ActionRowBuilder().addComponents(menu)]
@@ -378,68 +490,88 @@ function buildEphemeralHubPayload(guild, bridgeStatus, userSession, isOwner) {
 }
 
 // ============================================================================
-// 3. VISTA PAGINADA: JUGADORES CONECTADOS
+// 3. VISTA PAGINADA: CONECTADOS Y STAFFS EN VIVO (SIN PING/STEAM/LICENSE)
 // ============================================================================
-function buildOnlinePlayersPayload(guild, data, page = 0) {
+function buildOnlinePlayersPayload(guild, data, page = 0, filterMode = 'all') {
     const { v, iconUrl, serverName } = resolveIcon(guild, guild?.id);
-    const players = Array.isArray(data?.players) ? data.players : [];
-    const perPage = 10;
-    const totalPages = Math.max(1, Math.ceil(players.length / perPage));
+    const allPlayers = Array.isArray(data?.players) ? data.players : [];
+    const staffList = allPlayers.filter(p => p.isTxAdmin);
+    const totalCount = data?.totalOnline ?? allPlayers.length;
+    const staffCount = data?.staffOnlineCount ?? staffList.length;
+    const showingStaffOnly = filterMode === 'staff';
+    const visiblePlayers = showingStaffOnly ? staffList : allPlayers;
+
+    const perPage = 8;
+    const totalPages = Math.max(1, Math.ceil(visiblePlayers.length / perPage));
     const safePage = Math.min(Math.max(0, page), totalPages - 1);
-    const slice = players.slice(safePage * perPage, safePage * perPage + perPage);
+    const slice = visiblePlayers.slice(safePage * perPage, safePage * perPage + perPage);
 
     let body = '';
     if (slice.length === 0) {
-        body = '> 📭 *No hay jugadores conectados en este momento (o FXServer está apagado).*';
+        body = showingStaffOnly
+            ? '> 🛡️ *No hay ningún Staff/Admin de txAdmin conectado en el servidor ahora mismo.*'
+            : '> 📭 *No hay jugadores conectados en este momento (o el servidor está apagado).*';
     } else {
         body = slice.map(p => {
-            const disc = (p.identifiers || []).find(i => i.startsWith('discord:'));
-            const lic = (p.identifiers || []).find(i => i.startsWith('license:'));
-            const discTag = disc ? `<@${disc.replace('discord:', '')}>` : '`Sin Discord`';
-            const licShort = lic ? `\`${lic.slice(0, 18)}…\`` : '`N/D`';
-            const charTxt = p.character?.fullName ? ` • 🎭 **${p.character.fullName}** *(${p.character.job || 'Civil'})*` : '';
-            return `> \`[ID ${p.id}]\` **${p.name}** • 📶 \`${p.ping ?? 0}ms\` • ${discTag} • ${licShort}${charTxt}`;
-        }).join('\n');
+            const dId = p.discordId || ((p.identifiers || []).find(i => /^discord:\d+/i.test(i)) || '').replace(/^discord:/i, '');
+            const discTag = dId ? `<@${dId}>` : '`Sin Discord`';
+            const staffBadge = p.isTxAdmin
+                ? ` • 🛡️ **Staff txAdmin**${p.txAdminName ? ` (\`${p.txAdminName}\`)` : ''}`
+                : '';
+            const icon = p.isTxAdmin ? '🛡️' : '👤';
+            const charLine = p.character?.fullName
+                ? `\n> ╰ 🎭 **PJ:** ${p.character.fullName} *(${p.character.job || 'Civil'})*`
+                : '';
+            return (
+                `${icon} **\`ID ${p.id}\` • ${p.name}**${staffBadge}\n` +
+                `> ╰ 💬 **Discord:** ${discTag}${charLine}`
+            );
+        }).join('\n\n');
     }
 
     const embed = new EmbedBuilder()
-        .setColor(v.color)
+        .setColor(showingStaffOnly ? 0x9B59B6 : v.color)
         .setAuthor({
-            name: `JUGADORES EN VIVO • ${serverName}`,
+            name: `${showingStaffOnly ? 'STAFFS CONECTADOS' : 'CONECTADOS EN VIVO'} • ${serverName}`,
             ...(iconUrl ? { iconURL: iconUrl } : {})
         })
-        .setTitle(`👥┃Jugadores Conectados (${players.length}/${data?.maxClients || '?'})`)
+        .setTitle(showingStaffOnly
+            ? `🛡️┃Staffs con txAdmin Conectados (${staffCount})`
+            : `👥┃Jugadores Conectados (${totalCount}/${data?.maxClients || '?'})`)
         .setDescription(
-            `> 🖥️ **Servidor:** ${data?.online ? '🟢 `Online`' : '🔴 `Offline`'} • ⏱️ **Uptime:** \`${data?.uptime || 'N/D'}\`\n\n` +
+            `> 📡 **Servidor:** ${data?.online ? '🟢 `Online`' : '🔴 `Offline`'} • 👥 **Jugadores:** \`${totalCount}/${data?.maxClients || '?'}\` • 🛡️ **Staffs dentro:** \`${staffCount}\` • ⏱️ **Activo:** \`${data?.uptime || 'N/D'}\`\n\n` +
             `────────────────────────────\n\n` +
             `${body}`
         )
         .setFooter({
-            text: `${serverName} • Página ${safePage + 1} de ${totalPages} • Solo tú puedes ver esta vista`,
+            text: `${serverName} • Pág. ${safePage + 1}/${totalPages} • ${AUTOCLEAN_FOOTER_HINT}`,
             ...(iconUrl ? { iconURL: iconUrl } : {})
         })
         .setTimestamp();
 
+    const nextMode = showingStaffOnly ? 'all' : 'staff';
+    const curMode = showingStaffOnly ? 'staff' : 'all';
+
     const navRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId(`tx_pg_players_${Math.max(0, safePage - 1)}`)
+            .setCustomId(`tx_pg_players_${Math.max(0, safePage - 1)}_${curMode}`)
             .setLabel('Anterior')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('⬅️')
             .setDisabled(safePage <= 0),
         new ButtonBuilder()
-            .setCustomId('tx_pg_info_disabled')
-            .setLabel(`Pág. ${safePage + 1} / ${totalPages}`)
-            .setStyle(ButtonStyle.Secondary)
-            .setDisabled(true),
-        new ButtonBuilder()
-            .setCustomId(`tx_pg_players_${Math.min(totalPages - 1, safePage + 1)}`)
+            .setCustomId(`tx_pg_players_${Math.min(totalPages - 1, safePage + 1)}_${curMode}`)
             .setLabel('Siguiente')
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('➡️')
             .setDisabled(safePage >= totalPages - 1),
         new ButtonBuilder()
-            .setCustomId(`tx_pg_players_${safePage}_ref`)
+            .setCustomId(`tx_pg_players_0_${nextMode}`)
+            .setLabel(showingStaffOnly ? `Ver Todos (${totalCount})` : `Solo Staffs (${staffCount})`)
+            .setStyle(showingStaffOnly ? ButtonStyle.Secondary : ButtonStyle.Success)
+            .setEmoji(showingStaffOnly ? '👥' : '🛡️'),
+        new ButtonBuilder()
+            .setCustomId(`tx_pg_players_${safePage}_${curMode}_ref`)
             .setLabel('Actualizar')
             .setStyle(ButtonStyle.Primary)
             .setEmoji('🔄'),
@@ -571,7 +703,7 @@ function buildPlayerProfilePayload(guild, data, query, page = 0) {
         return {
             embeds: [buildNoticeEmbed(guild, {
                 title: '🔎┃Jugador No Encontrado',
-                description: `No se encontró ningún registro en \`playersDB.json\` para **\`${query}\`**.\n\n> 💡 *Prueba con su nombre exacto, su \`license:\`, su \`discord:\` o su ID conectado.*`,
+                description: `No se encontró ningún registro en txAdmin para **\`${query}\`**.\n\n> 💡 *Prueba con su nombre exacto, su \`license:\`, su \`discord:\` o su ID conectado.*`,
                 color: 0xF39C12
             })],
             components: [new ActionRowBuilder().addComponents(
@@ -589,11 +721,16 @@ function buildPlayerProfilePayload(guild, data, query, page = 0) {
     const safePage = Math.min(Math.max(0, page), totalPages - 1);
     const slice = actions.slice(safePage * perPage, safePage * perPage + perPage);
 
-    const idsText = (p.ids || []).slice(0, 6).map(id => `\`${id}\``).join(' · ') || '`Sin identificadores`';
+    const allIds = [...(p.ids || []), ...(data.onlinePlayer?.identifiers || [])];
+    const discRaw = allIds.find(id => /^discord:\d+/i.test(String(id)));
+    const discordTag = discRaw ? `<@${String(discRaw).replace(/^discord:/i, '')}>` : '`Sin Discord vinculado`';
+    const staffLine = data.onlinePlayer?.isTxAdmin
+        ? `> 🛡️ **Rango txAdmin:** \`${data.onlinePlayer.txAdminName || 'Staff txAdmin'}\`\n`
+        : '';
     const notesText = p.notes?.text ? `> 📝 **Nota Staff (${p.notes.author || 'Staff'}):** *${p.notes.text.slice(0, 200)}*\n` : '';
     const charSection = chars.length > 0
         ? `🎭┃**Personajes IC (${chars.length})**\n` +
-          chars.slice(0, 3).map(c => `> • **${c.fullName}** — Trabajo: \`${c.job || 'Civil'}\` • Banco: \`$${c.bank ?? '?'}\``).join('\n') + '\n\n'
+          chars.slice(0, 3).map(c => `> • **${c.fullName}** — 💼 \`${c.job || 'Civil'}\` • 💳 \`$${c.bank ?? '?'}\``).join('\n') + '\n\n'
         : '';
 
     let historyBody = '> ✅ *Sin antecedentes de baneos ni advertencias registrados.*';
@@ -601,20 +738,25 @@ function buildPlayerProfilePayload(guild, data, query, page = 0) {
         historyBody = slice.map(a => {
             const ic = a.type === 'ban' ? '🔨' : '⚠️';
             const st = a.status === 'active' ? '🔴 `ACTIVO`' : (a.status === 'revoked' ? '🟣 `REVOCADO`' : '⚪ `EXPIRADO`');
-            return `${ic} **\`${a.id}\`** ${st} • ${fmtTs(a.timestamp)}\n> **Admin:** \`${a.author}\` • **Motivo:** ${(a.reason || 'N/D').slice(0, 120)}`;
+            return `${ic} **\`${a.id}\`** ${st} • ${fmtTs(a.timestamp)}\n> 🛡️ **Admin:** \`${a.author}\` • 📝 **Motivo:** ${(a.reason || 'N/D').slice(0, 120)}`;
         }).join('\n');
     }
+
+    const statusBadge = data.onlinePlayer
+        ? `🟢 Conectado (ID ${data.onlinePlayer.id})`
+        : '⚪ Desconectado';
 
     const embed = new EmbedBuilder()
         .setColor(v.color)
         .setAuthor({
-            name: `FICHA DE JUGADOR TXADMIN • ${serverName}`,
+            name: `FICHA DE JUGADOR • ${serverName}`,
             ...(iconUrl ? { iconURL: iconUrl } : {})
         })
-        .setTitle(`👤┃${p.displayName || 'Jugador'} ${data.onlinePlayer ? '🟢 (ONLINE)' : '⚪ (OFFLINE)'}`)
+        .setTitle(`👤┃${p.displayName || 'Jugador'} • ${statusBadge}`)
         .setDescription(
-            `> 🆔 **IDs:** ${idsText}\n` +
-            `> 📅 **1.ª Conexión:** ${fmtTs(p.tsJoined)} • 🕒 **Última:** ${fmtRel(p.tsLastConnection)}\n` +
+            `> 💬 **Discord:** ${discordTag}\n` +
+            `${staffLine}` +
+            `> 📅 **1.ª Entrada:** ${fmtTs(p.tsJoined)} • 🕒 **Última vez:** ${fmtRel(p.tsLastConnection)}\n` +
             `> ⏱️ **Tiempo jugado:** \`${fmtPlaytime(p.playTime)}\`\n` +
             `${notesText}\n` +
             `${charSection}` +
@@ -622,7 +764,7 @@ function buildPlayerProfilePayload(guild, data, query, page = 0) {
             `⚖️┃**Antecedentes (${actions.length} registros)**\n${historyBody}`
         )
         .setFooter({
-            text: `${serverName} • Página ${safePage + 1} de ${totalPages} • Consulta: ${query.slice(0, 40)}`,
+            text: `${serverName} • Pág. ${safePage + 1}/${totalPages} • ${AUTOCLEAN_FOOTER_HINT}`,
             ...(iconUrl ? { iconURL: iconUrl } : {})
         })
         .setTimestamp();
@@ -676,14 +818,14 @@ function buildStaffActivityPayload(guild, data, page = 0, viewMode = 'ranking') 
 
         const body = slice.length > 0
             ? `\`\`\`text\n${slice.join('\n').slice(0, 3400)}\n\`\`\``
-            : '> 📭 *No hay entradas recientes en `admin.log`.*';
+            : '> 📭 *No hay registros administrativos recientes.*';
 
         const embed = new EmbedBuilder()
             .setColor(v.color)
-            .setAuthor({ name: `REGISTRO ADMIN.LOG • ${serverName}`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
-            .setTitle('📜┃Últimas Acciones en admin.log')
+            .setAuthor({ name: `REGISTRO ADMINISTRATIVO • ${serverName}`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
+            .setTitle('📜┃Últimas Acciones Administrativas')
             .setDescription(body)
-            .setFooter({ text: `${serverName} • Página ${safePage + 1} de ${totalPages} • admin.log`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
+            .setFooter({ text: `${serverName} • Página ${safePage + 1} de ${totalPages} • Registros`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
             .setTimestamp();
 
         return {
@@ -733,7 +875,7 @@ function buildStaffActivityPayload(guild, data, page = 0, viewMode = 'ranking') 
                 new ButtonBuilder().setCustomId(`tx_pg_staff_${Math.max(0, safePage - 1)}_ranking`).setLabel('Anterior').setStyle(ButtonStyle.Secondary).setEmoji('⬅️').setDisabled(safePage <= 0),
                 new ButtonBuilder().setCustomId('tx_pg_info_disabled').setLabel(`Pág. ${safePage + 1} / ${totalPages}`).setStyle(ButtonStyle.Secondary).setDisabled(true),
                 new ButtonBuilder().setCustomId(`tx_pg_staff_${Math.min(totalPages - 1, safePage + 1)}_ranking`).setLabel('Siguiente').setStyle(ButtonStyle.Secondary).setEmoji('➡️').setDisabled(safePage >= totalPages - 1),
-                new ButtonBuilder().setCustomId('tx_pg_staff_0_adminlog').setLabel('Ver admin.log').setStyle(ButtonStyle.Primary).setEmoji('📜'),
+                new ButtonBuilder().setCustomId('tx_pg_staff_0_adminlog').setLabel('Ver Registros').setStyle(ButtonStyle.Primary).setEmoji('📜'),
                 new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Danger).setEmoji('↩️')
             )
         ]
@@ -753,7 +895,7 @@ function buildServerAndResourcesPayload(guild, data, page = 0, tab = 'overview')
             { label: 'Resumen General y Rendimiento', value: 'overview', emoji: '📊', default: tab === 'overview' },
             { label: 'Todos los Recursos FiveM', value: 'res_all', emoji: '🧩', default: tab === 'res_all' },
             { label: 'Solo Recursos Detenidos / Error', value: 'res_stopped', emoji: '🔴', default: tab === 'res_stopped' },
-            { label: 'Últimos Errores de Consola (fxserver.log)', value: 'console_errors', emoji: '🚨', default: tab === 'console_errors' }
+            { label: 'Últimos Errores de Consola', value: 'console_errors', emoji: '🚨', default: tab === 'console_errors' }
         ]);
 
     if (tab === 'overview') {
@@ -763,10 +905,10 @@ function buildServerAndResourcesPayload(guild, data, page = 0, tab = 'overview')
             .setAuthor({ name: `MONITOR TÉCNICO • ${serverName}`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
             .setTitle('🖥️┃Estado y Rendimiento del Servidor')
             .setDescription(
-                `> 🟢 **FXServer:** ${ov.online ? '`ONLINE`' : '🔴 `OFFLINE`'} • 👥 **Jugadores:** \`${ov.playersCount ?? 0}/${ov.maxClients ?? '?'}\`\n` +
-                `> ⏱️ **Uptime Puente/Host:** \`${ov.uptime || 'N/D'}\` • 🧩 **Recursos:** \`${ov.startedResources ?? '?'}\` activos / \`${ov.stoppedResources ?? '?'}\` detenidos\n` +
-                `> 💻 **Host CPU/RAM:** \`${ov.hostCpu || 'N/D'}\` • \`${ov.hostRam || 'N/D'}\`\n` +
-                `> 🚨 **Alertas recientes en fxserver.log:** \`${ov.recentErrorsCount ?? 0}\` errores • \`${ov.recentHitchesCount ?? 0}\` hitches\n\n` +
+                `> 🟢 **Servidor FiveM:** ${ov.online ? '`ONLINE`' : '🔴 `OFFLINE`'} • 👥 **Jugadores:** \`${ov.playersCount ?? 0}/${ov.maxClients ?? '?'}\`\n` +
+                `> ⏱️ **Tiempo activo:** \`${ov.uptime || 'N/D'}\` • 🧩 **Recursos:** \`${ov.startedResources ?? '?'}\` activos / \`${ov.stoppedResources ?? '?'}\` detenidos\n` +
+                `> 💻 **Rendimiento:** \`${ov.hostCpu || 'N/D'}\` • \`${ov.hostRam || 'N/D'}\`\n` +
+                `> 🚨 **Alertas recientes en consola:** \`${ov.recentErrorsCount ?? 0}\` errores • \`${ov.recentHitchesCount ?? 0}\` hitches\n\n` +
                 `────────────────────────────\n` +
                 `💡 *Usa el desplegable inferior para inspeccionar recursos iniciados/detenidos o ver los últimos errores de consola.*`
             )
@@ -794,14 +936,14 @@ function buildServerAndResourcesPayload(guild, data, page = 0, tab = 'overview')
 
         const body = slice.length > 0
             ? `\`\`\`text\n${slice.join('\n').slice(0, 3400)}\n\`\`\``
-            : '> ✅ *No se han detectado errores recientes en `fxserver.log`.*';
+            : '> ✅ *No se han detectado errores recientes en la consola del servidor.*';
 
         const embed = new EmbedBuilder()
             .setColor(errs.length > 0 ? 0xE74C3C : 0x2ECC71)
-            .setAuthor({ name: `CONSOLA FXSERVER • ${serverName}`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
+            .setAuthor({ name: `CONSOLA DEL SERVIDOR • ${serverName}`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
             .setTitle(`🚨┃Errores Recientes de Consola (${errs.length})`)
             .setDescription(body)
-            .setFooter({ text: `${serverName} • Página ${safePage + 1} de ${totalPages} • fxserver.log`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
+            .setFooter({ text: `${serverName} • Página ${safePage + 1} de ${totalPages} • Consola`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
             .setTimestamp();
 
         return {
@@ -828,7 +970,7 @@ function buildServerAndResourcesPayload(guild, data, page = 0, tab = 'overview')
 
     let body = '';
     if (!data?.hookAvailable) {
-        body = '> ⚠️ *El recurso `vantex_tx_hook` no respondió todavía. Asegúrate de añadir `ensure vantex_tx_hook` en tu `server.cfg`.*';
+        body = '> ⚠️ *El módulo de lectura de recursos del servidor FiveM no está conectado en este momento.*';
     } else if (slice.length === 0) {
         body = tab === 'res_stopped'
             ? '> ✅ *¡Todos los recursos están iniciados correctamente!*'
@@ -864,36 +1006,59 @@ function buildServerAndResourcesPayload(guild, data, page = 0, tab = 'overview')
 }
 
 // ============================================================================
-// 8. SUBMENÚ INTERACTIVO DE ACCIONES ADMINISTRATIVAS
+// 8. SUBMENÚ INTERACTIVO DE ACCIONES ADMINISTRATIVAS (FILTRADO POR PERMISOS REALES DE TXADMIN)
 // ============================================================================
-function buildActionsMenuPayload(guild, userSession, readOnlyMode) {
+function buildActionsMenuPayload(guild, userSession, readOnlyMode, isOwner = false) {
     const { v, iconUrl, serverName } = resolveIcon(guild, guild?.id);
+
+    const allActionOptions = [
+        { label: 'Poner Warn', description: 'Envía aviso rojo en pantalla al jugador y lo guarda', value: 'tx_warn', emoji: '⚠️' },
+        { label: 'Expulsar (Kick)', description: 'Saca del servidor en vivo al jugador con un motivo', value: 'tx_kick', emoji: '👢' },
+        { label: 'Banear Jugador', description: 'Baneo temporal (2h, 1d, 7d...) o permanente', value: 'tx_ban', emoji: '🔨' },
+        { label: 'Quitar Ban / Warn', description: 'Desbanea o retira un Warn usando su ID de sanción', value: 'tx_revoke_action', emoji: '🔓' },
+        { label: 'Anuncio en Pantalla', description: 'Publica un aviso global visible para todo el servidor', value: 'tx_announcement', emoji: '📢' },
+        { label: 'Reiniciar / Parar Script', description: 'restart, ensure, stop o refresh de un script', value: 'tx_resource_action', emoji: '🧩' },
+        { label: 'Reiniciar / Apagar Servidor', description: 'Reiniciar, detener o encender FiveM (Solo Creador)', value: 'tx_server_control', emoji: '🔄' }
+    ];
+
+    // Mostrar ÚNICAMENTE las acciones permitidas por los permisos reales de la cuenta de txAdmin del usuario
+    const allowedOptions = userSession
+        ? allActionOptions.filter(opt => canExecuteTxAction(userSession, opt.value, isOwner))
+        : [];
+
+    const permsDisplay = !userSession
+        ? '`Sin sesión iniciada`'
+        : (userSession.master || (userSession.permissions || []).includes('all_permissions')
+            ? '`Acceso completo (txAdmin)`'
+            : `\`${(userSession.permissions || []).join(', ') || 'Solo consulta'}\``);
+
+    const noPermsNotice = userSession && allowedOptions.length === 0
+        ? '\n\n> ⚠️ *Tu cuenta de txAdmin actual no tiene permisos habilitados para ejecutar acciones desde este menú.*'
+        : '';
+
     const embed = new EmbedBuilder()
         .setColor(readOnlyMode ? 0xF39C12 : v.color)
-        .setAuthor({ name: `ACCIONES ADMINISTRATIVAS • ${serverName}`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
-        .setTitle('⚡┃Ejecutar Acción Real en txAdmin')
+        .setAuthor({ name: `MODERACIÓN Y ACCIONES • ${serverName}`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
+        .setTitle('⚡┃Moderar y Ejecutar Acciones en txAdmin')
         .setDescription(
             `> 🔑 **Tu cuenta txAdmin:** ${userSession ? `🟢 \`${userSession.txUsername}\`` : '🔴 `No vinculada (inicia sesión primero)`'}\n` +
-            `> 🛡️ **Estado del sistema:** ${readOnlyMode ? '🔒 `MODO SOLO LECTURA ACTIVADO POR EL CREADOR`' : '🟢 `Acciones habilitadas`'}\n\n` +
+            `> 🪪 **Permisos activos:** ${permsDisplay}\n` +
+            `> 🛡️ **Estado del panel:** ${readOnlyMode ? '🔒 `MODO SOLO LECTURA (Pausado por Creador)`' : '🟢 `Acciones listas`'}\n\n` +
             `────────────────────────────\n\n` +
-            `Selecciona la acción en el menú inferior. Se abrirá un formulario privado y luego **un paso de confirmación** antes de enviarla a txAdmin.\n` +
-            `*Todas las acciones quedan grabadas en txAdmin con tu nombre real y respetando tus permisos de txAdmin.*`
+            `🎯 Solo ves las acciones que **tu cuenta tiene autorizadas en txAdmin**. Tras rellenar el formulario te pedirá **confirmación por botón** antes de aplicarla.${noPermsNotice}`
         )
-        .setFooter({ text: `${serverName} • Confirmación obligatoria en todas las acciones`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
+        .setFooter({ text: `${serverName} • ${AUTOCLEAN_FOOTER_HINT}`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
         .setTimestamp();
+
+    const menuOptions = allowedOptions.length > 0
+        ? allowedOptions
+        : [{ label: 'Sin acciones disponibles', description: userSession ? 'Tu cuenta de txAdmin no tiene permisos de acción' : 'Inicia sesión en txAdmin primero', value: 'none', emoji: '🔒' }];
 
     const actionsMenu = new StringSelectMenuBuilder()
         .setCustomId('select_tx_action_pick')
-        .setPlaceholder('⚡ Elige qué acción deseas ejecutar en txAdmin...')
-        .setDisabled(Boolean(readOnlyMode) || !userSession)
-        .addOptions([
-            { label: 'Banear Jugador', description: 'Ban temporal o permanente (online u offline)', value: 'tx_ban', emoji: '🔨' },
-            { label: 'Desbanear / Retirar Advertencia', description: 'Revocar un ban o warn usando su Action ID', value: 'tx_revoke_action', emoji: '🔓' },
-            { label: 'Enviar Advertencia (Warn)', description: 'Warn oficial en txAdmin al jugador conectado', value: 'tx_warn', emoji: '⚠️' },
-            { label: 'Expulsar Jugador (Kick)', description: 'Expulsar del servidor con motivo', value: 'tx_kick', emoji: '👢' },
-            { label: 'Control de Recurso FiveM', description: 'ensure / stop / restart / refresh de un recurso', value: 'tx_resource_action', emoji: '🧩' },
-            { label: 'Enviar Anuncio Global', description: 'Anuncio oficial dentro del servidor FiveM', value: 'tx_announcement', emoji: '📢' }
-        ]);
+        .setPlaceholder('⚡ Elige una acción para ejecutar ahora...')
+        .setDisabled(Boolean(readOnlyMode) || !userSession || allowedOptions.length === 0)
+        .addOptions(menuOptions);
 
     const btnRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_tx_quick_login').setLabel(userSession ? 'Cambiar Sesión' : 'Iniciar Sesión').setStyle(ButtonStyle.Primary).setEmoji('🔑'),
@@ -914,11 +1079,11 @@ function buildConfirmationPayload(guild, { confirmId, bridgeAction, params, txUs
     const label = ACTION_LABELS[bridgeAction] || bridgeAction;
     const paramLines = Object.entries(params || {})
         .filter(([, val]) => val !== undefined && val !== null && String(val).trim() !== '')
-        .map(([k, val]) => `> • **${k}:** \`${String(val).slice(0, 220)}\``)
+        .map(([k, val]) => `> • **${PARAM_LABELS[k] || k}:** \`${String(val).slice(0, 220)}\``)
         .join('\n') || '> *(Sin parámetros adicionales)*';
 
     const aiHeader = aiAnswer
-        ? `💡┃**Análisis previo de la IA**\n${aiAnswer.slice(0, 2200)}\n\n────────────────────────────\n\n`
+        ? `🤖┃**Análisis previo de la IA**\n${aiAnswer.slice(0, 2200)}\n\n────────────────────────────\n\n`
         : '';
 
     const embed = new EmbedBuilder()
@@ -927,18 +1092,18 @@ function buildConfirmationPayload(guild, { confirmId, bridgeAction, params, txUs
         .setTitle(`⚠️┃Confirmar: ${label}`)
         .setDescription(
             `${aiHeader}` +
-            `📌┃**Detalles que se enviarán a txAdmin**\n` +
+            `📌┃**Datos que se aplicarán en txAdmin**\n` +
             `${paramLines}\n\n` +
-            `> 🔑 **Se ejecutará como:** \`${txUsername || 'Sin sesión'}\`\n` +
-            `> ⏳ **Validez:** *Esta confirmación caduca en 60 segundos y solo puedes pulsarla tú.*`
+            `> 🔑 **Ejecutar como:** \`${txUsername || 'Sin sesión'}\`\n` +
+            `> ⏳ **Validez:** *Caduca en 60 segundos y solo puedes pulsarla tú.*`
         )
-        .setFooter({ text: `${serverName} • Protección Humana Obligatoria`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
+        .setFooter({ text: `${serverName} • Protección Humana • ${AUTOCLEAN_FOOTER_HINT}`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
         .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(`tx_confirm_yes_${confirmId}`)
-            .setLabel('Confirmar y Ejecutar en txAdmin')
+            .setLabel('Confirmar y Ejecutar')
             .setStyle(ButtonStyle.Success)
             .setEmoji('✅'),
         new ButtonBuilder()
@@ -957,6 +1122,55 @@ function buildConfirmationPayload(guild, { confirmId, bridgeAction, params, txUs
 }
 
 // ============================================================================
+// 9B. PANTALLA DE RESULTADO CON BOTÓN DIRECTO PARA REPETIR LA MISMA ACCIÓN
+// ============================================================================
+function buildActionResultPayload(guild, { ok, bridgeAction, txUsername, message, canRepeat = true }) {
+    const label = ACTION_LABELS[bridgeAction] || bridgeAction;
+    const repeatLabel = ACTION_REPEAT_LABELS[bridgeAction] || 'Repetir Acción';
+
+    const embed = buildNoticeEmbed(guild, {
+        title: ok ? '✅┃Acción Aplicada en txAdmin' : '❌┃No se Pudo Aplicar la Acción',
+        description: ok
+            ? `> ⚡ **Acción:** ${label}\n` +
+              `> 🔑 **Ejecutada como:** \`${txUsername || 'txAdmin'}\`\n` +
+              `> 📋 **Resultado:** ${message || 'Completado correctamente.'}\n\n` +
+              `💡 *Pulsa **${repeatLabel}** abajo para hacerlo de nuevo al instante sin volver al menú.*`
+            : `> ⚡ **Acción:** ${label}\n` +
+              `> 🚨 **Motivo:** ${message || 'Error desconocido al ejecutar en txAdmin.'}\n\n` +
+              `💡 *Puedes corregir los datos e intentarlo de nuevo al instante con el botón inferior.*`,
+        color: ok ? 0x2ECC71 : 0xE74C3C
+    });
+
+    const buttons = [];
+    if (canRepeat && ACTION_REPEAT_LABELS[bridgeAction]) {
+        buttons.push(
+            new ButtonBuilder()
+                .setCustomId(`tx_repeat_act_${bridgeAction}`)
+                .setLabel(ok ? repeatLabel : 'Reintentar')
+                .setStyle(ButtonStyle.Success)
+                .setEmoji('🔁')
+        );
+    }
+    buttons.push(
+        new ButtonBuilder()
+            .setCustomId('tx_nav_actions')
+            .setLabel('Otras Acciones')
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji('⚡'),
+        new ButtonBuilder()
+            .setCustomId('tx_nav_hub')
+            .setLabel('Menú')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('↩️')
+    );
+
+    return {
+        embeds: [embed],
+        components: [new ActionRowBuilder().addComponents(...buttons)]
+    };
+}
+
+// ============================================================================
 // 10. PANEL MAESTRO EXCLUSIVO DEL CREADOR (OWNER)
 // ============================================================================
 function buildOwnerMasterPayload(guild, bridgeStatus, txAdmins = [], showingAdmins = false) {
@@ -966,12 +1180,13 @@ function buildOwnerMasterPayload(guild, bridgeStatus, txAdmins = [], showingAdmi
     let body = '';
     if (showingAdmins) {
         if (txAdmins.length === 0) {
-            body = '> 📭 *No se pudo leer `admins.json` (puente desconectado o ruta no configurada).*';
+            body = '> 📭 *No hay conexión activa con el servidor para consultar los administradores de txAdmin.*';
         } else {
-            body = `📋┃**Administradores en \`admins.json\` (${txAdmins.length})**\n` +
+            body = `📋┃**Administradores en txAdmin (${txAdmins.length})**\n` +
                 txAdmins.slice(0, 20).map(a => {
-                    const perms = a.master ? '`MASTER (Todos)`' : `\`${(a.permissions || []).slice(0, 5).join(', ') || 'Básicos'}\``;
-                    return `> • **${a.name}** — ${perms}`;
+                    const perms = a.master ? '👑 `MASTER (Todos)`' : `🛡️ \`${(a.permissions || []).slice(0, 5).join(', ') || 'Básicos'}\``;
+                    const disc = a.discordId ? ` • 💬 <@${a.discordId}>` : '';
+                    return `> • **${a.name}**${disc} — ${perms}`;
                 }).join('\n');
         }
     } else {
@@ -990,9 +1205,9 @@ function buildOwnerMasterPayload(guild, bridgeStatus, txAdmins = [], showingAdmi
         .setAuthor({ name: `PANEL MAESTRO DEL CREADOR • ${serverName}`, ...(iconUrl ? { iconURL: iconUrl } : {}) })
         .setTitle('👑┃CONTROL DE SESIONES Y SEGURIDAD TXADMIN')
         .setDescription(
-            `> 📡 **Puente VPS/Local:** ${bridgeStatus.online ? `🟢 \`Conectado\` (${bridgeStatus.latencyMs ?? 0}ms)` : '🔴 `Desconectado`'}\n` +
+            `> 📡 **Enlace txAdmin:** ${bridgeStatus.online ? '🟢 `Conectado`' : '🔴 `Desconectado`'}\n` +
             `> 🔒 **Modo Solo Lectura:** ${bridgeStatus.readOnlyMode ? '🟡 `ACTIVADO (acciones bloqueadas)`' : '🟢 `Desactivado (acciones permitidas)`'}\n` +
-            `> 🔐 **Token del puente:** ${bridgeStatus.secretConfigured ? '✅ `Configurado`' : '❌ `Falta (!tx-setup)`'}\n\n` +
+            `> 🔐 **Vinculación:** ${bridgeStatus.secretConfigured ? '✅ `Configurada`' : '❌ `Pendiente`'}\n\n` +
             `────────────────────────────\n\n` +
             `${body}`
         )
@@ -1063,7 +1278,7 @@ function buildLoginModal() {
     const passIn = new TextInputBuilder()
         .setCustomId('tx_pass')
         .setLabel('Contraseña de txAdmin')
-        .setPlaceholder('Se cifrará con AES-256 en el puente local/VPS')
+        .setPlaceholder('Introduce tu contraseña personal de txAdmin')
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
         .setMinLength(3)
@@ -1175,6 +1390,10 @@ function buildActionModal(actionKey) {
 
 module.exports = {
     ACTION_LABELS,
+    ACTION_REPEAT_LABELS,
+    ACTION_PERMISSIONS,
+    hasTxPermission,
+    canExecuteTxAction,
     buildNoticeEmbed,
     buildMainPanelPayload,
     buildOwnerPermanentPanelPayload,
@@ -1186,6 +1405,7 @@ module.exports = {
     buildServerAndResourcesPayload,
     buildActionsMenuPayload,
     buildConfirmationPayload,
+    buildActionResultPayload,
     buildOwnerMasterPayload,
     buildLoginModal,
     buildAiQueryModal,

@@ -23,6 +23,96 @@ const OWNER_IDS = new Set(['418558256840179722', '1308814761269395527']);
 // Confirmaciones humanas pendientes (confirmId -> { guildId, userId, userTag, bridgeAction, params, txUsername, isDemo, expiresAt })
 const pendingConfirmations = new Map();
 
+// Autoeliminación inteligente de respuestas efímeras (se reinicia cada vez que el Staff navega en el mismo mensaje)
+const TX_EPHEMERAL_TTL_MS = 120 * 1000;
+const ephemeralDeleteTimers = new Map();
+
+function scheduleAutoDelete(interaction) {
+    if (!interaction) return;
+    const key = interaction.message?.flags?.has?.(64)
+        ? `msg:${interaction.message.id}`
+        : `int:${interaction.id}`;
+    if (ephemeralDeleteTimers.has(key)) {
+        clearTimeout(ephemeralDeleteTimers.get(key));
+    }
+    const timer = setTimeout(() => {
+        ephemeralDeleteTimers.delete(key);
+        interaction.deleteReply().catch(() => {});
+    }, TX_EPHEMERAL_TTL_MS);
+    ephemeralDeleteTimers.set(key, timer);
+}
+
+// Resetea visualmente los desplegables de los paneles permanentes para que no queden preseleccionados tras usarlos 1 vez
+function resetPermanentSelectMenu(interaction, isDemo = false, isOwnerPanel = false) {
+    try {
+        const msg = interaction.message;
+        if (!msg || !msg.editable) return;
+        const gId = interaction.guild?.id;
+        const status = isDemo
+            ? demoSandbox.getDemoBridgeStatus(gId, interaction.user)
+            : bridgeHub.getBridgeStatus(gId);
+        const fresh = isOwnerPanel
+            ? panels.buildOwnerPermanentPanelPayload(interaction.guild, status, { includeFiles: false })
+            : panels.buildMainPanelPayload(interaction.guild, status, { includeFiles: false });
+        const decorated = decorateForDemo(fresh, isDemo);
+        msg.edit({ components: decorated.components }).catch(() => {});
+    } catch (_) {}
+}
+
+// Cruza los jugadores conectados ÚNICAMENTE con administradores reales de txAdmin (y sesiones txAdmin verificadas)
+// Nunca usa el rol Staff de Discord, ya que puede haber Staffs en Discord sin cuenta/rango en txAdmin todavía.
+function enrichOnlinePlayersWithTxAdmins(bridgeStatus, data) {
+    if (!data || !Array.isArray(data.players)) return data;
+    const sessionByDiscord = new Map();
+    for (const s of (bridgeStatus?.sessions || [])) {
+        if (s.discordUserId) sessionByDiscord.set(String(s.discordUserId), s);
+    }
+
+    const enrichedPlayers = data.players.map(p => {
+        const ids = Array.isArray(p.identifiers) ? p.identifiers : [];
+        const discRaw = ids.find(i => /^discord:\d+/i.test(String(i)));
+        const discordId = p.discordId || (discRaw ? String(discRaw).replace(/^discord:/i, '') : null);
+
+        let isTxAdmin = Boolean(p.isTxAdmin);
+        let txAdminName = p.txAdminName || null;
+        let txAdminMaster = Boolean(p.txAdminMaster);
+
+        // Respaldo solo si esa persona ya inició sesión real con una cuenta de txAdmin verificada
+        if (!isTxAdmin && discordId && sessionByDiscord.has(discordId)) {
+            const sess = sessionByDiscord.get(discordId);
+            isTxAdmin = true;
+            txAdminName = sess.txUsername || txAdminName;
+            txAdminMaster = Boolean(sess.master);
+        }
+
+        return {
+            ...p,
+            discordId,
+            isTxAdmin,
+            txAdminName,
+            txAdminMaster
+        };
+    });
+
+    const staffsOnline = enrichedPlayers
+        .filter(p => p.isTxAdmin)
+        .map(p => ({
+            id: p.id,
+            name: p.name,
+            discordId: p.discordId,
+            txAdminName: p.txAdminName,
+            isMaster: p.txAdminMaster
+        }));
+
+    return {
+        ...data,
+        totalOnline: data.totalOnline ?? enrichedPlayers.length,
+        staffOnlineCount: staffsOnline.length,
+        staffsOnline,
+        players: enrichedPlayers
+    };
+}
+
 function isBotOwner(userId) {
     return OWNER_IDS.has(String(userId || ''));
 }
@@ -361,12 +451,16 @@ function initTxAdminModule(client, app) {
 
         const respond = async (rawPayload) => {
             const payload = decorateForDemo(rawPayload, isDemo);
+            let res;
             if (isFreshReply) {
-                if (interaction.deferred || interaction.replied) return interaction.editReply(payload).catch(() => {});
-                return interaction.reply({ ...payload, ephemeral: true }).catch(() => {});
+                if (interaction.deferred || interaction.replied) res = await interaction.editReply(payload).catch(() => {});
+                else res = await interaction.reply({ ...payload, ephemeral: true }).catch(() => {});
+            } else {
+                if (interaction.deferred || interaction.replied) res = await interaction.editReply(payload).catch(() => {});
+                else res = await interaction.update(payload).catch(() => {});
             }
-            if (interaction.deferred || interaction.replied) return interaction.editReply(payload).catch(() => {});
-            return interaction.update(payload).catch(() => {});
+            scheduleAutoDelete(interaction);
+            return res;
         };
 
         // Modales directos
@@ -379,7 +473,7 @@ function initTxAdminModule(client, app) {
         }
 
         if (section === 'actions') {
-            return respond(panels.buildActionsMenuPayload(interaction.guild, userSession, status.readOnlyMode));
+            return respond(panels.buildActionsMenuPayload(interaction.guild, userSession, status.readOnlyMode, owner));
         }
 
         if (section === 'owner_panel') {
@@ -411,8 +505,10 @@ function initTxAdminModule(client, app) {
 
         try {
             if (section === 'players') {
-                const data = await dispatch('read_list_online_players', {});
-                return respond(panels.buildOnlinePlayersPayload(interaction.guild, data, page));
+                const raw = await dispatch('read_list_online_players', {});
+                const data = enrichOnlinePlayersWithTxAdmins(getStatus(), raw);
+                const mode = filter === 'staff' ? 'staff' : 'all';
+                return respond(panels.buildOnlinePlayersPayload(interaction.guild, data, page, mode));
             }
 
             if (section === 'sanctions') {
@@ -450,8 +546,8 @@ function initTxAdminModule(client, app) {
         } catch (err) {
             return respond({
                 embeds: [panels.buildNoticeEmbed(interaction.guild, {
-                    title: '⚠️┃No se pudo consultar txAdmin',
-                    description: `${err.message}\n\n> 💡 *Cuando arranques \`txBridge\` en tu PC/VPS conectado a txAdmin, los datos aparecerán aquí al instante.*`,
+                    title: '⚠️┃Sin Conexión con txAdmin',
+                    description: `${err.message}`,
                     color: 0xF39C12
                 })],
                 components: [new ActionRowBuilder().addComponents(
@@ -502,7 +598,9 @@ function initTxAdminModule(client, app) {
                 const val = interaction.values[0];
 
                 if (cid === 'select_tx_main_menu') {
-                    return renderSection(interaction, val, { isFreshReply: true, isDemo });
+                    const out = await renderSection(interaction, val, { isFreshReply: true, isDemo });
+                    resetPermanentSelectMenu(interaction, isDemo, false);
+                    return out;
                 }
                 if (cid === 'select_tx_ephemeral_nav') {
                     return renderSection(interaction, val, { isFreshReply: false, isDemo });
@@ -514,10 +612,25 @@ function initTxAdminModule(client, app) {
                     return renderSection(interaction, 'server_status', { isFreshReply: false, page: 0, filter: val, isDemo });
                 }
                 if (cid === 'select_tx_action_pick') {
+                    if (val === 'none') return interaction.deferUpdate().catch(() => {});
+                    const status = getStatus();
+                    const userSession = getUserSessionFromStatus(status, interaction.user.id);
+                    if (!panels.canExecuteTxAction(userSession, val, isBotOwner(interaction.user.id))) {
+                        await interaction.reply({
+                            embeds: [panels.buildNoticeEmbed(interaction.guild, {
+                                title: '⛔┃Sin Permiso en txAdmin',
+                                description: 'Tu cuenta de txAdmin no tiene permisos autorizados para ejecutar esta acción.',
+                                color: 0xE74C3C
+                            })],
+                            ephemeral: true
+                        }).catch(() => {});
+                        scheduleAutoDelete(interaction);
+                        return;
+                    }
                     return interaction.showModal(decorateModalForDemo(panels.buildActionModal(val), isDemo));
                 }
 
-                // Menú del Panel Permanente del Creador (!panel-txowner / !panel-txownertest)
+                // Menú del Panel Permanente del Creador (!panel-txowner / !panel-txownertest) — TIENE TODO
                 if (cid === 'select_tx_owner_panel') {
                     if (!isBotOwner(interaction.user.id)) {
                         return interaction.reply({
@@ -530,14 +643,20 @@ function initTxAdminModule(client, app) {
                         }).catch(() => {});
                     }
 
+                    if (['login', 'ai', 'players', 'search_player', 'sanctions', 'staff_activity', 'server_status', 'actions'].includes(val)) {
+                        const out = await renderSection(interaction, val, { isFreshReply: true, isDemo });
+                        resetPermanentSelectMenu(interaction, isDemo, true);
+                        return out;
+                    }
                     if (val === 'manage_sessions') {
-                        return renderSection(interaction, 'owner_panel', { isFreshReply: true, isDemo });
+                        const out = await renderSection(interaction, 'owner_panel', { isFreshReply: true, isDemo });
+                        resetPermanentSelectMenu(interaction, isDemo, true);
+                        return out;
                     }
                     if (val === 'view_admins') {
-                        return renderSection(interaction, 'owner_panel', { isFreshReply: true, filter: 'admins', isDemo });
-                    }
-                    if (val === 'server_control') {
-                        return interaction.showModal(decorateModalForDemo(panels.buildActionModal('tx_server_control'), isDemo));
+                        const out = await renderSection(interaction, 'owner_panel', { isFreshReply: true, filter: 'admins', isDemo });
+                        resetPermanentSelectMenu(interaction, isDemo, true);
+                        return out;
                     }
                     if (val === 'toggle_readonly') {
                         if (isDemo) {
@@ -554,6 +673,7 @@ function initTxAdminModule(client, app) {
                         return;
                     }
                     if (val === 'send_env_dm') {
+                        resetPermanentSelectMenu(interaction, isDemo, true);
                         if (isDemo) {
                             return interaction.reply({
                                 embeds: [panels.buildNoticeEmbed(interaction.guild, {
@@ -639,8 +759,44 @@ function initTxAdminModule(client, app) {
                 if (cid === 'btn_tx_quick_ai') {
                     return interaction.showModal(decorateModalForDemo(panels.buildAiQueryModal(), isDemo));
                 }
+                if (cid === 'btn_tx_quick_players') {
+                    return renderSection(interaction, 'players', { isFreshReply: true, page: 0, filter: 'all', isDemo });
+                }
                 if (cid === 'tx_open_search_modal') {
                     return interaction.showModal(decorateModalForDemo(panels.buildSearchPlayerModal(), isDemo));
+                }
+                if (cid === 'tx_nav_actions') {
+                    return renderSection(interaction, 'actions', { isFreshReply: false, isDemo });
+                }
+                if (cid.startsWith('tx_repeat_act_')) {
+                    const actionKey = cid.slice('tx_repeat_act_'.length);
+                    const status = getStatus();
+                    const userSession = getUserSessionFromStatus(status, interaction.user.id);
+                    if (status.readOnlyMode) {
+                        await interaction.reply({
+                            embeds: [panels.buildNoticeEmbed(interaction.guild, {
+                                title: '🔒┃Modo Solo Lectura Activo',
+                                description: 'El creador ha pausado temporalmente las acciones administrativas.',
+                                color: 0xF39C12
+                            })],
+                            ephemeral: true
+                        }).catch(() => {});
+                        scheduleAutoDelete(interaction);
+                        return;
+                    }
+                    if (!panels.canExecuteTxAction(userSession, actionKey, isBotOwner(interaction.user.id))) {
+                        await interaction.reply({
+                            embeds: [panels.buildNoticeEmbed(interaction.guild, {
+                                title: '⛔┃Sin Permiso en txAdmin',
+                                description: 'Tu cuenta de txAdmin no tiene permisos autorizados para repetir esta acción.',
+                                color: 0xE74C3C
+                            })],
+                            ephemeral: true
+                        }).catch(() => {});
+                        scheduleAutoDelete(interaction);
+                        return;
+                    }
+                    return interaction.showModal(decorateModalForDemo(panels.buildActionModal(actionKey), isDemo));
                 }
                 if (cid === 'btn_tx_refresh_main') {
                     const status = getStatus();
@@ -669,6 +825,9 @@ function initTxAdminModule(client, app) {
                         )).catch(() => {});
                         return;
                     }
+                    if (cid === 'btn_tx_owner_open_actions') {
+                        return renderSection(interaction, 'actions', { isFreshReply: true, isDemo });
+                    }
                     if (cid === 'btn_tx_owner_open_sessions') {
                         return renderSection(interaction, 'owner_panel', { isFreshReply: true, isDemo });
                     }
@@ -682,8 +841,11 @@ function initTxAdminModule(client, app) {
                 }
 
                 if (cid.startsWith('tx_pg_players_')) {
-                    const page = parseInt(cid.split('_')[3], 10) || 0;
-                    return renderSection(interaction, 'players', { isFreshReply: false, page, isDemo });
+                    const clean = cid.replace(/_ref$/, '');
+                    const parts = clean.split('_');
+                    const page = parseInt(parts[3], 10) || 0;
+                    const mode = parts[4] === 'staff' ? 'staff' : 'all';
+                    return renderSection(interaction, 'players', { isFreshReply: false, page, filter: mode, isDemo });
                 }
 
                 if (cid.startsWith('tx_pg_sanctions_')) {
@@ -855,19 +1017,17 @@ function initTxAdminModule(client, app) {
                             isDemo
                         });
 
-                        await interaction.editReply(decorateForDemo({
-                            embeds: [panels.buildNoticeEmbed(interaction.guild, {
-                                title: '✅┃Acción Ejecutada en txAdmin',
-                                description:
-                                    `> ⚡ **Operación:** ${panels.ACTION_LABELS[pending.bridgeAction] || pending.bridgeAction}\n` +
-                                    `> 🔑 **Ejecutada como:** \`${result?.executedAs || pending.txUsername}\`\n` +
-                                    `> 📋 **Respuesta de txAdmin:** ${result?.message || 'Completado con éxito.'}`,
-                                color: 0x2ECC71
-                            })],
-                            components: [new ActionRowBuilder().addComponents(
-                                new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Volver al Menú').setStyle(ButtonStyle.Primary).setEmoji('↩️')
-                            )]
-                        }, isDemo)).catch(() => {});
+                        await interaction.editReply(decorateForDemo(
+                            panels.buildActionResultPayload(interaction.guild, {
+                                ok: true,
+                                bridgeAction: pending.bridgeAction,
+                                txUsername: result?.executedAs || pending.txUsername,
+                                message: result?.message || 'Completado con éxito.',
+                                canRepeat: true
+                            }),
+                            isDemo
+                        )).catch(() => {});
+                        scheduleAutoDelete(interaction);
                     } catch (execErr) {
                         await sendTxAuditLog(client, interaction.guild, {
                             actorUser: interaction.user,
@@ -879,16 +1039,17 @@ function initTxAdminModule(client, app) {
                             isDemo
                         });
 
-                        await interaction.editReply(decorateForDemo({
-                            embeds: [panels.buildNoticeEmbed(interaction.guild, {
-                                title: '❌┃txAdmin Rechazó o Falló la Acción',
-                                description: `${execErr.message}`,
-                                color: 0xE74C3C
-                            })],
-                            components: [new ActionRowBuilder().addComponents(
-                                new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Volver al Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
-                            )]
-                        }, isDemo)).catch(() => {});
+                        await interaction.editReply(decorateForDemo(
+                            panels.buildActionResultPayload(interaction.guild, {
+                                ok: false,
+                                bridgeAction: pending.bridgeAction,
+                                txUsername: pending.txUsername,
+                                message: execErr.message,
+                                canRepeat: true
+                            }),
+                            isDemo
+                        )).catch(() => {});
+                        scheduleAutoDelete(interaction);
                     }
                     return;
                 }
@@ -930,6 +1091,7 @@ function initTxAdminModule(client, app) {
                                 new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Abrir Consola Interactiva').setStyle(ButtonStyle.Primary).setEmoji('🧭')
                             )]
                         }, isDemo)).catch(() => {});
+                        scheduleAutoDelete(interaction);
                     } catch (err) {
                         await interaction.editReply(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
@@ -938,6 +1100,7 @@ function initTxAdminModule(client, app) {
                                 color: 0xE74C3C
                             })]
                         }, isDemo)).catch(() => {});
+                        scheduleAutoDelete(interaction);
                     }
                     return;
                 }
@@ -951,6 +1114,7 @@ function initTxAdminModule(client, app) {
                             panels.buildPlayerProfilePayload(interaction.guild, data, query, 0),
                             isDemo
                         )).catch(() => {});
+                        scheduleAutoDelete(interaction);
                     } catch (err) {
                         await interaction.editReply(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
@@ -959,6 +1123,7 @@ function initTxAdminModule(client, app) {
                                 color: 0xF39C12
                             })]
                         }, isDemo)).catch(() => {});
+                        scheduleAutoDelete(interaction);
                     }
                     return;
                 }
@@ -975,14 +1140,16 @@ function initTxAdminModule(client, app) {
                             userId: interaction.user.id,
                             userTag: interaction.user.tag || interaction.user.username,
                             promptText,
+                            userSession,
                             hasLinkedSession: Boolean(userSession),
                             isOwner: isBotOwner(interaction.user.id),
-                            dispatchFn: isDemo ? (gid, act, pl) => demoSandbox.dispatchDemoAction(gid, act, pl, interaction.user) : null
+                            dispatchFn: isDemo ? (gid, act, pl) => demoSandbox.dispatchDemoAction(gid, act, pl, interaction.user) : null,
+                            enrichOnlineFn: (rawOnline) => enrichOnlinePlayersWithTxAdmins(getStatus(), rawOnline)
                         });
 
                         if (proposedAction) {
                             if (status.readOnlyMode) {
-                                return interaction.editReply(decorateForDemo({
+                                await interaction.editReply(decorateForDemo({
                                     embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                         title: '🔒┃Acción Bloqueada (Solo Lectura)',
                                         description: `${answer.slice(0, 2500)}\n\n────────────────────────────\n⚠️ *El creador tiene activado el **Modo Solo Lectura**, por lo que no se pueden confirmar acciones administrativas ahora.*`,
@@ -992,10 +1159,12 @@ function initTxAdminModule(client, app) {
                                         new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
                                     )]
                                 }, isDemo)).catch(() => {});
+                                scheduleAutoDelete(interaction);
+                                return;
                             }
 
                             if (!userSession) {
-                                return interaction.editReply(decorateForDemo({
+                                await interaction.editReply(decorateForDemo({
                                     embeds: [panels.buildNoticeEmbed(interaction.guild, {
                                         title: '🔑┃Inicia Sesión para Confirmar Acciones',
                                         description: `${answer.slice(0, 2500)}\n\n────────────────────────────\n🔒 *Para ejecutar **${panels.ACTION_LABELS[proposedAction.bridgeAction] || proposedAction.bridgeAction}** en txAdmin, primero vincula tu cuenta con el botón de abajo.*`,
@@ -1006,6 +1175,8 @@ function initTxAdminModule(client, app) {
                                         new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
                                     )]
                                 }, isDemo)).catch(() => {});
+                                scheduleAutoDelete(interaction);
+                                return;
                             }
 
                             const confirmId = createPendingConfirmation({
@@ -1018,28 +1189,32 @@ function initTxAdminModule(client, app) {
                                 isDemo
                             });
 
-                            return interaction.editReply(decorateForDemo(panels.buildConfirmationPayload(interaction.guild, {
+                            await interaction.editReply(decorateForDemo(panels.buildConfirmationPayload(interaction.guild, {
                                 confirmId,
                                 bridgeAction: proposedAction.bridgeAction,
                                 params: proposedAction.params,
                                 txUsername: userSession.txUsername,
                                 aiAnswer: answer
                             }), isDemo)).catch(() => {});
+                            scheduleAutoDelete(interaction);
+                            return;
                         }
 
                         await interaction.editReply(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
-                                title: '🧠┃Respuesta IA • Datos Reales txAdmin',
+                                title: '🤖┃Respuesta IA • Datos en Vivo txAdmin',
                                 description:
                                     `❓┃**Consulta:** *"${promptText.slice(0, 180)}"*\n\n` +
                                     `────────────────────────────\n\n` +
                                     `${answer.slice(0, 3400)}`
                             })],
                             components: [new ActionRowBuilder().addComponents(
-                                new ButtonBuilder().setCustomId('btn_tx_quick_ai').setLabel('Otra Consulta IA').setStyle(ButtonStyle.Primary).setEmoji('🧠'),
+                                new ButtonBuilder().setCustomId('btn_tx_quick_ai').setLabel('Otra Consulta IA').setStyle(ButtonStyle.Primary).setEmoji('🤖'),
+                                new ButtonBuilder().setCustomId('tx_nav_actions').setLabel('Moderar').setStyle(ButtonStyle.Secondary).setEmoji('⚡'),
                                 new ButtonBuilder().setCustomId('tx_nav_hub').setLabel('Menú').setStyle(ButtonStyle.Secondary).setEmoji('↩️')
                             )]
                         }, isDemo)).catch(() => {});
+                        scheduleAutoDelete(interaction);
                     } catch (err) {
                         await interaction.editReply(decorateForDemo({
                             embeds: [panels.buildNoticeEmbed(interaction.guild, {
@@ -1048,6 +1223,7 @@ function initTxAdminModule(client, app) {
                                 color: 0xE74C3C
                             })]
                         }, isDemo)).catch(() => {});
+                        scheduleAutoDelete(interaction);
                     }
                     return;
                 }
@@ -1089,6 +1265,17 @@ function initTxAdminModule(client, app) {
                         }, isDemo)).catch(() => {});
                     }
 
+                    if (!panels.canExecuteTxAction(userSession, actionKey, isBotOwner(interaction.user.id))) {
+                        return interaction.reply(decorateForDemo({
+                            embeds: [panels.buildNoticeEmbed(interaction.guild, {
+                                title: '⛔┃Sin Permiso en txAdmin',
+                                description: `Tu cuenta de txAdmin (\`${userSession.txUsername}\`) no tiene permiso para ejecutar esta acción.`,
+                                color: 0xE74C3C
+                            })],
+                            ephemeral: true
+                        }, isDemo)).catch(() => {});
+                    }
+
                     const params = {};
                     for (const field of interaction.fields.fields.values()) {
                         params[field.customId] = (field.value || '').trim();
@@ -1113,6 +1300,7 @@ function initTxAdminModule(client, app) {
                         }), isDemo),
                         ephemeral: true
                     }).catch(() => {});
+                    scheduleAutoDelete(interaction);
                     return;
                 }
             }
