@@ -11630,6 +11630,14 @@ async function startBot() {
         console.error('⚠️ [DM ASSISTANT ERROR]:', dmErr.message);
     }
 
+    // Sistema independiente de Centro de Control Interactivo txAdmin + IA (carpeta txAdmin/)
+    try {
+        const initTxAdmin = require('./txAdmin');
+        initTxAdmin(client, app);
+    } catch (txErr) {
+        console.error('⚠️ [TXADMIN MODULE ERROR]:', txErr.message);
+    }
+
     // Inicializar Gestor Multi-Servidor (aisla configuración, logo y banners por guildId sin afectar a Vallecas RP)
     guildManager.initGuildManager({
         client,

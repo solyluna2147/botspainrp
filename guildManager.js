@@ -229,6 +229,7 @@ const BANNER_TYPES = {
     bienvenida:    { key: 'BANNER_BIENVENIDA_URL',   files: ['banner_bienvenida.png', 'bienvenida.png', 'bienvenidas.png', 'welcome.png'] },
     bienvenidas:   { key: 'BANNER_BIENVENIDA_URL',   files: ['banner_bienvenida.png', 'bienvenida.png', 'bienvenidas.png', 'welcome.png'] },
     consultas:             { key: 'BANNER_CONSULTAS_URL',          files: ['banner_consultas.png', 'consultas.png', 'panel_consultas.png', 'consulta.png'] },
+    txadmin:               { key: 'BANNER_TXADMIN_URL',            files: ['panel_txadmin.png', 'panel_txadmin.jpg', 'txadmin.png', 'txadmin.jpg', 'banner_txadmin.png'] },
     verificacion:          { key: 'BANNER_VERIFICACION_URL',       files: ['verificacion.png', 'banner_verificacion.png', 'panel_verificacion.png', 'verify.png'] },
     tickets:               { key: 'BANNER_TICKETS_URL',            files: ['tickets.png', 'ticket.png', 'panel_tickets.png', 'banner_tickets.png', 'soporte.png'] },
     ticket_soporte:        { key: 'BANNER_TKT_SOPORTE_URL',        files: ['ticket_soporte_y_dudas.png', 'ticket_soporte.png', 'soporte.png', 'soporte_dudas.png', 'tickets_soporte.png', 'tickets.png'] },
